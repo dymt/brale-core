@@ -3,6 +3,11 @@
 - **An AI-driven multi-agent quantitative strategy engine**
 - *If trading is a performance, then "Break a leg" means: may you trade brilliantly.*
 
+[![Chinese Documentation](https://img.shields.io/badge/lang-中文-red.svg)](docs/README_CN.org)
+[![Newcomer Guide](https://img.shields.io/badge/doc-User_Guide-blueviolet.svg)](doc/USER_GUIDE.org)
+[![Go Version](https://img.shields.io/badge/go-1.24.0-blue.svg)](go.mod)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 ## Project Background
 
 Brale Core is designed to turn subjective trading judgment into an engineering workflow that is verifiable, executable, and auditable. The goal is to reduce emotional interference and improve execution consistency.
