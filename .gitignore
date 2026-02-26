@@ -23,7 +23,7 @@ AGENTS.md
 configs/strategies/ETHUSDT.toml
 configs/symbols/ETHUSDT.toml
 
-./brale-web/
+/brale-web/
 
 .env
 
@@ -39,3 +39,13 @@ dist/
 *.o
 *.out
 *.test
+
+# Local workspace/runtime artifacts (currently uncommitted)
+/.opencode/
+/.sisyphus/
+/data/brale-core.db
+/data/brale-core.log
+/data/llm-traces/
+/dockerfile/configs/config.json
+/dockerfile/user_data/
+/手写的部署文档.org
