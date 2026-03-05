@@ -41,9 +41,6 @@ dist/
 # Local workspace/runtime artifacts (currently uncommitted)
 /.opencode/
 /.sisyphus/
-/data/brale-core.db
-/data/brale-core.log
-/data/llm-traces/
-/dockerfile/configs/config.json
-/dockerfile/user_data/
+/data/brale/
+/data/freqtrade/
 /手写的部署文档.org

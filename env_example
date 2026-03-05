@@ -23,6 +23,18 @@ LLM_MECHANICS_API_KEY =
 EXEC_USERNAME =
 EXEC_SECRET =
 
+# Proxy (optional)
+# PROXY_ENABLED=true will inject proxy into freqtrade config and container env.
+PROXY_ENABLED = false
+PROXY_PORT = 7890
+PROXY_HOST = host.docker.internal
+PROXY_SCHEME = http
+PROXY_NO_PROXY = localhost,127.0.0.1,brale,freqtrade
+
+# Go proxy for docker build (recommended in CN network)
+GOPROXY = https://goproxy.cn,direct
+GOSUMDB = sum.golang.google.cn
+
 #########################################################
 ##################telegram 推送##########################
 #########################################################

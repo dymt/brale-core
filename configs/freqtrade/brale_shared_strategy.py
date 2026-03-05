@@ -1,13 +1,7 @@
-"""BraleSharedStrategy - freqtrade 被动执行占位策略。
+import importlib
 
-该策略完全关闭本地自动入场/止盈/止损逻辑，只保留必需的
-populate_* 函数以满足 freqtrade 要求。所有实际的交易信号、
-止盈止损与风控都由 Brale 进程通过 force-enter / force-exit 等
-API 指令驱动，因此这里不需要读取共享数据库或执行额外的
-线程任务。
-"""
-
-from freqtrade.strategy import IStrategy
+_strategy_module = importlib.import_module("freqtrade.strategy")
+IStrategy = getattr(_strategy_module, "IStrategy")
 
 
 class BraleSharedStrategy(IStrategy):
@@ -22,7 +16,6 @@ class BraleSharedStrategy(IStrategy):
     plot_config = {}
 
     def populate_indicators(self, dataframe, metadata):
-        # Brale 在容器外部负责一切决策，因此这里只是占位。
         return dataframe
 
     def populate_entry_trend(self, dataframe, metadata):
