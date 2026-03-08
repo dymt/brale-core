@@ -105,7 +105,7 @@ func DefaultStrategyConfig(symbol string) StrategyConfig {
 	return StrategyConfig{
 		Symbol:        symbol,
 		ID:            "default-" + symbol,
-		RuleChainPath: "../configs/rules/ethusdt.json",
+		RuleChainPath: "configs/rules/default.json",
 		RiskManagement: RiskManagementConfig{
 			RiskPerTradePct:   0.01,
 			MaxInvestPct:      1.0,

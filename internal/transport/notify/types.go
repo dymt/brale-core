@@ -11,6 +11,7 @@ import (
 
 type Notifier interface {
 	SendGate(ctx context.Context, report decisionfmt.DecisionReport) error
+	SendStartup(ctx context.Context) error
 	SendPositionOpen(ctx context.Context, notice PositionOpenNotice) error
 	SendPositionClose(ctx context.Context, notice PositionCloseNotice) error
 	SendPositionCloseSummary(ctx context.Context, notice PositionCloseSummaryNotice) error
@@ -88,15 +89,29 @@ type Message struct {
 }
 
 type NotificationConfig struct {
-	Enabled  bool
-	Telegram TelegramConfig
-	Email    EmailConfig
+	Enabled              bool
+	StartupNotifyEnabled bool
+	Telegram             TelegramConfig
+	Feishu               FeishuConfig
+	Email                EmailConfig
 }
 
 type TelegramConfig struct {
 	Enabled bool
 	Token   string
 	ChatID  int64
+}
+
+type FeishuConfig struct {
+	Enabled              bool
+	BotEnabled           bool
+	BotMode              string
+	AppID                string
+	AppSecret            string
+	VerificationToken    string
+	EncryptKey           string
+	DefaultReceiveIDType string
+	DefaultReceiveID     string
 }
 
 type EmailConfig struct {
@@ -111,11 +126,23 @@ type EmailConfig struct {
 
 func FromConfig(cfg config.NotificationConfig) NotificationConfig {
 	return NotificationConfig{
-		Enabled: cfg.Enabled,
+		Enabled:              cfg.Enabled,
+		StartupNotifyEnabled: cfg.StartupNotifyEnabled,
 		Telegram: TelegramConfig{
 			Enabled: cfg.Telegram.Enabled,
 			Token:   cfg.Telegram.Token,
 			ChatID:  cfg.Telegram.ChatID,
+		},
+		Feishu: FeishuConfig{
+			Enabled:              cfg.Feishu.Enabled,
+			BotEnabled:           cfg.Feishu.BotEnabled,
+			BotMode:              cfg.Feishu.BotMode,
+			AppID:                cfg.Feishu.AppID,
+			AppSecret:            cfg.Feishu.AppSecret,
+			VerificationToken:    cfg.Feishu.VerificationToken,
+			EncryptKey:           cfg.Feishu.EncryptKey,
+			DefaultReceiveIDType: cfg.Feishu.DefaultReceiveIDType,
+			DefaultReceiveID:     cfg.Feishu.DefaultReceiveID,
 		},
 		Email: EmailConfig{
 			Enabled:  cfg.Email.Enabled,

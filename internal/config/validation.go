@@ -248,15 +248,52 @@ func validateNotificationConfig(cfg NotificationConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
-	if !cfg.Telegram.Enabled && !cfg.Email.Enabled {
+	feishuBotMode := normalizeFeishuBotMode(cfg.Feishu.BotMode)
+	if cfg.Feishu.BotEnabled {
+		if feishuBotMode != "long_connection" && feishuBotMode != "callback" {
+			return validationErrorf("notification.feishu.bot_mode must be one of long_connection/callback")
+		}
+	}
+	if !cfg.Telegram.Enabled && !cfg.Feishu.Enabled && !cfg.Email.Enabled && !cfg.Feishu.BotEnabled {
 		return validationErrorf("notification enabled but no channel enabled")
 	}
 	if cfg.Telegram.Enabled {
 		if strings.TrimSpace(cfg.Telegram.Token) == "" {
 			return validationErrorf("notification.telegram.token is required")
 		}
+	}
+	if cfg.Telegram.Enabled {
 		if cfg.Telegram.ChatID == 0 {
 			return validationErrorf("notification.telegram.chat_id is required")
+		}
+	}
+	if cfg.Feishu.Enabled || cfg.Feishu.BotEnabled {
+		if strings.TrimSpace(cfg.Feishu.AppID) == "" {
+			return validationErrorf("notification.feishu.app_id is required")
+		}
+		if strings.TrimSpace(cfg.Feishu.AppSecret) == "" {
+			return validationErrorf("notification.feishu.app_secret is required")
+		}
+	}
+	if cfg.Feishu.Enabled {
+		typ := strings.TrimSpace(strings.ToLower(cfg.Feishu.DefaultReceiveIDType))
+		if typ == "" {
+			return validationErrorf("notification.feishu.default_receive_id_type is required")
+		}
+		switch typ {
+		case "chat_id", "open_id", "user_id", "union_id", "email":
+		default:
+			return validationErrorf("notification.feishu.default_receive_id_type must be one of chat_id/open_id/user_id/union_id/email")
+		}
+		if strings.TrimSpace(cfg.Feishu.DefaultReceiveID) == "" {
+			return validationErrorf("notification.feishu.default_receive_id is required")
+		}
+	}
+	if cfg.Feishu.BotEnabled {
+		if feishuBotMode == "callback" {
+			if strings.TrimSpace(cfg.Feishu.VerificationToken) == "" {
+				return validationErrorf("notification.feishu.verification_token is required")
+			}
 		}
 	}
 	if cfg.Email.Enabled {
@@ -280,6 +317,14 @@ func validateNotificationConfig(cfg NotificationConfig) error {
 		}
 	}
 	return nil
+}
+
+func normalizeFeishuBotMode(value string) string {
+	mode := strings.TrimSpace(strings.ToLower(value))
+	if mode == "" {
+		return "long_connection"
+	}
+	return mode
 }
 
 func ValidateSymbolIndexConfig(cfg SymbolIndexConfig) error {

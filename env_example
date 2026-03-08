@@ -38,6 +38,20 @@ GOSUMDB = sum.golang.google.cn
 #########################################################
 ##################telegram 推送##########################
 #########################################################
+NOTIFICATION_STARTUP_NOTIFY_ENABLED =
 NOTIFICATION_TELEGRAM_ENABLED =
 NOTIFICATION_TELEGRAM_TOKEN =
 NOTIFICATION_TELEGRAM_CHAT_ID =
+
+#########################################################
+##################feishu 推送############################
+#########################################################
+NOTIFICATION_FEISHU_ENABLED =
+NOTIFICATION_FEISHU_APP_ID =
+NOTIFICATION_FEISHU_APP_SECRET =
+NOTIFICATION_FEISHU_BOT_ENABLED =
+NOTIFICATION_FEISHU_BOT_MODE = long_connection
+NOTIFICATION_FEISHU_VERIFICATION_TOKEN =
+NOTIFICATION_FEISHU_ENCRYPT_KEY =
+NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID_TYPE = chat_id
+NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID =

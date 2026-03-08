@@ -1,7 +1,6 @@
 package telegrambot
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 
 	"brale-core/internal/pkg/httpclient"
 	symbolpkg "brale-core/internal/pkg/symbol"
+	"brale-core/internal/transport/botruntime"
 
 	"go.uber.org/zap"
 )
@@ -48,6 +48,7 @@ type Bot struct {
 	apiBase        string
 	token          string
 	runtimeBase    string
+	runtimeClient  *botruntime.Client
 	client         *http.Client
 	logger         *zap.Logger
 	sessions       *sessionStore
@@ -85,6 +86,11 @@ func New(cfg Config, logger *zap.Logger) (*Bot, error) {
 	if runtimeBase == "" {
 		return nil, errors.New("runtime base url is required")
 	}
+	httpClient := &http.Client{Timeout: requestTimeout}
+	runtimeClient, err := botruntime.NewClient(runtimeBase, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	lockPath := strings.TrimSpace(cfg.LockPath)
 	if lockPath == "" {
 		lockPath = defaultLockPath
@@ -94,7 +100,8 @@ func New(cfg Config, logger *zap.Logger) (*Bot, error) {
 		apiBase:        defaultAPIBASE,
 		token:          strings.TrimSpace(cfg.Token),
 		runtimeBase:    runtimeBase,
-		client:         &http.Client{Timeout: requestTimeout},
+		runtimeClient:  runtimeClient,
+		client:         httpClient,
 		logger:         logger,
 		sessions:       newSessionStore(sessionTTL),
 		pollTimeout:    pollTimeout,
@@ -271,37 +278,8 @@ func (b *Bot) handleCallback(ctx context.Context, cb *callbackQuery) {
 }
 
 func (b *Bot) runObserve(ctx context.Context, req ObserveRequest) (ObserveResponse, error) {
-	payload, err := json.Marshal(req)
+	out, err := b.runtimeClient.RunObserve(ctx, botruntime.ObserveRunRequest{Symbol: req.Symbol})
 	if err != nil {
-		return ObserveResponse{}, err
-	}
-	url := b.runtimeBase + "/api/observe/run"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(payload))
-	if err != nil {
-		return ObserveResponse{}, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := b.client.Do(httpReq)
-	if err != nil {
-		return ObserveResponse{}, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			return
-		}
-	}()
-	if resp.StatusCode != http.StatusOK {
-		var apiErr errorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
-			return ObserveResponse{}, fmt.Errorf("http %d", resp.StatusCode)
-		}
-		if strings.TrimSpace(apiErr.Msg) != "" {
-			return ObserveResponse{}, errors.New(apiErr.Msg)
-		}
-		return ObserveResponse{}, fmt.Errorf("http %d", resp.StatusCode)
-	}
-	var out ObserveResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return ObserveResponse{}, err
 	}
 	if hasObserveReport(out) && strings.EqualFold(strings.TrimSpace(out.Status), "ok") {

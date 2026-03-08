@@ -60,15 +60,29 @@ type WebhookConfig struct {
 }
 
 type NotificationConfig struct {
-	Enabled  bool           `mapstructure:"enabled"`
-	Telegram TelegramConfig `mapstructure:"telegram"`
-	Email    EmailConfig    `mapstructure:"email"`
+	Enabled              bool           `mapstructure:"enabled"`
+	StartupNotifyEnabled bool           `mapstructure:"startup_notify_enabled"`
+	Telegram             TelegramConfig `mapstructure:"telegram"`
+	Feishu               FeishuConfig   `mapstructure:"feishu"`
+	Email                EmailConfig    `mapstructure:"email"`
 }
 
 type TelegramConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
 	Token   string `mapstructure:"token"`
 	ChatID  int64  `mapstructure:"chat_id"`
+}
+
+type FeishuConfig struct {
+	Enabled              bool   `mapstructure:"enabled"`
+	AppID                string `mapstructure:"app_id"`
+	AppSecret            string `mapstructure:"app_secret"`
+	BotEnabled           bool   `mapstructure:"bot_enabled"`
+	BotMode              string `mapstructure:"bot_mode"`
+	VerificationToken    string `mapstructure:"verification_token"`
+	EncryptKey           string `mapstructure:"encrypt_key"`
+	DefaultReceiveIDType string `mapstructure:"default_receive_id_type"`
+	DefaultReceiveID     string `mapstructure:"default_receive_id"`
 }
 
 type EmailConfig struct {

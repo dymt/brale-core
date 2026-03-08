@@ -43,11 +43,23 @@ fallback_reconcile_sec = 300 # 兜底对账轮询（秒）
 
 [notification]
 enabled = true
+startup_notify_enabled = ${NOTIFICATION_STARTUP_NOTIFY_ENABLED}
 
 [notification.telegram]
 enabled = ${NOTIFICATION_TELEGRAM_ENABLED}
 token = "${NOTIFICATION_TELEGRAM_TOKEN}"
 chat_id = ${NOTIFICATION_TELEGRAM_CHAT_ID}
+
+[notification.feishu]
+enabled = ${NOTIFICATION_FEISHU_ENABLED}
+app_id = "${NOTIFICATION_FEISHU_APP_ID}"
+app_secret = "${NOTIFICATION_FEISHU_APP_SECRET}"
+bot_enabled = ${NOTIFICATION_FEISHU_BOT_ENABLED}
+bot_mode = "${NOTIFICATION_FEISHU_BOT_MODE}"
+verification_token = "${NOTIFICATION_FEISHU_VERIFICATION_TOKEN}"
+encrypt_key = "${NOTIFICATION_FEISHU_ENCRYPT_KEY}"
+default_receive_id_type = "${NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID_TYPE}"
+default_receive_id = "${NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID}"
 
 [news_overlay]
 # 是否启用 News Overlay。开启后会定时抓取新闻并生成舆论决策。

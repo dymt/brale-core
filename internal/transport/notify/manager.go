@@ -19,7 +19,13 @@ type Manager struct {
 
 type NopNotifier struct{}
 
+const startupMessage = "Brale已启动，Break A Leg"
+
 func (NopNotifier) SendGate(ctx context.Context, report decisionfmt.DecisionReport) error {
+	return nil
+}
+
+func (NopNotifier) SendStartup(ctx context.Context) error {
 	return nil
 }
 
@@ -62,9 +68,16 @@ func NewManager(cfg NotificationConfig, formatter decisionfmt.Formatter) (Notifi
 	if formatter == nil {
 		return nil, fmt.Errorf("formatter is required")
 	}
-	senders := make([]Sender, 0, 2)
+	senders := make([]Sender, 0, 3)
 	if cfg.Telegram.Enabled {
 		sender, err := NewTelegramSender(cfg.Telegram)
+		if err != nil {
+			return nil, err
+		}
+		senders = append(senders, sender)
+	}
+	if cfg.Feishu.Enabled {
+		sender, err := NewFeishuSender(cfg.Feishu)
 		if err != nil {
 			return nil, err
 		}
@@ -105,6 +118,15 @@ func (m Manager) SendGate(ctx context.Context, report decisionfmt.DecisionReport
 		Markdown: markdown,
 		HTML:     html,
 		Plain:    plain,
+	}
+	return m.send(ctx, msg)
+}
+
+func (m Manager) SendStartup(ctx context.Context) error {
+	msg := Message{
+		Title:    startupMessage,
+		Markdown: startupMessage,
+		Plain:    startupMessage,
 	}
 	return m.send(ctx, msg)
 }
@@ -574,14 +596,14 @@ func formatPercent(value float64) string {
 }
 
 func (m Manager) send(ctx context.Context, msg Message) error {
-	var errCount int
+	errDetails := make([]string, 0)
 	for _, sender := range m.senders {
 		if err := sender.Send(ctx, msg); err != nil {
-			errCount++
+			errDetails = append(errDetails, fmt.Sprintf("%T: %v", sender, err))
 		}
 	}
-	if errCount > 0 {
-		return fmt.Errorf("notify send failed: %d", errCount)
+	if len(errDetails) > 0 {
+		return fmt.Errorf("notify send failed: %d (%s)", len(errDetails), strings.Join(errDetails, "; "))
 	}
 	logging.FromContext(ctx).Named("notify").Info("notify sent",
 		zap.Int("channels", len(m.senders)),

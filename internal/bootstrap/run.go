@@ -5,9 +5,16 @@ import (
 	"fmt"
 	"strings"
 
+	"brale-core/internal/config"
 	"brale-core/internal/transport"
 	decisionview "brale-core/webui/decision-view"
+
+	"go.uber.org/zap"
 )
+
+type startupNotifier interface {
+	SendStartup(ctx context.Context) error
+}
 
 type Options struct {
 	SystemPath      string
@@ -32,6 +39,7 @@ func Run(baseCtx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	sendStartupNotify(env.ctx, env.logger, env.sys, env.notifier)
 	runScheduledWarmup(env.ctx, env.logger, deps)
 
 	viewerHandler := decisionview.StartDecisionViewer(env.logger, env.sys, symbolIndexPath, env.index, deps.store)
@@ -54,9 +62,21 @@ func Run(baseCtx context.Context, opts Options) error {
 	if addr == "" {
 		return fmt.Errorf("http addr missing")
 	}
+	startFeishuBot(env.ctx, env.logger, env.sys, addr, topMux)
 	transport.StartHTTPServer(env.ctx, addr, topMux, env.logger)
 	startTelegramBot(env.ctx, env.logger, env.sys, addr)
 
 	<-env.ctx.Done()
 	return nil
+}
+
+func sendStartupNotify(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, notifier startupNotifier) {
+	if !sys.Notification.StartupNotifyEnabled {
+		return
+	}
+	if err := notifier.SendStartup(ctx); err != nil {
+		logger.Error("startup notify failed", zap.Error(err))
+		return
+	}
+	logger.Info("startup notify sent")
 }
