@@ -33,6 +33,94 @@ In code, this is reflected by:
 
 ![Flow](docs/flow.png)
 
+## Quick Start
+
+### Prerequisites
+
+- Docker ≥ 24 + Docker Compose V2
+- Python 3.10+ (for the `prepare_stack.py` config generation script)
+- GNU Make
+
+### Directory Layout
+
+```
+brale-core/
+├── .env                          # Environment variables (API keys, proxy, etc.)
+├── configs/
+│   ├── system.toml               # System-level config (execution, notifications, LLM)
+│   ├── symbols-index.toml        # Symbol index (symbol → config/strategy mapping)
+│   ├── symbols/*.toml            # Per-symbol parameters
+│   ├── strategies/*.toml         # Per-symbol strategy (risk, TP/SL, etc.)
+│   ├── rules/*.json              # Rule chain definitions
+│   └── freqtrade/                # Freqtrade config templates & strategy files
+├── data/                         # Runtime data (bind mount, persistent)
+│   ├── brale/                    # Brale database & system config copy
+│   └── freqtrade/user_data/      # Freqtrade runtime data
+├── docker-compose.yml
+├── Dockerfile
+└── Makefile
+```
+
+### First-Time Deployment
+
+```bash
+# 1. Copy and fill in environment variables
+cp .env.example .env
+# Edit .env — add Binance API Key, Freqtrade password, etc.
+
+# 2. One-command start (auto prepare → start freqtrade → wait healthy → start brale)
+make start
+```
+
+### Command Reference
+
+| Command | Description |
+|---|---|
+| `make start` | First-time / full start (freqtrade → brale) |
+| `make stop` | Stop all services (containers and data preserved) |
+| `make restart` | Same as `make start` (runs check + prepare first) |
+| `make rebuild` | Rebuild brale image after code changes and restart |
+| `make status` | Show service status |
+| `make logs` | Tail freqtrade + brale logs |
+| `make down` | Destroy containers (`data/` directory unaffected) |
+
+### Restart After Code Changes
+
+```bash
+# Rebuild brale image only — historical data is not affected
+make rebuild
+```
+
+`make rebuild` automatically runs `check` + `prepare`, then `docker compose up -d --build brale`.
+Since `data/brale` and `configs/` are bind-mounted, rebuilding never loses runtime data.
+
+### Restart After Config Changes
+
+- After modifying `.env` or files under `configs/`, **no rebuild is needed**:
+
+```bash
+make stop && make start
+```
+
+- Changed Go source code → use `make rebuild`.
+
+### Data Persistence
+
+| Host Path | Container Path | Description |
+|---|---|---|
+| `./data/brale/` | `/app/data/` | SQLite database, system config |
+| `./data/freqtrade/user_data/` | `/freqtrade/user_data/` | Freqtrade trade data & logs |
+| `./configs/` | `/app/configs/` (read-only) | Strategy & rule configuration |
+
+All runtime data is stored on the host under `data/`. Neither `make down` nor container rebuilds will delete it.
+
+### Service Ports
+
+| Service | Port | Description |
+|---|---|---|
+| Brale | `127.0.0.1:9991` | Runtime API + Decision View |
+| Freqtrade | `127.0.0.1:8080` | Freqtrade REST API |
+
 ## Architecture Overview
 
 This project uses a layered collaborative runtime architecture that can be summarized into five parts: bootstrap assembly, runtime orchestration, decision layer, execution & risk layer, and data & interface layer.
