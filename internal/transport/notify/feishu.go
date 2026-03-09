@@ -75,17 +75,23 @@ func (s *FeishuSender) Send(ctx context.Context, msg Message) error {
 		text = "notification"
 	}
 
+	msgType := larkim.MsgTypeText
 	content, err := buildFeishuTextContent(text)
 	if err != nil {
 		return err
 	}
+	if cardContent, cardErr := buildFeishuCardContent(msg, text); cardErr == nil {
+		msgType = "interactive"
+		content = cardContent
+	}
+
 	resp, err := s.client.Im.Message.Create(
 		ctx,
 		larkim.NewCreateMessageReqBuilder().
 			ReceiveIdType(s.receiveIDType).
 			Body(larkim.NewCreateMessageReqBodyBuilder().
 				ReceiveId(s.receiveID).
-				MsgType(larkim.MsgTypeText).
+				MsgType(msgType).
 				Content(content).
 				Build()).
 			Build(),
@@ -104,11 +110,12 @@ func (s *FeishuSender) Send(ctx context.Context, msg Message) error {
 }
 
 func formatFeishuMessage(msg Message) string {
-	if plain := strings.TrimSpace(msg.Plain); plain != "" {
-		return plain
-	}
+	// 对齐 Telegram 决策报告：优先使用完整正文，而不是仅标题。
 	if markdown := strings.TrimSpace(msg.Markdown); markdown != "" {
 		return markdown
+	}
+	if plain := strings.TrimSpace(msg.Plain); plain != "" {
+		return plain
 	}
 	if html := strings.TrimSpace(msg.HTML); html != "" {
 		return html
@@ -129,8 +136,78 @@ type feishuTextContent struct {
 	Text string `json:"text"`
 }
 
+type feishuCardContent struct {
+	Config   feishuCardConfig    `json:"config"`
+	Header   feishuCardHeader    `json:"header"`
+	Elements []feishuCardElement `json:"elements"`
+}
+
+type feishuCardHeader struct {
+	Title    feishuCardTitle `json:"title"`
+	Template string          `json:"template,omitempty"`
+}
+
+type feishuCardTitle struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
+type feishuCardConfig struct {
+	WideScreenMode bool `json:"wide_screen_mode"`
+}
+
+type feishuCardElement struct {
+	Tag  string              `json:"tag"`
+	Text *feishuCardRichText `json:"text,omitempty"`
+}
+
+type feishuCardRichText struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
 func buildFeishuTextContent(text string) (string, error) {
 	raw, err := json.Marshal(feishuTextContent{Text: text})
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func buildFeishuCardContent(msg Message, fallbackText string) (string, error) {
+	title := strings.TrimSpace(msg.Title)
+	if title == "" {
+		title = "通知"
+	}
+	body := strings.TrimSpace(msg.Markdown)
+	if body == "" {
+		body = strings.TrimSpace(fallbackText)
+	}
+	if body == "" {
+		body = "通知"
+	}
+
+	card := feishuCardContent{
+		Config: feishuCardConfig{WideScreenMode: true},
+		Header: feishuCardHeader{
+			Title: feishuCardTitle{
+				Tag:     "plain_text",
+				Content: title,
+			},
+			Template: "blue",
+		},
+		Elements: []feishuCardElement{
+			{
+				Tag: "div",
+				Text: &feishuCardRichText{
+					Tag:     "lark_md",
+					Content: body,
+				},
+			},
+		},
+	}
+
+	raw, err := json.Marshal(card)
 	if err != nil {
 		return "", err
 	}

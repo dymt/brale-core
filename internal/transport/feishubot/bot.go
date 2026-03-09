@@ -339,6 +339,9 @@ func (b *Bot) handleLatest(ctx context.Context, chatID, symbol string) {
 	if text == "" {
 		text = "no decision found"
 	}
+	if b.sendDecisionCard(ctx, chatID, "🚦 决策报告", text) {
+		return
+	}
 	b.sendChunked(ctx, chatID, text)
 }
 
@@ -365,6 +368,20 @@ func (b *Bot) sendReply(ctx context.Context, chatID, text string) {
 	if err := b.messenger.SendText(ctx, chatID, text); err != nil {
 		b.logger.Warn("feishu reply failed", zap.String("chat_id", chatID), zap.Error(err))
 	}
+}
+
+func (b *Bot) sendDecisionCard(ctx context.Context, chatID, title, markdown string) bool {
+	sender, ok := b.messenger.(interface {
+		SendCard(ctx context.Context, chatID, title, markdown string) error
+	})
+	if !ok {
+		return false
+	}
+	if err := sender.SendCard(ctx, chatID, title, markdown); err != nil {
+		b.logger.Warn("feishu decision card failed, fallback to text", zap.String("chat_id", chatID), zap.Error(err))
+		return false
+	}
+	return true
 }
 
 func (b *Bot) isDuplicateEvent(id string) bool {
@@ -468,6 +485,36 @@ func extractSenderID(event *larkim.P2MessageReceiveV1) string {
 
 type contentText struct {
 	Text string `json:"text"`
+}
+
+type cardContent struct {
+	Config   cardConfig    `json:"config"`
+	Header   cardHeader    `json:"header"`
+	Elements []cardElement `json:"elements"`
+}
+
+type cardConfig struct {
+	WideScreenMode bool `json:"wide_screen_mode"`
+}
+
+type cardHeader struct {
+	Title    cardTitle `json:"title"`
+	Template string    `json:"template,omitempty"`
+}
+
+type cardTitle struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
+type cardElement struct {
+	Tag  string    `json:"tag"`
+	Text *cardText `json:"text,omitempty"`
+}
+
+type cardText struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
 }
 
 func extractMessageText(content string) string {
@@ -757,8 +804,60 @@ func (m *feishuMessenger) SendText(ctx context.Context, chatID string, text stri
 	return nil
 }
 
+func (m *feishuMessenger) SendCard(ctx context.Context, chatID, title, markdown string) error {
+	content, err := buildMessageCardContent(title, markdown)
+	if err != nil {
+		return err
+	}
+	resp, err := m.client.Im.Message.Create(
+		ctx,
+		larkim.NewCreateMessageReqBuilder().
+			ReceiveIdType(larkim.ReceiveIdTypeChatId).
+			Body(larkim.NewCreateMessageReqBodyBuilder().
+				ReceiveId(chatID).
+				MsgType("interactive").
+				Content(content).
+				Build()).
+			Build(),
+	)
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return errors.New("feishu messenger empty response")
+	}
+	if !resp.Success() {
+		return fmt.Errorf("feishu messenger failed: code=%d msg=%s", resp.Code, strings.TrimSpace(resp.Msg))
+	}
+	return nil
+}
+
 func buildMessageTextContent(text string) (string, error) {
 	raw, err := json.Marshal(contentText{Text: text})
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func buildMessageCardContent(title, markdown string) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "通知"
+	}
+	markdown = strings.TrimSpace(markdown)
+	if markdown == "" {
+		markdown = "通知"
+	}
+	card := cardContent{
+		Config: cardConfig{WideScreenMode: true},
+		Header: cardHeader{Title: cardTitle{Tag: "plain_text", Content: title}, Template: "blue"},
+		Elements: []cardElement{{
+			Tag: "div",
+			Text: &cardText{Tag: "lark_md", Content: markdown},
+		}},
+	}
+	raw, err := json.Marshal(card)
 	if err != nil {
 		return "", err
 	}

@@ -10,7 +10,6 @@ config.yaml
 configs/config.yaml
 configs/user_data/freqtrade-config.json
 
-docs/exit_plan.md
 docs/ppt/
 项目运行逻辑全说明.md
 docs/position-flow-report.md
