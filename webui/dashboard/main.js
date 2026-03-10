@@ -549,6 +549,51 @@ function renderKline(payload, flow) {
     }
   });
 
+  function measurePriceTagColumn(lines, compactViewport) {
+    const validLines = Array.isArray(lines)
+      ? lines.filter((line) => Number.isFinite(Number(line && line.yAxis)))
+      : [];
+    const dense = validLines.length >= 4;
+    const fontSize = dense ? 10 : 11;
+    const canvas = measurePriceTagColumn.canvas || document.createElement("canvas");
+    if (!measurePriceTagColumn.canvas) {
+      measurePriceTagColumn.canvas = canvas;
+    }
+    const ctx = canvas.getContext("2d");
+    let maxTextWidth = 0;
+    if (ctx) {
+      ctx.font = `${fontSize}px "IBM Plex Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif`;
+      validLines.forEach((line) => {
+        const text = `${String(line.name || "价格")} ${Number(line.yAxis).toFixed(2)}`;
+        const measured = Number(ctx.measureText(text).width || 0);
+        if (measured > maxTextWidth) {
+          maxTextWidth = measured;
+        }
+      });
+    }
+    if (maxTextWidth <= 0) {
+      validLines.forEach((line) => {
+        const text = `${String(line.name || "价格")} ${Number(line.yAxis).toFixed(2)}`;
+        const fallback = text.length * (dense ? 5.2 : 5.7);
+        if (fallback > maxTextWidth) {
+          maxTextWidth = fallback;
+        }
+      });
+    }
+    const minWidth = compactViewport ? 86 : 96;
+    const maxWidth = compactViewport ? 122 : 144;
+    const horizontalPadding = dense ? 16 : 20;
+    const tagColumnWidth = Math.max(minWidth, Math.min(maxWidth, Math.ceil(maxTextWidth + horizontalPadding)));
+    const tagColumnRight = compactViewport ? 8 : 10;
+    const klineGridRight = tagColumnWidth + tagColumnRight + 8;
+    return { tagColumnWidth, tagColumnRight, klineGridRight, dense };
+  }
+
+  const compactViewport = window.matchMedia && window.matchMedia("(max-width: 1080px)").matches;
+  const tagMetrics = measurePriceTagColumn(lineData, compactViewport);
+  els.klinePriceTags.style.width = `${tagMetrics.tagColumnWidth}px`;
+  els.klinePriceTags.style.right = `${tagMetrics.tagColumnRight}px`;
+
   const signalData = markerData.map((item) => ({
     name: item.name,
     value: [item.coord[0], item.coord[1]],
@@ -589,20 +634,40 @@ function renderKline(payload, flow) {
     });
 
     tagItems.sort((a, b) => a.pixel - b.pixel);
-    const minGap = 28;
+    const availableHeight = Math.max(1, maxY - minY);
+    const desiredGap = tagItems.length >= 4 ? 24 : 28;
+    let minGap = desiredGap;
+    if (tagItems.length > 1) {
+      const maxGapWithoutOverflow = Math.floor(availableHeight / (tagItems.length - 1));
+      minGap = Math.max(18, Math.min(desiredGap, maxGapWithoutOverflow));
+    }
     for (let i = 1; i < tagItems.length; i += 1) {
-      if (tagItems[i].pixel-tagItems[i - 1].pixel < minGap) {
+      if (tagItems[i].pixel - tagItems[i - 1].pixel < minGap) {
         tagItems[i].pixel = tagItems[i - 1].pixel + minGap;
       }
     }
     if (tagItems.length > 0 && tagItems[tagItems.length - 1].pixel > maxY) {
-      const overflow = tagItems[tagItems.length - 1].pixel - maxY;
-      for (let i = 0; i < tagItems.length; i += 1) {
-        tagItems[i].pixel = Math.max(minY, tagItems[i].pixel - overflow);
+      tagItems[tagItems.length - 1].pixel = maxY;
+      for (let i = tagItems.length - 2; i >= 0; i -= 1) {
+        const allowed = tagItems[i + 1].pixel - minGap;
+        if (tagItems[i].pixel > allowed) {
+          tagItems[i].pixel = allowed;
+        }
+      }
+    }
+    if (tagItems.length > 0 && tagItems[0].pixel < minY) {
+      tagItems[0].pixel = minY;
+      for (let i = 1; i < tagItems.length; i += 1) {
+        const allowed = tagItems[i - 1].pixel + minGap;
+        if (tagItems[i].pixel < allowed) {
+          tagItems[i].pixel = allowed;
+        }
       }
     }
 
-    const tags = tagItems.map((item) => `<div class="price-tag" style="top:${item.pixel}px;background:${escapeHtml(item.color)}">${escapeHtml(item.name)} ${item.y.toFixed(2)}</div>`);
+    const denseClass = tagMetrics.dense || tagItems.length >= 4 ? " dense" : "";
+
+    const tags = tagItems.map((item) => `<div class="price-tag${denseClass}" style="top:${item.pixel}px;background:${escapeHtml(item.color)}">${escapeHtml(item.name)} ${item.y.toFixed(2)}</div>`);
     els.klinePriceTags.innerHTML = tags.join("");
   }
 
@@ -621,7 +686,7 @@ function renderKline(payload, flow) {
 
   c.setOption({
     backgroundColor: "transparent",
-    grid: { left: 45, right: 168, top: 28, bottom: 30 },
+    grid: { left: 45, right: tagMetrics.klineGridRight, top: 28, bottom: 30 },
     tooltip: {
       trigger: "item",
       axisPointer: { type: "cross" },
