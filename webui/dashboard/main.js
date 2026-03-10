@@ -80,6 +80,48 @@ function fmtConsensusPassed(value) {
   return "--";
 }
 
+function decisionBoolClass(value) {
+  if (value === true) {
+    return "pass";
+  }
+  if (value === false) {
+    return "fail";
+  }
+  return "neutral";
+}
+
+function decisionActionClass(action) {
+  const text = String(action || "").trim().toUpperCase();
+  if (!text) {
+    return "neutral";
+  }
+  if (["ALLOW", "OPEN", "ENTRY", "BUY", "LONG"].includes(text)) {
+    return "pass";
+  }
+  if (["VETO", "TIGHTEN", "WAIT", "SKIP", "REJECT", "BLOCK"].includes(text)) {
+    return "fail";
+  }
+  return "neutral";
+}
+
+function decisionMetricProgress(value, threshold, useAbs) {
+  const current = Number(value);
+  const limit = Number(threshold);
+  if (!Number.isFinite(current) || !Number.isFinite(limit) || limit <= 0) {
+    return null;
+  }
+  const base = useAbs ? Math.abs(current) : current;
+  const ratio = (base / limit) * 100;
+  if (!Number.isFinite(ratio)) {
+    return null;
+  }
+  const normalized = Math.max(0, ratio);
+  return {
+    ratio: normalized,
+    width: Math.max(0, Math.min(100, normalized))
+  };
+}
+
 function escapeHtml(input) {
   return String(input || "")
     .replaceAll("&", "&amp;")
@@ -711,25 +753,66 @@ function renderDecisionHistoryRows(items, selectedSnapshotID) {
 
 function renderDecisionDetail(detail, fallbackMessage) {
   if (!detail) {
-    els.decisionDetail.innerHTML = `<div>${escapeHtml(fallbackMessage || "暂无详情")}</div>`;
+    els.decisionDetail.innerHTML = `<div class="decision-empty">${escapeHtml(fallbackMessage || "暂无详情")}</div>`;
     return;
   }
+  const snapshotID = Number(detail.snapshot_id || 0);
+  const action = String(detail.action || "--").toUpperCase();
+  const tradeable = Boolean(detail.tradeable);
+  const overallPassed = detail.consensus_passed;
+  const scorePassed = detail.consensus_score_passed;
+  const confidencePassed = detail.consensus_confidence_passed;
+  const scoreProgress = decisionMetricProgress(detail.consensus_score, detail.consensus_score_threshold, true);
+  const confidenceProgress = decisionMetricProgress(detail.consensus_confidence, detail.consensus_confidence_threshold, false);
   const reportMarkdown = cleanDecisionMarkdown(detail.report_markdown || "");
-  els.decisionDetail.innerHTML = [
-    `<div><strong>Snapshot:</strong> ${Number(detail.snapshot_id || 0)}</div>`,
-    `<div><strong>Action:</strong> ${escapeHtml(detail.action || "--")}</div>`,
-    `<div><strong>Reason:</strong> ${escapeHtml(detail.reason || "--")}</div>`,
-    `<div><strong>共识总分:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_score))}</div>`,
-    `<div><strong>总分阈值:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_score_threshold))}</div>`,
-    `<div><strong>总分是否达标:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_score_passed))}</div>`,
-    `<div><strong>置信度:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_confidence))}</div>`,
-    `<div><strong>置信度阈值:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_confidence_threshold))}</div>`,
-    `<div><strong>置信度是否达标:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_confidence_passed))}</div>`,
-    `<div><strong>共识总判定:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_passed))}</div>`,
-    `<div><strong>Tradeable:</strong> ${detail.tradeable ? "YES" : "NO"}</div>`,
-    `<div><strong>Decision Link:</strong> <a href="${escapeHtml(detail.decision_view_url || "/decision-view/")}" target="_blank" rel="noopener noreferrer">Open</a></div>`,
-    `<pre>${escapeHtml(reportMarkdown)}</pre>`
-  ].join("");
+  els.decisionDetail.innerHTML = `
+    <div class="decision-card">
+      <div class="decision-top">
+        <div>
+          <div class="decision-snapshot">Snapshot <span>#${snapshotID}</span></div>
+          <div class="decision-chip-row">
+            <span class="decision-chip ${decisionActionClass(action)}">${escapeHtml(action)}</span>
+            <span class="decision-chip ${tradeable ? "pass" : "fail"}">Tradeable ${tradeable ? "YES" : "NO"}</span>
+            <span class="decision-chip ${decisionBoolClass(overallPassed)}">共识 ${escapeHtml(fmtConsensusPassed(overallPassed))}</span>
+          </div>
+        </div>
+        <a class="decision-link-btn" href="${escapeHtml(detail.decision_view_url || "/decision-view/")}" target="_blank" rel="noopener noreferrer">Decision View</a>
+      </div>
+      <div class="decision-reason-line">
+        <span>触发原因</span>
+        <strong>${escapeHtml(detail.reason || "--")}</strong>
+      </div>
+      <div class="decision-kpi-grid">
+        <div class="decision-kpi-card">
+          <div class="decision-kpi-head">
+            <span>共识总分</span>
+            <span class="decision-chip ${decisionBoolClass(scorePassed)}">${escapeHtml(fmtConsensusPassed(scorePassed))}</span>
+          </div>
+          <div class="decision-kpi-value">${escapeHtml(fmtConsensusValue(detail.consensus_score))}</div>
+          <div class="decision-kpi-sub">阈值 ${escapeHtml(fmtConsensusValue(detail.consensus_score_threshold))}</div>
+          <div class="decision-meter"><span class="decision-meter-fill ${decisionBoolClass(scorePassed)}" style="width:${scoreProgress ? scoreProgress.width.toFixed(1) : "0.0"}%"></span></div>
+          <div class="decision-meter-meta">达成率 ${scoreProgress ? `${Math.round(scoreProgress.ratio)}%` : "--"}</div>
+        </div>
+        <div class="decision-kpi-card">
+          <div class="decision-kpi-head">
+            <span>置信度</span>
+            <span class="decision-chip ${decisionBoolClass(confidencePassed)}">${escapeHtml(fmtConsensusPassed(confidencePassed))}</span>
+          </div>
+          <div class="decision-kpi-value">${escapeHtml(fmtConsensusValue(detail.consensus_confidence))}</div>
+          <div class="decision-kpi-sub">阈值 ${escapeHtml(fmtConsensusValue(detail.consensus_confidence_threshold))}</div>
+          <div class="decision-meter"><span class="decision-meter-fill ${decisionBoolClass(confidencePassed)}" style="width:${confidenceProgress ? confidenceProgress.width.toFixed(1) : "0.0"}%"></span></div>
+          <div class="decision-meter-meta">达成率 ${confidenceProgress ? `${Math.round(confidenceProgress.ratio)}%` : "--"}</div>
+        </div>
+      </div>
+      <div class="decision-check-row">
+        <span class="decision-chip ${decisionBoolClass(scorePassed)}">总分 ${escapeHtml(fmtConsensusPassed(scorePassed))}</span>
+        <span class="decision-chip ${decisionBoolClass(confidencePassed)}">置信度 ${escapeHtml(fmtConsensusPassed(confidencePassed))}</span>
+        <span class="decision-chip ${decisionBoolClass(overallPassed)}">总判定 ${escapeHtml(fmtConsensusPassed(overallPassed))}</span>
+      </div>
+      <div class="decision-report-title">决策报告</div>
+      <pre class="decision-report-body">${escapeHtml(reportMarkdown)}</pre>
+    </div>
+  `;
 }
 
 function cleanDecisionMarkdown(input) {

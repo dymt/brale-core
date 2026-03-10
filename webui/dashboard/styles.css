@@ -565,17 +565,214 @@ tbody tr:hover {
 
 .decision-detail {
   margin-top: 10px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(1, 8, 12, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 13px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(5, 14, 21, 0.86), rgba(2, 10, 16, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--txt-2);
 }
 
-.decision-detail pre {
+.decision-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+  color: var(--txt-2);
+}
+
+.decision-card {
+  display: grid;
+  gap: 10px;
+}
+
+.decision-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.decision-snapshot {
+  font-size: 12px;
+  color: var(--txt-2);
+}
+
+.decision-snapshot span {
+  margin-left: 4px;
+  color: #d9e8fb;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.decision-chip-row,
+.decision-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.decision-chip-row {
+  margin-top: 8px;
+}
+
+.decision-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: #d2e2f5;
+}
+
+.decision-chip.pass {
+  border-color: rgba(58, 214, 163, 0.5);
+  color: #87f1cf;
+  background: rgba(58, 214, 163, 0.12);
+}
+
+.decision-chip.fail {
+  border-color: rgba(255, 106, 120, 0.55);
+  color: #ffb8bf;
+  background: rgba(255, 106, 120, 0.12);
+}
+
+.decision-chip.neutral {
+  border-color: rgba(246, 189, 67, 0.55);
+  color: #f8d997;
+  background: rgba(246, 189, 67, 0.12);
+}
+
+.decision-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border-radius: 9px;
+  border: 1px solid rgba(58, 214, 163, 0.45);
+  background: rgba(58, 214, 163, 0.1);
+  color: #8cf3d4;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 12px;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.decision-link-btn:hover {
+  background: rgba(58, 214, 163, 0.16);
+  border-color: rgba(58, 214, 163, 0.65);
+}
+
+.decision-reason-line {
+  display: grid;
+  gap: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 8px 10px;
+}
+
+.decision-reason-line span {
+  font-size: 11px;
+  color: var(--txt-2);
+}
+
+.decision-reason-line strong {
+  font-size: 13px;
+  color: #dfecfb;
+}
+
+.decision-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.decision-kpi-card {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
+.decision-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: #c5d8ee;
+}
+
+.decision-kpi-value {
+  margin-top: 8px;
+  font-size: 22px;
+  line-height: 1;
+  color: #edf5ff;
+  font-weight: 700;
+}
+
+.decision-kpi-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--txt-2);
+}
+
+.decision-meter {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.decision-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(246, 189, 67, 0.8);
+}
+
+.decision-meter-fill.pass {
+  background: rgba(58, 214, 163, 0.9);
+}
+
+.decision-meter-fill.fail {
+  background: rgba(255, 106, 120, 0.9);
+}
+
+.decision-meter-fill.neutral {
+  background: rgba(246, 189, 67, 0.86);
+}
+
+.decision-meter-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--txt-2);
+}
+
+.decision-report-title {
+  margin-top: 2px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c4d8ef;
+}
+
+.decision-report-body {
+  margin: 0;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  color: #b7c8dd;
   white-space: pre-wrap;
-  margin: 8px 0 0;
+  line-height: 1.5;
 }
 
 .positive {
@@ -640,6 +837,19 @@ tbody tr:hover {
   }
 
   .flow-stage-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .decision-link-btn {
+    width: 100%;
+  }
+
+  .decision-kpi-grid {
     grid-template-columns: 1fr;
   }
 }
