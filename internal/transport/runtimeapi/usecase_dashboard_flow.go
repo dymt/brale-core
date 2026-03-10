@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -31,7 +32,7 @@ func newDashboardFlowUsecase(s *Server) dashboardFlowUsecase {
 	return dashboardFlowUsecase{resolver: s.Resolver, store: s.Store, allowSymbol: s.AllowSymbol}
 }
 
-func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string) (DashboardDecisionFlowResponse, *usecaseError) {
+func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snapshotQuery string) (DashboardDecisionFlowResponse, *usecaseError) {
 	if u.store == nil {
 		return DashboardDecisionFlowResponse{}, &usecaseError{Status: 500, Code: "store_missing", Message: "Store 未配置"}
 	}
@@ -49,6 +50,11 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string) (Dash
 		return DashboardDecisionFlowResponse{}, &usecaseError{Status: 500, Code: "gate_events_failed", Message: "gate 事件读取失败", Details: err.Error()}
 	}
 
+	selectedSnapshotID, hasSelectedSnapshot, parseErr := parseDetailSnapshotQuery(snapshotQuery)
+	if parseErr != nil {
+		return DashboardDecisionFlowResponse{}, &usecaseError{Status: 400, Code: "invalid_snapshot_id", Message: "snapshot_id 非法", Details: parseErr.Error()}
+	}
+
 	pos, isOpen, err := u.store.FindPositionBySymbol(ctx, normalizedSymbol, position.OpenPositionStatuses)
 	if err != nil {
 		return DashboardDecisionFlowResponse{}, &usecaseError{Status: 500, Code: "position_lookup_failed", Message: "持仓查询失败", Details: err.Error()}
@@ -56,6 +62,18 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string) (Dash
 
 	anchor := resolveDashboardFlowAnchor(pos, isOpen, gates)
 	gateway := selectLatestFlowGate(gates)
+	if hasSelectedSnapshot {
+		gateway = selectAnchorGate(selectedSnapshotID, gates)
+		if gateway == nil {
+			return DashboardDecisionFlowResponse{}, &usecaseError{Status: 404, Code: "snapshot_not_found", Message: "snapshot_id 对应决策不存在", Details: selectedSnapshotID}
+		}
+		anchor = DashboardFlowAnchor{
+			Type:       "selected_round",
+			SnapshotID: selectedSnapshotID,
+			Confidence: "high",
+			Reason:     "selected_by_snapshot_id",
+		}
+	}
 
 	providers := []store.ProviderEventRecord{}
 	agents := []store.AgentEventRecord{}
@@ -71,7 +89,7 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string) (Dash
 	}
 
 	tighten := resolveDashboardTightenInfo(gateway)
-	if tighten == nil && isOpen {
+	if tighten == nil && isOpen && !hasSelectedSnapshot {
 		tighten = resolveDashboardTightenFromRiskHistory(ctx, u.store, pos)
 	}
 
@@ -155,6 +173,7 @@ func extractTraceFields(raw json.RawMessage) []DashboardFlowValueField {
 	for key := range obj {
 		keys = append(keys, key)
 	}
+	sort.Strings(keys)
 	ordered := make([]DashboardFlowValueField, 0, len(keys))
 	for _, key := range keys {
 		lk := strings.ToLower(strings.TrimSpace(key))
@@ -221,6 +240,7 @@ func extractGateRules(raw json.RawMessage) []DashboardFlowValueField {
 	for key := range obj {
 		keys = append(keys, key)
 	}
+	sort.Strings(keys)
 	out := make([]DashboardFlowValueField, 0, len(keys))
 	for _, key := range keys {
 		field, ok := traceFieldFromValue(key, obj[key])

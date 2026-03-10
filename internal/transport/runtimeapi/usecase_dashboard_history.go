@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"brale-core/internal/decision/decisionfmt"
+	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/runtime"
 	"brale-core/internal/store"
 )
@@ -95,11 +96,14 @@ func mapHistoryItems(gates []store.GateEventRecord) []DashboardDecisionHistoryIt
 		if gate.Timestamp > 0 {
 			at = time.Unix(gate.Timestamp, 0).UTC().Format(time.RFC3339)
 		}
+		consensus := extractConsensusMetrics(json.RawMessage(gate.DerivedJSON))
 		out = append(out, DashboardDecisionHistoryItem{
-			SnapshotID: gate.SnapshotID,
-			Action:     strings.ToUpper(strings.TrimSpace(gate.DecisionAction)),
-			Reason:     strings.TrimSpace(gate.GateReason),
-			At:         at,
+			SnapshotID:          gate.SnapshotID,
+			Action:              strings.ToUpper(strings.TrimSpace(gate.DecisionAction)),
+			Reason:              strings.TrimSpace(gate.GateReason),
+			At:                  at,
+			ConsensusScore:      consensus.Score,
+			ConsensusConfidence: consensus.Confidence,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -167,18 +171,123 @@ func buildDecisionDetail(ctx context.Context, st store.Store, symbol string, sna
 	for _, stage := range report.Agents {
 		agentSummaries = append(agentSummaries, strings.TrimSpace(stage.Role+": "+stage.Summary))
 	}
+	consensus := extractConsensusMetrics(json.RawMessage(selected.DerivedJSON))
 
 	detail := &DashboardDecisionDetail{
-		SnapshotID:      selected.SnapshotID,
-		Action:          strings.ToUpper(strings.TrimSpace(selected.DecisionAction)),
-		Reason:          strings.TrimSpace(selected.GateReason),
-		Tradeable:       selected.GlobalTradeable,
-		Providers:       providerSummaries,
-		Agents:          agentSummaries,
-		ReportMarkdown:  prependDecisionHeader("🚦 决策报告", formatter.RenderDecisionMarkdown(report)),
-		DecisionViewURL: fmt.Sprintf("/decision-view/?symbol=%s&snapshot_id=%d", symbol, snapshotID),
+		SnapshotID:                   selected.SnapshotID,
+		Action:                       strings.ToUpper(strings.TrimSpace(selected.DecisionAction)),
+		Reason:                       strings.TrimSpace(selected.GateReason),
+		Tradeable:                    selected.GlobalTradeable,
+		ConsensusScore:               consensus.Score,
+		ConsensusConfidence:          consensus.Confidence,
+		ConsensusScoreThreshold:      consensus.ScoreThreshold,
+		ConsensusConfidenceThreshold: consensus.ConfidenceThreshold,
+		ConsensusScorePassed:         consensus.ScorePassed,
+		ConsensusConfidencePassed:    consensus.ConfidencePassed,
+		ConsensusPassed:              consensus.Passed,
+		Providers:                    providerSummaries,
+		Agents:                       agentSummaries,
+		ReportMarkdown:               prependDecisionHeader("🚦 决策报告", formatter.RenderDecisionMarkdown(report)),
+		DecisionViewURL:              fmt.Sprintf("/decision-view/?symbol=%s&snapshot_id=%d", symbol, snapshotID),
 	}
 	return detail, nil
+}
+
+type dashboardConsensusMetrics struct {
+	Score               *float64
+	Confidence          *float64
+	ScoreThreshold      *float64
+	ConfidenceThreshold *float64
+	ScorePassed         *bool
+	ConfidencePassed    *bool
+	Passed              *bool
+}
+
+func extractConsensusMetrics(raw json.RawMessage) dashboardConsensusMetrics {
+	if len(raw) == 0 {
+		return dashboardConsensusMetrics{}
+	}
+	var derived map[string]any
+	if err := json.Unmarshal(raw, &derived); err != nil {
+		return dashboardConsensusMetrics{}
+	}
+	consensusRaw, ok := derived["direction_consensus"]
+	if !ok {
+		return dashboardConsensusMetrics{}
+	}
+	consensus, ok := consensusRaw.(map[string]any)
+	if !ok || len(consensus) == 0 {
+		return dashboardConsensusMetrics{}
+	}
+	out := dashboardConsensusMetrics{}
+	if score, ok := parseutil.FloatOK(consensus["score"]); ok {
+		out.Score = &score
+	}
+	if confidence, ok := parseutil.FloatOK(consensus["confidence"]); ok {
+		out.Confidence = &confidence
+	}
+	if scoreThreshold, ok := parseutil.FloatOK(consensus["score_threshold"]); ok {
+		out.ScoreThreshold = &scoreThreshold
+	}
+	if confidenceThreshold, ok := parseutil.FloatOK(consensus["confidence_threshold"]); ok {
+		out.ConfidenceThreshold = &confidenceThreshold
+	}
+	if scorePassed, ok := parseConsensusBool(consensus["score_passed"]); ok {
+		out.ScorePassed = boolPtr(scorePassed)
+	} else if out.Score != nil && out.ScoreThreshold != nil {
+		out.ScorePassed = boolPtr(absFloat(*out.Score) >= *out.ScoreThreshold)
+	}
+	if confidencePassed, ok := parseConsensusBool(consensus["confidence_passed"]); ok {
+		out.ConfidencePassed = boolPtr(confidencePassed)
+	} else if out.Confidence != nil && out.ConfidenceThreshold != nil {
+		out.ConfidencePassed = boolPtr(*out.Confidence >= *out.ConfidenceThreshold)
+	}
+	if passed, ok := parseConsensusBool(consensus["passed"]); ok {
+		out.Passed = boolPtr(passed)
+	} else if out.ScorePassed != nil && out.ConfidencePassed != nil {
+		out.Passed = boolPtr(*out.ScorePassed && *out.ConfidencePassed)
+	}
+	return out
+}
+
+func parseConsensusBool(value any) (bool, bool) {
+	switch raw := value.(type) {
+	case bool:
+		return raw, true
+	case string:
+		trimmed := strings.TrimSpace(strings.ToLower(raw))
+		if trimmed == "true" {
+			return true, true
+		}
+		if trimmed == "false" {
+			return false, true
+		}
+		return false, false
+	case float64:
+		return raw != 0, true
+	case float32:
+		return raw != 0, true
+	case int:
+		return raw != 0, true
+	case int64:
+		return raw != 0, true
+	case uint64:
+		return raw != 0, true
+	default:
+		return false, false
+	}
+}
+
+func boolPtr(value bool) *bool {
+	out := value
+	return &out
+}
+
+func absFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func mapDecisionProviders(records []store.ProviderEventRecord) []decisionfmt.ProviderEvent {

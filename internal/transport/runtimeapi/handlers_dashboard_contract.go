@@ -84,7 +84,7 @@ func (s *Server) handleDashboardDecisionFlow(w http.ResponseWriter, r *http.Requ
 		writeError(ctx, w, http.StatusBadRequest, "symbol_required", "symbol 不能为空", nil)
 		return
 	}
-	resp, useErr := newDashboardFlowUsecase(s).build(ctx, symbol)
+	resp, useErr := newDashboardFlowUsecase(s).build(ctx, symbol, r.URL.Query().Get("snapshot_id"))
 	if useErr != nil {
 		writeError(ctx, w, useErr.Status, useErr.Code, useErr.Message, useErr.Details)
 		return

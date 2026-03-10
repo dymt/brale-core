@@ -15,6 +15,8 @@ const state = {
   lastFlow: null,
   lastHistoryItems: [],
   lastDecisionItems: [],
+  selectedDecisionSnapshotID: 0,
+  selectedDecisionSnapshotSymbol: "",
   lastPositionHistory: [],
   historyRequestSeq: 0,
   refreshing: false,
@@ -58,6 +60,24 @@ function fmtUsd(value) {
   }
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+}
+
+function fmtConsensusValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "--";
+  }
+  return parsed.toFixed(3);
+}
+
+function fmtConsensusPassed(value) {
+  if (value === true) {
+    return "达标";
+  }
+  if (value === false) {
+    return "未达标";
+  }
+  return "--";
 }
 
 function escapeHtml(input) {
@@ -334,7 +354,7 @@ function renderFlow(flow) {
   const anchor = flow && flow.anchor ? flow.anchor : {};
   const intervalText = Array.isArray(flow && flow.intervals) && flow.intervals.length > 0 ? flow.intervals.join(" / ") : "--";
   els.flowMeta.innerHTML = [
-    `<div class="flow-headline"><strong>${escapeHtml(state.symbol || "--")}</strong> latest decision flow</div>`,
+    `<div class="flow-headline"><strong>${escapeHtml(state.symbol || "--")}</strong> decision flow</div>`,
     `<div class="flow-brief"><strong>Anchor:</strong> ${escapeHtml(String(anchor.type || "--"))} #${Number(anchor.snapshot_id || 0)} | <strong>Intervals:</strong> ${escapeHtml(intervalText)} | <strong>Gate:</strong> ${escapeHtml(gate && gate.action ? gate.action : "--")}</div>`
   ].join("");
 }
@@ -664,7 +684,7 @@ function renderPositionHistory(trades) {
 
 function renderDecisionHistoryRows(items, selectedSnapshotID) {
   if (!Array.isArray(items) || items.length === 0) {
-    els.decisionHistoryBody.innerHTML = `<tr><td colspan="4">暂无历史决策</td></tr>`;
+    els.decisionHistoryBody.innerHTML = `<tr><td colspan="6">暂无历史决策</td></tr>`;
     return;
   }
   els.decisionHistoryBody.innerHTML = items
@@ -674,6 +694,8 @@ function renderDecisionHistoryRows(items, selectedSnapshotID) {
         <td>${escapeHtml(item.at || "--")}</td>
         <td>${escapeHtml(item.action || "--")}</td>
         <td>${escapeHtml(item.reason || "--")}</td>
+        <td>${escapeHtml(fmtConsensusValue(item.consensus_score))}</td>
+        <td>${escapeHtml(fmtConsensusValue(item.consensus_confidence))}</td>
         <td>${Number(item.snapshot_id || 0)}</td>
       </tr>`;
     })
@@ -697,6 +719,13 @@ function renderDecisionDetail(detail, fallbackMessage) {
     `<div><strong>Snapshot:</strong> ${Number(detail.snapshot_id || 0)}</div>`,
     `<div><strong>Action:</strong> ${escapeHtml(detail.action || "--")}</div>`,
     `<div><strong>Reason:</strong> ${escapeHtml(detail.reason || "--")}</div>`,
+    `<div><strong>共识总分:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_score))}</div>`,
+    `<div><strong>总分阈值:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_score_threshold))}</div>`,
+    `<div><strong>总分是否达标:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_score_passed))}</div>`,
+    `<div><strong>置信度:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_confidence))}</div>`,
+    `<div><strong>置信度阈值:</strong> ${escapeHtml(fmtConsensusValue(detail.consensus_confidence_threshold))}</div>`,
+    `<div><strong>置信度是否达标:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_confidence_passed))}</div>`,
+    `<div><strong>共识总判定:</strong> ${escapeHtml(fmtConsensusPassed(detail.consensus_passed))}</div>`,
     `<div><strong>Tradeable:</strong> ${detail.tradeable ? "YES" : "NO"}</div>`,
     `<div><strong>Decision Link:</strong> <a href="${escapeHtml(detail.decision_view_url || "/decision-view/")}" target="_blank" rel="noopener noreferrer">Open</a></div>`,
     `<pre>${escapeHtml(reportMarkdown)}</pre>`
@@ -774,12 +803,12 @@ async function refreshOverview() {
   renderAccountSummary(accountSummary || null);
 }
 
-async function refreshFlow() {
+async function refreshFlow(snapshotID) {
   if (!state.symbol) {
     renderFlow(null);
     return null;
   }
-  const data = await fetchJSON(`${apiBase}/decision_flow`, { symbol: state.symbol });
+  const data = await fetchJSON(`${apiBase}/decision_flow`, { symbol: state.symbol, snapshot_id: snapshotID || undefined });
   const intervals = Array.isArray(data && data.flow ? data.flow.intervals : [])
     ? data.flow.intervals.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
     : [];
@@ -833,15 +862,22 @@ async function refreshPositionHistory() {
 async function refreshDecisionHistory(snapshotID) {
   if (!state.symbol) {
     state.lastDecisionItems = [];
+    state.selectedDecisionSnapshotID = 0;
+    state.selectedDecisionSnapshotSymbol = "";
     renderDecisionHistoryRows([], 0);
     renderDecisionDetail(null, "暂无历史决策");
+    const flow = await refreshFlow();
+    await refreshKline(flow);
     return;
+  }
+  if (state.selectedDecisionSnapshotSymbol !== state.symbol) {
+    state.selectedDecisionSnapshotID = 0;
+    state.selectedDecisionSnapshotSymbol = state.symbol;
   }
   const requestSeq = ++state.historyRequestSeq;
   const data = await fetchJSON(`${apiBase}/decision_history`, {
     symbol: state.symbol,
-    limit: 20,
-    snapshot_id: snapshotID || undefined
+    limit: 20
   });
   if (requestSeq !== state.historyRequestSeq) {
     return;
@@ -849,12 +885,14 @@ async function refreshDecisionHistory(snapshotID) {
   const items = Array.isArray(data.items) ? data.items : [];
   state.lastDecisionItems = items;
   state.lastHistoryItems = items;
-  const selectedSnapshotID = snapshotID ? Number(snapshotID) : Number(items[0] && items[0].snapshot_id ? items[0].snapshot_id : 0);
+  const preferredSnapshotID = Number(snapshotID || state.selectedDecisionSnapshotID || 0);
+  const matchedSnapshot = items.find((item) => Number(item.snapshot_id || 0) === preferredSnapshotID);
+  const selectedSnapshotID = matchedSnapshot
+    ? preferredSnapshotID
+    : Number(items[0] && items[0].snapshot_id ? items[0].snapshot_id : 0);
+  state.selectedDecisionSnapshotID = selectedSnapshotID;
+  state.selectedDecisionSnapshotSymbol = state.symbol;
   renderDecisionHistoryRows(items, selectedSnapshotID);
-  if (data.detail) {
-    renderDecisionDetail(data.detail, data.message || "");
-    return;
-  }
   if (selectedSnapshotID > 0) {
     const detailData = await fetchJSON(`${apiBase}/decision_history`, {
       symbol: state.symbol,
@@ -865,9 +903,19 @@ async function refreshDecisionHistory(snapshotID) {
       return;
     }
     renderDecisionDetail(detailData.detail || null, detailData.message || "");
+    const flow = await refreshFlow(selectedSnapshotID);
+    if (requestSeq !== state.historyRequestSeq) {
+      return;
+    }
+    await refreshKline(flow);
     return;
   }
   renderDecisionDetail(null, data.message || "暂无历史决策");
+  const flow = await refreshFlow();
+  if (requestSeq !== state.historyRequestSeq) {
+    return;
+  }
+  await refreshKline(flow);
 }
 
 async function refreshStatus() {
@@ -884,8 +932,8 @@ async function refreshStatus() {
 }
 
 async function refreshSymbolScope() {
-  const flow = await refreshFlow();
-  await Promise.all([refreshKline(flow), refreshDecisionHistory(), refreshPositionHistory()]);
+  await refreshPositionHistory();
+  await refreshDecisionHistory(state.selectedDecisionSnapshotID || undefined);
 }
 
 async function runRefreshCycle(mode) {
@@ -922,6 +970,8 @@ async function bootstrap() {
 
   els.symbolSelect.addEventListener("change", async () => {
     state.symbol = els.symbolSelect.value;
+    state.selectedDecisionSnapshotID = 0;
+    state.selectedDecisionSnapshotSymbol = state.symbol;
     await runRefreshCycle("scope");
   });
 

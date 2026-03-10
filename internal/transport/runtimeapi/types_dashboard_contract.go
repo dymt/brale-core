@@ -175,19 +175,28 @@ type DashboardDecisionHistoryResponse struct {
 }
 
 type DashboardDecisionHistoryItem struct {
-	SnapshotID uint   `json:"snapshot_id"`
-	Action     string `json:"action"`
-	Reason     string `json:"reason"`
-	At         string `json:"at"`
+	SnapshotID          uint     `json:"snapshot_id"`
+	Action              string   `json:"action"`
+	Reason              string   `json:"reason"`
+	At                  string   `json:"at"`
+	ConsensusScore      *float64 `json:"consensus_score,omitempty"`
+	ConsensusConfidence *float64 `json:"consensus_confidence,omitempty"`
 }
 
 type DashboardDecisionDetail struct {
-	SnapshotID      uint     `json:"snapshot_id"`
-	Action          string   `json:"action"`
-	Reason          string   `json:"reason"`
-	Tradeable       bool     `json:"tradeable"`
-	Providers       []string `json:"providers"`
-	Agents          []string `json:"agents"`
-	ReportMarkdown  string   `json:"report_markdown"`
-	DecisionViewURL string   `json:"decision_view_url"`
+	SnapshotID                   uint     `json:"snapshot_id"`
+	Action                       string   `json:"action"`
+	Reason                       string   `json:"reason"`
+	Tradeable                    bool     `json:"tradeable"`
+	ConsensusScore               *float64 `json:"consensus_score,omitempty"`
+	ConsensusConfidence          *float64 `json:"consensus_confidence,omitempty"`
+	ConsensusScoreThreshold      *float64 `json:"consensus_score_threshold,omitempty"`
+	ConsensusConfidenceThreshold *float64 `json:"consensus_confidence_threshold,omitempty"`
+	ConsensusScorePassed         *bool    `json:"consensus_score_passed,omitempty"`
+	ConsensusConfidencePassed    *bool    `json:"consensus_confidence_passed,omitempty"`
+	ConsensusPassed              *bool    `json:"consensus_passed,omitempty"`
+	Providers                    []string `json:"providers"`
+	Agents                       []string `json:"agents"`
+	ReportMarkdown               string   `json:"report_markdown"`
+	DecisionViewURL              string   `json:"decision_view_url"`
 }
