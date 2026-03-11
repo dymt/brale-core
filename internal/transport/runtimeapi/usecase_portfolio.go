@@ -23,6 +23,7 @@ type portfolioUsecase struct {
 
 type portfolioStore interface {
 	FindPositionBySymbol(ctx context.Context, symbol string, statuses []string) (store.PositionRecord, bool, error)
+	ListRiskPlanHistory(ctx context.Context, positionID string, limit int) ([]store.RiskPlanHistoryRecord, error)
 }
 
 const (
@@ -32,7 +33,8 @@ const (
 	dashboardPnLTotalSourceTotalProfitAbs    = "total_profit_abs"
 	dashboardPnLTotalSourceComponents        = "realized_plus_unrealized"
 
-	dashboardPnLDriftThreshold = 0.01
+	dashboardPnLDriftThreshold     = 0.01
+	dashboardRiskPlanTimelineLimit = 6
 )
 
 type dashboardPnLProvenance struct {
@@ -113,7 +115,7 @@ func (u portfolioUsecase) buildPositionStatus(ctx context.Context) ([]PositionSt
 		currentPrice := float64(tr.CurrentRate)
 		pnl, _ := resolveDashboardPnLFromTrade(tr)
 		openedAt, durationMin, durationSec := positionStatusTiming(int64(tr.OpenFillTimestamp))
-		stopLoss, takeProfits, _ := u.lookupRiskLevels(ctx, symbol)
+		riskState := u.lookupRiskState(ctx, symbol)
 		side := "long"
 		if tr.IsShort {
 			side = "short"
@@ -132,8 +134,8 @@ func (u portfolioUsecase) buildPositionStatus(ctx context.Context) ([]PositionSt
 			OpenedAt:         openedAt,
 			DurationMin:      durationMin,
 			DurationSec:      durationSec,
-			TakeProfits:      takeProfits,
-			StopLoss:         stopLoss,
+			TakeProfits:      riskState.TakeProfits,
+			StopLoss:         riskState.StopLoss,
 		})
 	}
 	return positions, nil
@@ -190,15 +192,95 @@ func reconcileDashboardPnL(pnl DashboardPnLCard) DashboardReconciliation {
 	}
 }
 
-func (u portfolioUsecase) lookupRiskLevels(ctx context.Context, symbol string) (float64, []float64, bool) {
+type dashboardRiskState struct {
+	StopLoss    float64
+	TakeProfits []float64
+	Timeline    []DashboardRiskPlanTimelineItem
+}
+
+func (u portfolioUsecase) lookupRiskState(ctx context.Context, symbol string) dashboardRiskState {
 	if u.store == nil {
-		return 0, nil, false
+		return dashboardRiskState{}
 	}
 	pos, ok, storeErr := u.store.FindPositionBySymbol(ctx, symbol, position.OpenPositionStatuses)
 	if storeErr != nil || !ok {
-		return 0, nil, false
+		return dashboardRiskState{}
 	}
-	return decodeDashboardRiskLevels(pos.RiskJSON)
+	stopLoss, takeProfits, _ := decodeDashboardRiskLevels(pos.RiskJSON)
+	return dashboardRiskState{
+		StopLoss:    stopLoss,
+		TakeProfits: takeProfits,
+		Timeline:    u.lookupRiskPlanTimeline(ctx, pos),
+	}
+}
+
+func (u portfolioUsecase) lookupRiskPlanTimeline(ctx context.Context, pos store.PositionRecord) []DashboardRiskPlanTimelineItem {
+	if u.store == nil || strings.TrimSpace(pos.PositionID) == "" {
+		return nil
+	}
+	rows, err := u.store.ListRiskPlanHistory(ctx, pos.PositionID, dashboardRiskPlanTimelineLimit)
+	if err != nil || len(rows) == 0 {
+		return nil
+	}
+	type decodedRiskPlanHistory struct {
+		row         store.RiskPlanHistoryRecord
+		stopLoss    float64
+		takeProfits []float64
+	}
+	decoded := make([]decodedRiskPlanHistory, 0, len(rows))
+	for _, row := range rows {
+		plan, err := position.DecodeRiskPlan(row.PayloadJSON)
+		if err != nil {
+			continue
+		}
+		takeProfits := make([]float64, 0, len(plan.TPLevels))
+		for _, level := range plan.TPLevels {
+			takeProfits = append(takeProfits, level.Price)
+		}
+		decoded = append(decoded, decodedRiskPlanHistory{row: row, stopLoss: plan.StopPrice, takeProfits: takeProfits})
+	}
+	items := make([]DashboardRiskPlanTimelineItem, 0, len(decoded))
+	for idx, item := range decoded {
+		createdAt := ""
+		if !item.row.CreatedAt.IsZero() {
+			createdAt = item.row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		prevStop := item.stopLoss
+		prevTPs := append([]float64(nil), item.takeProfits...)
+		if idx+1 < len(decoded) {
+			prevStop = decoded[idx+1].stopLoss
+			prevTPs = append([]float64(nil), decoded[idx+1].takeProfits...)
+		}
+		items = append(items, DashboardRiskPlanTimelineItem{
+			Source:              strings.TrimSpace(item.row.Source),
+			Label:               dashboardRiskPlanLabel(strings.TrimSpace(item.row.Source), item.row.Version),
+			CreatedAt:           createdAt,
+			StopLoss:            item.stopLoss,
+			TakeProfits:         append([]float64(nil), item.takeProfits...),
+			PreviousStopLoss:    prevStop,
+			PreviousTakeProfits: prevTPs,
+		})
+	}
+	return items
+}
+
+func dashboardRiskPlanLabel(source string, version int) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "monitor-tighten":
+		return "收紧止损"
+	case "monitor-breakeven":
+		return "推保护本"
+	case "entry-fill", "open-fill", "init", "init_from_plan":
+		return "初始计划"
+	default:
+		if version > 0 {
+			return fmt.Sprintf("计划 v%d", version)
+		}
+		if source != "" {
+			return source
+		}
+		return "风险计划"
+	}
 }
 
 func decodeDashboardRiskLevels(riskJSON []byte) (float64, []float64, bool) {
@@ -218,7 +300,7 @@ func decodeDashboardRiskLevels(riskJSON []byte) (float64, []float64, bool) {
 
 func (u portfolioUsecase) mapDashboardOverviewSymbol(ctx context.Context, tr execution.Trade) DashboardOverviewSymbol {
 	symbol := normalizeFreqtradePair(tr.Pair)
-	stopLoss, takeProfits, _ := u.lookupRiskLevels(ctx, symbol)
+	riskState := u.lookupRiskState(ctx, symbol)
 	pnl, _ := resolveDashboardPnLFromTrade(tr)
 
 	side := "long"
@@ -229,12 +311,13 @@ func (u portfolioUsecase) mapDashboardOverviewSymbol(ctx context.Context, tr exe
 	return DashboardOverviewSymbol{
 		Symbol: symbol,
 		Position: DashboardPositionCard{
-			Side:         side,
-			Amount:       float64(tr.Amount),
-			EntryPrice:   float64(tr.OpenRate),
-			CurrentPrice: float64(tr.CurrentRate),
-			TakeProfits:  takeProfits,
-			StopLoss:     stopLoss,
+			Side:             side,
+			Amount:           float64(tr.Amount),
+			EntryPrice:       float64(tr.OpenRate),
+			CurrentPrice:     float64(tr.CurrentRate),
+			TakeProfits:      riskState.TakeProfits,
+			StopLoss:         riskState.StopLoss,
+			RiskPlanTimeline: riskState.Timeline,
 		},
 		PnL:            pnl,
 		Reconciliation: reconcileDashboardPnL(pnl),

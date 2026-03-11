@@ -138,16 +138,11 @@ func HasTPHits(plan RiskPlan) bool {
 	return false
 }
 
-func TightenTPLevels(plan RiskPlan, side string, entry float64, prevStop float64, nextStop float64) (RiskPlan, bool) {
+func TightenTPLevels(plan RiskPlan, side string, entry float64, atr float64, tp1ATR float64, tp2ATR float64, minEntryDistancePct float64, minLevelGapPct float64) (RiskPlan, bool) {
 	if len(plan.TPLevels) == 0 {
 		return plan, false
 	}
-	if entry <= 0 || prevStop <= 0 || nextStop <= 0 {
-		return plan, false
-	}
-	prevRisk := math.Abs(entry - prevStop)
-	nextRisk := math.Abs(entry - nextStop)
-	if prevRisk <= 0 || nextRisk <= 0 {
+	if entry <= 0 || atr <= 0 {
 		return plan, false
 	}
 	updated := false
@@ -156,20 +151,17 @@ func TightenTPLevels(plan RiskPlan, side string, entry float64, prevStop float64
 		if level.Price <= 0 {
 			continue
 		}
-		ratio := math.Abs(level.Price-entry) / prevRisk
-		if ratio <= 0 || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+		multiplier := resolveTightenTPATRMultiplier(i, tp1ATR, tp2ATR)
+		if multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
 			continue
 		}
-		nextPrice := computeTPPrice(side, entry, nextRisk, ratio)
+		nextPrice := computeTPPrice(side, entry, atr, multiplier)
 		if nextPrice <= 0 || math.IsNaN(nextPrice) || math.IsInf(nextPrice, 0) {
 			continue
 		}
-		if strings.EqualFold(side, "short") {
-			if nextPrice < level.Price {
-				nextPrice = level.Price
-			}
-		} else if nextPrice > level.Price {
-			nextPrice = level.Price
+		nextPrice = applyTightenTPConstraints(plan, side, entry, i, nextPrice, minEntryDistancePct, minLevelGapPct)
+		if nextPrice <= 0 || math.IsNaN(nextPrice) || math.IsInf(nextPrice, 0) {
+			continue
 		}
 		if nextPrice != level.Price {
 			plan.TPLevels[i].Price = nextPrice
@@ -177,6 +169,61 @@ func TightenTPLevels(plan RiskPlan, side string, entry float64, prevStop float64
 		}
 	}
 	return plan, updated
+}
+
+func resolveTightenTPATRMultiplier(index int, tp1ATR float64, tp2ATR float64) float64 {
+	switch index {
+	case 0:
+		return tp1ATR
+	case 1:
+		return tp2ATR
+	default:
+		return 0
+	}
+}
+
+func applyTightenTPConstraints(plan RiskPlan, side string, entry float64, index int, price float64, minEntryDistancePct float64, minLevelGapPct float64) float64 {
+	if entry <= 0 || price <= 0 {
+		return price
+	}
+	minEntryDistance := 0.0
+	if minEntryDistancePct > 0 {
+		minEntryDistance = entry * minEntryDistancePct
+	}
+	minLevelGap := 0.0
+	if minLevelGapPct > 0 {
+		minLevelGap = entry * minLevelGapPct
+	}
+	if strings.EqualFold(side, "short") {
+		if minEntryDistance > 0 {
+			maxTightened := entry - minEntryDistance
+			if maxTightened > 0 && price > maxTightened {
+				price = maxTightened
+			}
+		}
+		if index > 0 && minLevelGap > 0 {
+			prev := plan.TPLevels[index-1].Price
+			maxTightened := prev - minLevelGap
+			if prev > 0 && maxTightened > 0 && price > maxTightened {
+				price = maxTightened
+			}
+		}
+		return price
+	}
+	if minEntryDistance > 0 {
+		minTightened := entry + minEntryDistance
+		if price < minTightened {
+			price = minTightened
+		}
+	}
+	if index > 0 && minLevelGap > 0 {
+		prev := plan.TPLevels[index-1].Price
+		minTightened := prev + minLevelGap
+		if prev > 0 && price < minTightened {
+			price = minTightened
+		}
+	}
+	return price
 }
 
 func computeTPPrice(side string, entry float64, risk float64, ratio float64) float64 {

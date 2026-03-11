@@ -19,11 +19,13 @@ const state = {
   selectedDecisionSnapshotSymbol: "",
   lastPositionHistory: [],
   historyRequestSeq: 0,
+  reportCollapsed: true,
   refreshing: false,
   pendingRefreshMode: ""
 };
 
 const els = {
+  heroTitle: document.getElementById("hero-title"),
   status: document.getElementById("runtime-status"),
   clock: document.getElementById("clock-chip"),
   symbolSelect: document.getElementById("symbol-select"),
@@ -46,6 +48,36 @@ const els = {
 };
 
 let chart = null;
+let positionHoldTimer = 0;
+let activeHeldPositionCard = null;
+
+function startHeroTitleTyping() {
+  const el = els.heroTitle;
+  if (!el) {
+    return;
+  }
+  const fullText = String(el.getAttribute("data-text") || el.textContent || "");
+  if (!fullText) {
+    return;
+  }
+  el.textContent = "";
+  el.classList.add("typing");
+  let index = 0;
+
+  function tick() {
+    index += 1;
+    el.textContent = fullText.slice(0, index);
+    if (index >= fullText.length) {
+      el.classList.remove("typing");
+      el.classList.add("typed");
+      return;
+    }
+    const delay = fullText[index - 1] === " " ? 36 : 54;
+    window.setTimeout(tick, delay);
+  }
+
+  window.setTimeout(tick, 180);
+}
 
 function fmtNumber(value) {
   if (!Number.isFinite(value)) {
@@ -60,6 +92,24 @@ function fmtUsd(value) {
   }
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+}
+
+function fmtPercent(value, digits) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "--";
+  }
+  const fractionDigits = Number.isFinite(Number(digits)) ? Number(digits) : 2;
+  return `${(parsed * 100).toFixed(fractionDigits)}%`;
+}
+
+function fmtSignedDelta(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "--";
+  }
+  const sign = parsed > 0 ? "+" : "";
+  return `${sign}${parsed.toFixed(4)}`;
 }
 
 function fmtConsensusValue(value) {
@@ -102,6 +152,60 @@ function decisionActionClass(action) {
     return "fail";
   }
   return "neutral";
+}
+
+function actionLabel(action) {
+  const text = String(action || "").trim().toUpperCase();
+  const labels = {
+    ALLOW: "放行",
+    OPEN: "开仓",
+    ENTRY: "入场",
+    LONG: "做多",
+    SHORT: "做空",
+    WAIT: "等待",
+    VETO: "否决",
+    BLOCK: "阻断",
+    TIGHTEN: "收紧",
+    HOLD: "持有",
+    KEEP: "保持"
+  };
+  return labels[text] || (text || "--");
+}
+
+function flowStatusLabel(status) {
+  if (status === "blocked") {
+    return "阻拦";
+  }
+  if (status === "ok") {
+    return "通过";
+  }
+  return "观察中";
+}
+
+function translateSieveReason(reason) {
+  const code = String(reason || "").trim().toUpperCase();
+  const labels = {
+    CROWD_ALIGN_LOW_BLOCK: "拥挤方向与当前机会不匹配，风险筛网拒绝放行。",
+    CROWD_ALIGN_HIGH_BLOCK: "拥挤度过高且与方向一致，系统选择保守处理。",
+    CROWD_ALIGN_LOW_WAIT: "方向尚可，但拥挤确认不足，先等待下一轮确认。",
+    LIQ_LOW_WAIT: "清算强度不足，先不激活更高仓位。",
+    LIQ_HIGH_ALLOW: "清算与力学标签匹配，允许按筛网规则推进。"
+  };
+  return labels[code] || (code ? `筛网命中 ${code}` : "当前未命中额外筛网原因");
+}
+
+function calcRR(entry, target, stop) {
+  const baseEntry = Number(entry);
+  const baseTarget = Number(target);
+  const baseStop = Number(stop);
+  if (!Number.isFinite(baseEntry) || !Number.isFinite(baseTarget) || !Number.isFinite(baseStop)) {
+    return null;
+  }
+  const riskDistance = Math.abs(baseEntry - baseStop);
+  if (!Number.isFinite(riskDistance) || riskDistance <= 0) {
+    return null;
+  }
+  return Math.abs(baseTarget - baseEntry) / riskDistance;
 }
 
 function decisionMetricProgress(value, threshold, useAbs) {
@@ -191,21 +295,121 @@ function renderSymbolSelect() {
   els.symbolSelect.disabled = state.symbols.length === 0;
 }
 
+function fmtShortTime(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "--";
+  }
+  const ts = Date.parse(text);
+  if (!Number.isFinite(ts)) {
+    return text;
+  }
+  return new Date(ts).toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function renderRiskPlanTimeline(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (rows.length === 0) {
+    return "";
+  }
+  return `<div class="position-hold-panel" data-hold-panel>
+    <div class="position-hold-head">
+      <strong>止盈止损变化</strong>
+      <span>按住查看，松手收起</span>
+    </div>
+    <div class="position-hold-timeline">
+      ${rows.map((item, index) => {
+        const takeProfits = Array.isArray(item.take_profits) ? item.take_profits : [];
+        const previousTakeProfits = Array.isArray(item.previous_take_profits) ? item.previous_take_profits : [];
+        const leadTP = takeProfits.length > 0 ? fmtNumber(Number(takeProfits[0])) : "--";
+        const previousLeadTP = previousTakeProfits.length > 0 ? fmtNumber(Number(previousTakeProfits[0])) : "--";
+        const previousStop = fmtNumber(Number(item.previous_stop_loss));
+        const changeType = index === rows.length - 1 ? "initial" : "changed";
+        return `<article class="risk-change-card ${index === 0 ? "latest" : ""}">
+          <div class="risk-change-top">
+            <span class="risk-change-label">${escapeHtml(item.label || item.source || "风险计划")}</span>
+            <em>${escapeHtml(fmtShortTime(item.created_at))}</em>
+          </div>
+          <div class="risk-change-delta ${changeType}">${changeType === "initial" ? "初始版本" : "从上一版调整"}</div>
+          <div class="risk-change-values diff">
+            <div class="risk-change-metric stop">
+              <span>Stop Loss</span>
+              <strong>${escapeHtml(previousStop)} <b class="risk-change-arrow">-&gt;</b> ${fmtNumber(Number(item.stop_loss))}</strong>
+            </div>
+            <div class="risk-change-metric tp">
+              <span>TP1</span>
+              <strong>${escapeHtml(previousLeadTP)} <b class="risk-change-arrow">-&gt;</b> ${escapeHtml(leadTP)}</strong>
+            </div>
+          </div>
+          <div class="risk-change-foot">${escapeHtml(String(item.source || "risk_update"))}</div>
+        </article>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function clearPositionHold(card) {
+  if (positionHoldTimer) {
+    window.clearTimeout(positionHoldTimer);
+    positionHoldTimer = 0;
+  }
+  const target = card || activeHeldPositionCard;
+  if (target) {
+    target.classList.remove("pressing", "holding");
+  }
+  if (!card || card === activeHeldPositionCard) {
+    activeHeldPositionCard = null;
+  }
+}
+
+function bindLivePositionHold() {
+  const cards = els.livePositionList.querySelectorAll("[data-position-card][data-holdable='true']");
+  cards.forEach((card) => {
+    const startHold = () => {
+      clearPositionHold(activeHeldPositionCard);
+      card.classList.add("pressing");
+      positionHoldTimer = window.setTimeout(() => {
+        card.classList.remove("pressing");
+        card.classList.add("holding");
+        activeHeldPositionCard = card;
+        positionHoldTimer = 0;
+      }, 320);
+    };
+    const endHold = () => clearPositionHold(card);
+    card.addEventListener("pointerdown", startHold);
+    card.addEventListener("pointerup", endHold);
+    card.addEventListener("pointerleave", endHold);
+    card.addEventListener("pointercancel", endHold);
+  });
+}
+
 function renderLivePositions(cards) {
   if (!Array.isArray(cards) || cards.length === 0) {
     els.livePositionList.innerHTML = `<div class="position-empty">当前无实时持仓</div>`;
+    clearPositionHold();
     return;
   }
 
   els.livePositionList.innerHTML = cards
     .map((card) => {
       const position = card.position || {};
+      const timeline = Array.isArray(position.risk_plan_timeline) ? position.risk_plan_timeline : [];
+      const holdable = timeline.length > 0;
       const pnl = card.pnl || {};
       const realizedClass = Number(pnl.realized) >= 0 ? "positive" : "negative";
       const unrealizedClass = Number(pnl.unrealized) >= 0 ? "positive" : "negative";
-      return `<article class="position-card">
+      return `<article class="position-card ${holdable ? "holdable" : ""}" data-position-card data-holdable="${holdable ? "true" : "false"}">
         <div class="position-head">
-          <div class="position-symbol">${escapeHtml(card.symbol)}</div>
+          <div>
+            <div class="position-symbol">${escapeHtml(card.symbol)}</div>
+            ${holdable ? `<div class="position-hold-hint">按住查看风控变化</div>` : ""}
+          </div>
           <span class="side-chip">${escapeHtml(position.side || "--")}</span>
         </div>
         <div class="metrics-grid">
@@ -218,9 +422,11 @@ function renderLivePositions(cards) {
           <div class="metric"><span class="k">未实现盈亏</span><span class="v ${unrealizedClass}">${fmtUsd(Number(pnl.unrealized))}</span></div>
           <div class="metric"><span class="k">合计盈亏</span><span class="v ${Number(pnl.total) >= 0 ? "positive" : "negative"}">${fmtUsd(Number(pnl.total || 0))}</span></div>
         </div>
+        ${renderRiskPlanTimeline(timeline)}
       </article>`;
     })
     .join("");
+  bindLivePositionHold();
 }
 
 function renderIntervalSelect() {
@@ -257,7 +463,7 @@ function renderFlow(flow) {
   const trace = flow && flow.trace ? flow.trace : {};
   if (nodes.length === 0) {
     els.flowGraph.innerHTML = "";
-    els.flowMeta.innerHTML = "暂无决策流数据";
+    els.flowMeta.innerHTML = "";
     return;
   }
 
@@ -267,8 +473,8 @@ function renderFlow(flow) {
   const action = String(gate && gate.action ? gate.action : "").toUpperCase();
   const resultNode = nodes.find((item) => String(item && item.stage || "").toLowerCase() === "result") || null;
 
-  function node(id, posClass, status, title, desc, detail, reason) {
-    return { id, posClass, status, title, desc, detail, reason };
+  function node(id, posClass, status, title, desc, detail, reason, stageType) {
+    return { id, posClass, status, title, desc, detail, reason, stageType };
   }
 
   function summarizeStageValues(values) {
@@ -295,32 +501,52 @@ function renderFlow(flow) {
   const providerMode = String((providerIndicator && providerIndicator.mode) || (providerStructure && providerStructure.mode) || (providerMechanics && providerMechanics.mode) || "standard").toLowerCase();
   const providerTitlePrefix = providerMode === "in_position" ? "InPositionProvider" : "Provider";
 
-  function providerStatus(stage) {
-    const values = stage && Array.isArray(stage.values) ? stage.values : [];
-    return values.some((item) => String(item && item.state || "") === "block") ? "blocked" : "ok";
+  function stageStatus(stage, fallbackStatus) {
+    const normalized = String(stage && stage.status || "").trim().toLowerCase();
+    if (normalized === "ok" || normalized === "blocked") {
+      return normalized;
+    }
+    return String(fallbackStatus || "ok");
+  }
+
+  function stageReason(stage, fallbackReason) {
+    const reason = String(stage && stage.reason || "").trim();
+    if (reason) {
+      return reason;
+    }
+    return String(fallbackReason || "");
+  }
+
+  function stageSummary(stage, fallbackSummary) {
+    const summary = String(stage && stage.summary || "").trim();
+    if (summary) {
+      return summary;
+    }
+    return String(fallbackSummary || "--");
   }
 
   const graphNodes = [
-    node("agent-indicator", "flow-pos-agent-indicator", "ok", "Agent/indicator", summarizeStageValues(agentIndicator && agentIndicator.values), agentIndicator && agentIndicator.values, ""),
-    node("agent-structure", "flow-pos-agent-structure", "ok", "Agent/structure", summarizeStageValues(agentStructure && agentStructure.values), agentStructure && agentStructure.values, ""),
-    node("agent-mechanics", "flow-pos-agent-mechanics", "ok", "Agent/mechanics", summarizeStageValues(agentMechanics && agentMechanics.values), agentMechanics && agentMechanics.values, ""),
-    node("provider-indicator", "flow-pos-provider-indicator", providerStatus(providerIndicator), `${providerTitlePrefix}/indicator`, summarizeStageValues(providerIndicator && providerIndicator.values), providerIndicator && providerIndicator.values, providerStatus(providerIndicator) === "blocked" ? "provider blocked by indicator rules" : ""),
-    node("provider-structure", "flow-pos-provider-structure", providerStatus(providerStructure), `${providerTitlePrefix}/structure`, summarizeStageValues(providerStructure && providerStructure.values), providerStructure && providerStructure.values, providerStatus(providerStructure) === "blocked" ? "provider blocked by structure rules" : ""),
-    node("provider-mechanics", "flow-pos-provider-mechanics", providerStatus(providerMechanics), `${providerTitlePrefix}/mechanics`, summarizeStageValues(providerMechanics && providerMechanics.values), providerMechanics && providerMechanics.values, providerStatus(providerMechanics) === "blocked" ? "provider blocked by mechanics rules" : "")
+    node("agent-indicator", "flow-pos-agent-indicator", stageStatus(agentIndicator, "ok"), "Agent/indicator", stageSummary(agentIndicator, summarizeStageValues(agentIndicator && agentIndicator.values)), agentIndicator && agentIndicator.values, stageReason(agentIndicator, ""), "agent"),
+    node("agent-structure", "flow-pos-agent-structure", stageStatus(agentStructure, "ok"), "Agent/structure", stageSummary(agentStructure, summarizeStageValues(agentStructure && agentStructure.values)), agentStructure && agentStructure.values, stageReason(agentStructure, ""), "agent"),
+    node("agent-mechanics", "flow-pos-agent-mechanics", stageStatus(agentMechanics, "ok"), "Agent/mechanics", stageSummary(agentMechanics, summarizeStageValues(agentMechanics && agentMechanics.values)), agentMechanics && agentMechanics.values, stageReason(agentMechanics, ""), "agent"),
+    node("provider-indicator", "flow-pos-provider-indicator", stageStatus(providerIndicator, "ok"), `${providerTitlePrefix}/indicator`, stageSummary(providerIndicator, summarizeStageValues(providerIndicator && providerIndicator.values)), providerIndicator && providerIndicator.values, stageReason(providerIndicator, ""), "provider"),
+    node("provider-structure", "flow-pos-provider-structure", stageStatus(providerStructure, "ok"), `${providerTitlePrefix}/structure`, stageSummary(providerStructure, summarizeStageValues(providerStructure && providerStructure.values)), providerStructure && providerStructure.values, stageReason(providerStructure, ""), "provider"),
+    node("provider-mechanics", "flow-pos-provider-mechanics", stageStatus(providerMechanics, "ok"), `${providerTitlePrefix}/mechanics`, stageSummary(providerMechanics, summarizeStageValues(providerMechanics && providerMechanics.values)), providerMechanics && providerMechanics.values, stageReason(providerMechanics, ""), "provider")
   ];
 
   if (inPosition && inPosition.active) {
-    graphNodes.push(node("inposition", "flow-pos-inposition", "ok", "InPosition", String(inPosition.side || "open"), [{ key: "active", value: "true", state: "pass" }, { key: "side", value: String(inPosition.side || "-") }], ""));
+    graphNodes.push(node("inposition", "flow-pos-inposition", stageStatus(inPosition, "ok"), "InPosition", String(inPosition.side || "open"), [{ key: "active", value: "true", state: "pass" }, { key: "side", value: String(inPosition.side || "-") }], stageReason(inPosition, "已有持仓，链路进入监控/管理路径"), "monitor"));
   }
 
-  const gateStatus = gate && gate.tradeable ? "ok" : "blocked";
-  const gateReason = gate && gate.reason ? String(gate.reason) : (gateStatus === "blocked" ? "gate blocked" : "");
-  graphNodes.push(node("gate", "flow-pos-gate", gateStatus, "Gate", `${gate && gate.action ? gate.action : "--"}`, gate && Array.isArray(gate.rules) ? gate.rules : [], gateReason));
+  const gateStatus = stageStatus(gate, "ok");
+  const gateReason = stageReason(gate, "");
+  graphNodes.push(node("gate", "flow-pos-gate", gateStatus, "Gate", `${actionLabel(gate && gate.action ? gate.action : "--")}`, gate && Array.isArray(gate.rules) ? gate.rules : [], gateReason, "gate"));
 
-  const resultStatus = resultNode && String(resultNode.outcome || "").toLowerCase().includes("blocked") ? "blocked" : "ok";
-  const resultReason = resultStatus === "blocked" ? String(resultNode && resultNode.outcome || "blocked") : "";
-  const resultDesc = action === "TIGHTEN" && tighten ? `TIGHTEN ${tighten.triggered ? "triggered" : "blocked"}` : (resultNode ? String(resultNode.outcome || "-") : "-");
-  graphNodes.push(node("result", "flow-pos-result", resultStatus, "Result", resultDesc, [], resultReason));
+  const resultStatus = String(resultNode && resultNode.status || "").trim().toLowerCase() || "ok";
+  const resultReason = String(resultNode && resultNode.reason || "").trim();
+  const resultDesc = resultNode ? String(resultNode.outcome || "-") : "-";
+  const resultValues = resultNode && Array.isArray(resultNode.values) ? resultNode.values : [];
+  graphNodes.push(node("result", "flow-pos-result", resultStatus, "Result", resultDesc, resultValues, resultReason, "result"));
 
   function renderFieldList(fields) {
     if (!Array.isArray(fields) || fields.length === 0) {
@@ -333,16 +559,20 @@ function renderFlow(flow) {
     }).join("");
   }
 
-  const nodesHTML = graphNodes.map((item) => {
+  const nodesHTML = graphNodes.map((item, index) => {
     const reasonAttr = item.reason ? ` title="${escapeHtml(item.reason)}" data-reason="${escapeHtml(item.reason)}"` : "";
-    return `<article id="flow-node-${escapeHtml(item.id)}" class="flow-node ${escapeHtml(item.status)} ${escapeHtml(item.posClass)}"${reasonAttr}>
+    return `<article id="flow-node-${escapeHtml(item.id)}" class="flow-node ${escapeHtml(item.status)} ${escapeHtml(item.posClass)}" style="--flow-index:${index}"${reasonAttr}>
+      <div class="flow-node-topline">
+        <span class="flow-node-kind">${escapeHtml(item.stageType || "stage")}</span>
+        <span class="flow-node-state ${escapeHtml(item.status)}">${escapeHtml(flowStatusLabel(item.status))}</span>
+      </div>
       <div class="flow-node-title">${escapeHtml(item.title)}</div>
       <div class="flow-node-desc">${escapeHtml(item.desc)}</div>
-      <div class="flow-node-values">${renderFieldList(item.detail)}</div>
+      ${Array.isArray(item.detail) && item.detail.length > 0 ? `<div class="flow-node-values">${renderFieldList(item.detail)}</div>` : ""}
     </article>`;
   }).join("");
 
-  els.flowGraph.innerHTML = `<svg class="flow-links" id="flow-links" aria-hidden="true"></svg><div class="flow-dag">${nodesHTML}</div>`;
+  els.flowGraph.innerHTML = `<div class="flow-backdrop"></div><svg class="flow-links" id="flow-links" aria-hidden="true"></svg><div class="flow-dag">${nodesHTML}</div>`;
 
   function drawFlowLinks() {
     const svg = document.getElementById("flow-links");
@@ -362,43 +592,88 @@ function renderFlow(flow) {
       return { x, y };
     }
 
-    const defs = `<defs><marker id="flow-arrow-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#3a8fd6"></path></marker></defs>`;
+    const defs = `<defs><marker id="flow-arrow-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6db9ff"></path></marker></defs>`;
     const links = [];
+
+    function pushLink(fromID, toID, status) {
+      const start = pointOf(fromID, "right");
+      const end = pointOf(toID, "left");
+      if (!start || !end) {
+        return;
+      }
+      const bend = Math.max(26, Math.abs(end.x - start.x) * 0.36);
+      const path = `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`;
+      links.push(`<path class="flow-link-base ${status}" d="${path}" marker-end="url(#flow-arrow-head)" />`);
+      links.push(`<path class="flow-link-pulse ${status}" d="${path}" marker-end="url(#flow-arrow-head)" />`);
+    }
+
     const rows = ["indicator", "structure", "mechanics"];
     rows.forEach((row) => {
-      const a = pointOf(`agent-${row}`, "right");
-      const p = pointOf(`provider-${row}`, "left");
-      if (a && p) {
-        links.push(`<line x1="${a.x}" y1="${a.y}" x2="${p.x}" y2="${p.y}" stroke="#3a8fd6" stroke-width="2" marker-end="url(#flow-arrow-head)" />`);
-      }
-      const pr = pointOf(`provider-${row}`, "right");
-      const gLeft = pointOf("gate", "left");
-      if (pr && gLeft) {
-        links.push(`<line x1="${pr.x}" y1="${pr.y}" x2="${gLeft.x}" y2="${gLeft.y}" stroke="#3a8fd6" stroke-width="2" marker-end="url(#flow-arrow-head)" />`);
-      }
+      pushLink(`agent-${row}`, `provider-${row}`, stageStatus(findStage(trace.providers, row), "ok"));
+      pushLink(`provider-${row}`, "gate", gateStatus === "blocked" ? "blocked" : "ok");
     });
-    const ip = pointOf("inposition", "right");
-    const gTop = pointOf("gate", "left");
-    if (ip && gTop) {
-      links.push(`<line x1="${ip.x}" y1="${ip.y}" x2="${gTop.x}" y2="${gTop.y}" stroke="#3a8fd6" stroke-width="2" marker-end="url(#flow-arrow-head)" />`);
+    if (inPosition && inPosition.active) {
+      pushLink("inposition", "gate", gateStatus === "blocked" ? "blocked" : "ok");
     }
-    const g = pointOf("gate", "right");
-    const r = pointOf("result", "left");
-    if (g && r) {
-      links.push(`<line x1="${g.x}" y1="${g.y}" x2="${r.x}" y2="${r.y}" stroke="#3a8fd6" stroke-width="2" marker-end="url(#flow-arrow-head)" />`);
-    }
+    pushLink("gate", "result", resultStatus === "blocked" ? "blocked" : "ok");
 
     svg.setAttribute("viewBox", `0 0 ${Math.max(1, Math.round(graphRect.width))} ${Math.max(1, Math.round(graphRect.height))}`);
     svg.innerHTML = `${defs}${links.join("")}`;
   }
-  drawFlowLinks();
 
-  const anchor = flow && flow.anchor ? flow.anchor : {};
-  const intervalText = Array.isArray(flow && flow.intervals) && flow.intervals.length > 0 ? flow.intervals.join(" / ") : "--";
-  els.flowMeta.innerHTML = [
-    `<div class="flow-headline"><strong>${escapeHtml(state.symbol || "--")}</strong> decision flow</div>`,
-    `<div class="flow-brief"><strong>Anchor:</strong> ${escapeHtml(String(anchor.type || "--"))} #${Number(anchor.snapshot_id || 0)} | <strong>Intervals:</strong> ${escapeHtml(intervalText)} | <strong>Gate:</strong> ${escapeHtml(gate && gate.action ? gate.action : "--")}</div>`
-  ].join("");
+  function scheduleFlowLinksDraw() {
+    window.requestAnimationFrame(() => {
+      drawFlowLinks();
+      const svg = document.getElementById("flow-links");
+      if (!svg) {
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        svg.classList.add("ready");
+      });
+    });
+  }
+
+  scheduleFlowLinksDraw();
+  window.setTimeout(scheduleFlowLinksDraw, 240);
+
+  els.flowMeta.innerHTML = "";
+}
+
+function reportToggleLabel(collapsed) {
+  return collapsed ? "展开报告" : "收起报告";
+}
+
+function syncDecisionReportCollapse(root) {
+  const container = root || els.decisionDetail;
+  if (!container) {
+    return;
+  }
+  const shell = container.querySelector("[data-report-shell]");
+  if (!shell) {
+    return;
+  }
+  const collapsed = Boolean(state.reportCollapsed);
+  shell.classList.toggle("collapsed", collapsed);
+  shell.setAttribute("data-collapsed", collapsed ? "true" : "false");
+  shell.querySelectorAll("[data-report-toggle]").forEach((button) => {
+    button.textContent = reportToggleLabel(collapsed);
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
+}
+
+function bindDecisionReportToggle() {
+  const shell = els.decisionDetail.querySelector("[data-report-shell]");
+  if (!shell) {
+    return;
+  }
+  shell.querySelectorAll("[data-report-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reportCollapsed = !state.reportCollapsed;
+      syncDecisionReportCollapse();
+    });
+  });
+  syncDecisionReportCollapse();
 }
 
 function pickMiddleUpperInterval(intervals) {
@@ -816,11 +1091,175 @@ function renderDecisionHistoryRows(items, selectedSnapshotID) {
   });
 }
 
+function renderDecisionPlan(plan) {
+  if (!plan) {
+    return "";
+  }
+  const takeProfits = Array.isArray(plan.take_profits) ? plan.take_profits : [];
+  const levels = Array.isArray(plan.take_profit_levels) ? plan.take_profit_levels : [];
+  const stopDistance = Number.isFinite(Number(plan.entry_price)) && Number.isFinite(Number(plan.stop_loss))
+    ? Math.abs(Number(plan.entry_price) - Number(plan.stop_loss))
+    : NaN;
+  const ratioItems = (levels.length > 0 ? levels : takeProfits.map((price, index) => ({ level_id: `tp${index + 1}`, price })))
+    .map((level, index) => {
+      const rr = calcRR(plan.entry_price, level.price, plan.stop_loss);
+      return `<div class="plan-level ${level.hit ? "hit" : ""}">
+        <div>
+          <span>${escapeHtml(String(level.level_id || `tp${index + 1}`).toUpperCase())}</span>
+          <strong>${fmtNumber(Number(level.price))}</strong>
+        </div>
+        <div class="plan-level-meta">
+          <em>${Number.isFinite(Number(level.qty_pct)) && Number(level.qty_pct) > 0 ? `减仓 ${fmtPercent(Number(level.qty_pct), 0)}` : "目标位"}</em>
+          <em>${rr ? `RR ${rr.toFixed(2)}` : "RR --"}</em>
+        </div>
+      </div>`;
+    }).join("");
+
+  return `<section class="decision-section">
+    <div class="decision-section-head">
+      <h3>当前执行几何（非快照）</h3>
+      <span>${escapeHtml(plan.status || "OPEN_ACTIVE")}</span>
+    </div>
+    <div class="plan-hero-grid">
+      <div class="plan-hero-card entry">
+        <span>Entry</span>
+        <strong>${fmtNumber(Number(plan.entry_price))}</strong>
+        <em>${escapeHtml(actionLabel(plan.direction || "--"))}</em>
+      </div>
+      <div class="plan-hero-card stop">
+        <span>Stop Loss</span>
+        <strong>${fmtNumber(Number(plan.stop_loss))}</strong>
+        <em>${Number.isFinite(stopDistance) ? `Risk Distance ${fmtSignedDelta(stopDistance)}` : "Risk Distance --"}</em>
+      </div>
+      <div class="plan-hero-card leverage">
+        <span>Size / Leverage</span>
+        <strong>${fmtNumber(Number(plan.position_size))}</strong>
+        <em>${Number.isFinite(Number(plan.leverage)) ? `${fmtNumber(Number(plan.leverage))}x` : "--"}</em>
+      </div>
+      <div class="plan-hero-card risk">
+        <span>Risk</span>
+        <strong>${fmtPercent(Number(plan.risk_pct), 2)}</strong>
+        <em>${Number.isFinite(Number(plan.initial_qty)) && Number(plan.initial_qty) > 0 ? `Initial Qty ${fmtNumber(Number(plan.initial_qty))}` : "实时持仓映射"}</em>
+      </div>
+    </div>
+    <div class="plan-ladder">
+      <div class="plan-ladder-head">
+        <span>Profit Ladder</span>
+        <span>${takeProfits.length > 0 ? `${takeProfits.length} 个目标位` : "暂无目标位"}</span>
+      </div>
+      <div class="plan-level-list">${ratioItems || `<div class="decision-empty-inline">暂无止盈层级</div>`}</div>
+    </div>
+  </section>`;
+}
+
+function renderDecisionPlanContext(planContext) {
+  if (!planContext) {
+    return "";
+  }
+  const items = [
+    ["单笔风险", fmtPercent(planContext.risk_per_trade_pct, 2)],
+    ["最大占用", fmtPercent(planContext.max_invest_pct, 0)],
+    ["最大杠杆", Number.isFinite(Number(planContext.max_leverage)) ? `${fmtNumber(Number(planContext.max_leverage))}x` : "--"],
+    ["入场偏移", Number.isFinite(Number(planContext.entry_offset_atr)) ? `${fmtNumber(Number(planContext.entry_offset_atr))} ATR` : "--"],
+    ["Entry Mode", String(planContext.entry_mode || "--")],
+    ["Initial Exit", String(planContext.initial_exit || "--")]
+  ];
+  return `<section class="decision-section">
+    <div class="decision-section-head">
+      <h3>开仓计算依据</h3>
+      <span>Risk Management</span>
+    </div>
+    <div class="decision-fact-grid">
+      ${items.map(([label, value]) => `<div class="decision-fact-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}
+    </div>
+  </section>`;
+}
+
+function renderDecisionSieve(sieve) {
+  if (!sieve) {
+    return "";
+  }
+  const rows = Array.isArray(sieve.rows) ? sieve.rows : [];
+  if (!sieve.action && !sieve.reason_code && rows.length === 0) {
+    return "";
+  }
+  const meterWidth = Math.max(8, Math.min(100, Number.isFinite(Number(sieve.size_factor)) ? Number(sieve.size_factor) * 100 : 0));
+  const matched = rows[0] || null;
+  return `<section class="decision-section sieve-section ${decisionActionClass(sieve.action)}">
+    <div class="decision-section-head">
+      <h3>risk_management.sieve</h3>
+      <span>${escapeHtml(actionLabel(sieve.action || "--"))}</span>
+    </div>
+    <div class="sieve-rule-focus ${matched ? "matched" : ""}">
+      <div class="sieve-rule-head">
+        <strong>${escapeHtml(translateSieveReason(sieve.reason_code))}</strong>
+        <span>${escapeHtml(actionLabel(sieve.action || "--"))}</span>
+      </div>
+      <div class="sieve-rule-meta">
+        <span class="flow-chip pass">size:${escapeHtml(fmtPercent(Number(sieve.size_factor), 0))}</span>
+        <span class="flow-chip">min:${escapeHtml(fmtPercent(Number(sieve.min_size_factor), 0))}</span>
+        <span class="flow-chip">default:${escapeHtml(fmtPercent(Number(sieve.default_size_factor), 0))}</span>
+        ${matched ? `<span class="flow-chip">mechanics:${escapeHtml(matched.mechanics_tag || "--")}</span>
+        <span class="flow-chip">liq:${escapeHtml(matched.liq_confidence || "--")}</span>
+        <span class="flow-chip">crowd:${matched.crowding_align === true ? "same" : matched.crowding_align === false ? "opp" : "any"}</span>` : ""}
+      </div>
+      <div class="sieve-reason-code">${escapeHtml(sieve.reason_code || "NO_SIEVE_REASON")}</div>
+      <div class="sieve-meter"><span class="sieve-meter-fill" style="width:${meterWidth.toFixed(1)}%"></span></div>
+    </div>
+  </section>`;
+}
+
+function renderTightenDetail(tighten) {
+  if (!tighten) {
+    return "";
+  }
+  const blockedBy = Array.isArray(tighten.blocked_by) ? tighten.blocked_by : [];
+  const threshold = Number(tighten.score_threshold);
+  const score = Number(tighten.score);
+  const progress = Number.isFinite(score) && Number.isFinite(threshold) && threshold > 0
+    ? Math.max(0, Math.min(100, (score / threshold) * 100))
+    : 0;
+  const stateLabel = tighten.executed ? "已执行" : tighten.eligible ? "待执行" : tighten.evaluated ? "未触发" : "未评估";
+  const stateClass = tighten.executed ? "pass" : blockedBy.length > 0 ? "fail" : "neutral";
+  return `<section class="decision-section tighten-section ${stateClass}">
+    <div class="decision-section-head">
+      <h3>持仓收紧信息</h3>
+      <span>${escapeHtml(stateLabel)}</span>
+    </div>
+    <div class="decision-fact-grid tighten-fact-grid">
+      <div class="decision-fact-card">
+        <span>执行状态</span>
+        <strong>${escapeHtml(tighten.executed ? "TIGHTEN EXECUTED" : "TIGHTEN CHECKED")}</strong>
+      </div>
+      <div class="decision-fact-card">
+        <span>TP 同步收紧</span>
+        <strong>${escapeHtml(tighten.tp_tightened ? "YES" : "NO")}</strong>
+      </div>
+      <div class="decision-fact-card">
+        <span>主阻断原因</span>
+        <strong>${escapeHtml(blockedBy[0] || tighten.display_reason || "--")}</strong>
+      </div>
+    </div>
+    <div class="tighten-score-card">
+      <div class="decision-kpi-head">
+        <span>收紧评分</span>
+        <span class="decision-chip ${stateClass}">${escapeHtml(stateLabel)}</span>
+      </div>
+      <div class="decision-kpi-value">${escapeHtml(fmtConsensusValue(tighten.score))}</div>
+      <div class="decision-kpi-sub">阈值 ${escapeHtml(fmtConsensusValue(tighten.score_threshold))} / parse ${tighten.score_parse_ok ? "ok" : "fail"}</div>
+      <div class="decision-meter"><span class="decision-meter-fill ${stateClass}" style="width:${progress.toFixed(1)}%"></span></div>
+      <div class="decision-meter-meta">达成率 ${Number.isFinite(progress) ? `${Math.round(progress)}%` : "--"}</div>
+    </div>
+    ${blockedBy.length > 0 ? `<div class="decision-check-row">${blockedBy.map((item) => `<span class="decision-chip fail">${escapeHtml(String(item))}</span>`).join("")}</div>` : ""}
+  </section>`;
+}
+
 function renderDecisionDetail(detail, fallbackMessage) {
   if (!detail) {
     els.decisionDetail.innerHTML = `<div class="decision-empty">${escapeHtml(fallbackMessage || "暂无详情")}</div>`;
     return;
   }
+  state.reportCollapsed = true;
   const snapshotID = Number(detail.snapshot_id || 0);
   const action = String(detail.action || "--").toUpperCase();
   const tradeable = Boolean(detail.tradeable);
@@ -830,13 +1269,14 @@ function renderDecisionDetail(detail, fallbackMessage) {
   const scoreProgress = decisionMetricProgress(detail.consensus_score, detail.consensus_score_threshold, true);
   const confidenceProgress = decisionMetricProgress(detail.consensus_confidence, detail.consensus_confidence_threshold, false);
   const reportMarkdown = cleanDecisionMarkdown(detail.report_markdown || "");
+  const isTighten = action === "TIGHTEN" && detail.tighten;
   els.decisionDetail.innerHTML = `
     <div class="decision-card">
       <div class="decision-top">
         <div>
           <div class="decision-snapshot">Snapshot <span>#${snapshotID}</span></div>
           <div class="decision-chip-row">
-            <span class="decision-chip ${decisionActionClass(action)}">${escapeHtml(action)}</span>
+            <span class="decision-chip ${decisionActionClass(action)}">${escapeHtml(actionLabel(action))}</span>
             <span class="decision-chip ${tradeable ? "pass" : "fail"}">Tradeable ${tradeable ? "YES" : "NO"}</span>
             <span class="decision-chip ${decisionBoolClass(overallPassed)}">共识 ${escapeHtml(fmtConsensusPassed(overallPassed))}</span>
           </div>
@@ -847,7 +1287,7 @@ function renderDecisionDetail(detail, fallbackMessage) {
         <span>触发原因</span>
         <strong>${escapeHtml(detail.reason || "--")}</strong>
       </div>
-      <div class="decision-kpi-grid">
+      ${isTighten ? renderTightenDetail(detail.tighten) : `<div class="decision-kpi-grid">
         <div class="decision-kpi-card">
           <div class="decision-kpi-head">
             <span>共识总分</span>
@@ -873,11 +1313,25 @@ function renderDecisionDetail(detail, fallbackMessage) {
         <span class="decision-chip ${decisionBoolClass(scorePassed)}">总分 ${escapeHtml(fmtConsensusPassed(scorePassed))}</span>
         <span class="decision-chip ${decisionBoolClass(confidencePassed)}">置信度 ${escapeHtml(fmtConsensusPassed(confidencePassed))}</span>
         <span class="decision-chip ${decisionBoolClass(overallPassed)}">总判定 ${escapeHtml(fmtConsensusPassed(overallPassed))}</span>
-      </div>
-      <div class="decision-report-title">决策报告</div>
-      <pre class="decision-report-body">${escapeHtml(reportMarkdown)}</pre>
+      </div>`}
+      ${!isTighten ? renderDecisionPlanContext(detail.plan_context) : ""}
+      ${renderDecisionSieve(detail.sieve)}
+      ${renderDecisionPlan(detail.plan)}
+      <section class="decision-section decision-report-shell collapsed" data-report-shell data-collapsed="true">
+        <div class="decision-section-head decision-report-head">
+          <h3>决策报告</h3>
+          <button type="button" class="decision-report-toggle" data-report-toggle aria-expanded="false">${reportToggleLabel(true)}</button>
+        </div>
+        <div class="decision-report-collapsible">
+          <pre class="decision-report-body">${escapeHtml(reportMarkdown)}</pre>
+          <div class="decision-report-footer">
+            <button type="button" class="decision-report-toggle ghost" data-report-toggle aria-expanded="false">${reportToggleLabel(true)}</button>
+          </div>
+        </div>
+      </section>
     </div>
   `;
+  bindDecisionReportToggle();
 }
 
 function cleanDecisionMarkdown(input) {
@@ -1085,7 +1539,7 @@ async function refreshSymbolScope() {
 }
 
 async function runRefreshCycle(mode) {
-  const cycleMode = mode === "scope" ? "scope" : "full";
+  const cycleMode = mode === "scope" || mode === "auto" ? mode : "full";
   if (state.refreshing) {
     if (cycleMode === "full" || state.pendingRefreshMode !== "full") {
       state.pendingRefreshMode = cycleMode;
@@ -1094,10 +1548,14 @@ async function runRefreshCycle(mode) {
   }
   state.refreshing = true;
   try {
-    if (cycleMode === "full") {
+    if (cycleMode === "full" || cycleMode === "auto") {
       await refreshOverview();
     }
-    await refreshSymbolScope();
+    if (cycleMode === "auto") {
+      await refreshPositionHistory();
+    } else {
+      await refreshSymbolScope();
+    }
     await refreshStatus();
   } catch (err) {
     renderGlobalError(err);
@@ -1113,6 +1571,7 @@ async function runRefreshCycle(mode) {
 }
 
 async function bootstrap() {
+  startHeroTitleTyping();
   updateClock();
   setInterval(updateClock, 1000);
 
@@ -1132,22 +1591,30 @@ async function bootstrap() {
     if (state.symbol) {
       state.intervalsBySymbol[state.symbol] = nextInterval;
     }
-    await runRefreshCycle("scope");
+    await refreshKline(state.lastFlow);
   });
 
   await runRefreshCycle("full");
 
   setInterval(async () => {
-    await runRefreshCycle("full");
+    await runRefreshCycle("auto");
   }, refreshMs);
 
+  let resizeQueued = false;
   window.addEventListener("resize", () => {
-    if (chart) {
-      chart.resize();
+    if (resizeQueued) {
+      return;
     }
-    if (state.lastFlow) {
-      renderFlow(state.lastFlow);
-    }
+    resizeQueued = true;
+    window.requestAnimationFrame(() => {
+      resizeQueued = false;
+      if (chart) {
+        chart.resize();
+      }
+      if (state.lastFlow) {
+        renderFlow(state.lastFlow);
+      }
+    });
   });
 }
 

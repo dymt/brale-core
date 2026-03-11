@@ -25,6 +25,16 @@ type dashboardFlowUsecase struct {
 	allowSymbol func(string) bool
 }
 
+type dashboardFlowStageData struct {
+	Stage   string
+	Mode    string
+	Source  string
+	Status  string
+	Reason  string
+	Summary string
+	Values  []DashboardFlowValueField
+}
+
 func newDashboardFlowUsecase(s *Server) dashboardFlowUsecase {
 	if s == nil {
 		return dashboardFlowUsecase{}
@@ -95,9 +105,11 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snaps
 
 	preferInPositionProvider := shouldPreferInPositionProvider(isOpen, gateway)
 	providerByRole, providerInPositionMode := mapByProviderRoleWithMode(providers, preferInPositionProvider)
-	nodes := buildDashboardFlowNodes(providerByRole, providerInPositionMode, agents, gateway, tighten)
+	providerStages := buildProviderStageData(providerByRole, providerInPositionMode)
+	agentStages := buildAgentStageData(agents)
+	nodes := buildDashboardFlowNodes(providerByRole, providerInPositionMode, providerStages, agentStages, gateway, tighten)
 	intervals := u.resolveSymbolIntervals(normalizedSymbol)
-	trace := buildDashboardFlowTrace(providerByRole, providerInPositionMode, agents, gateway, pos, isOpen)
+	trace := buildDashboardFlowTrace(providerStages, agentStages, gateway, pos, isOpen)
 
 	return DashboardDecisionFlowResponse{
 		Status: "ok",
@@ -113,27 +125,34 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snaps
 	}, nil
 }
 
-func buildDashboardFlowTrace(providerByRole map[string]store.ProviderEventRecord, providerInPositionMode bool, agents []store.AgentEventRecord, gate *store.GateEventRecord, pos store.PositionRecord, isOpen bool) DashboardFlowTrace {
+func buildDashboardFlowTrace(providerStages []dashboardFlowStageData, agentStages []dashboardFlowStageData, gate *store.GateEventRecord, pos store.PositionRecord, isOpen bool) DashboardFlowTrace {
 	trace := DashboardFlowTrace{}
-	trace.Agents = buildAgentTrace(agents)
-	trace.Providers = buildProviderTrace(providerByRole, providerInPositionMode)
+	trace.Agents = buildStageTrace(agentStages)
+	trace.Providers = buildStageTrace(providerStages)
 	if isOpen {
-		trace.InPosition = &DashboardFlowInPosition{Active: true, Side: strings.ToLower(strings.TrimSpace(pos.Side))}
+		trace.InPosition = &DashboardFlowInPosition{
+			Active: true,
+			Side:   strings.ToLower(strings.TrimSpace(pos.Side)),
+			Status: "ok",
+			Reason: "position_open_active",
+		}
 	}
 	if gate != nil {
 		trace.Gate = &DashboardFlowGateTrace{
 			Action:    strings.ToUpper(strings.TrimSpace(gate.DecisionAction)),
 			Tradeable: gate.GlobalTradeable,
+			Status:    dashboardStatusFromTradeable(gate.GlobalTradeable),
 			Reason:    strings.TrimSpace(gate.GateReason),
+			Summary:   summarizeGateOutcome(*gate),
 			Rules:     extractGateRules([]byte(gate.RuleHitJSON)),
 		}
 	}
 	return trace
 }
 
-func buildProviderTrace(providerByRole map[string]store.ProviderEventRecord, inPositionMode bool) []DashboardFlowStageValues {
+func buildProviderStageData(providerByRole map[string]store.ProviderEventRecord, inPositionMode bool) []dashboardFlowStageData {
 	ordered := []string{"indicator", "structure", "mechanics"}
-	out := make([]DashboardFlowStageValues, 0, len(ordered))
+	out := make([]dashboardFlowStageData, 0, len(ordered))
 	mode := "standard"
 	if inPositionMode {
 		mode = "in_position"
@@ -143,29 +162,83 @@ func buildProviderTrace(providerByRole map[string]store.ProviderEventRecord, inP
 		if !ok {
 			continue
 		}
-		fields := extractTraceFields([]byte(rec.OutputJSON))
-		out = append(out, DashboardFlowStageValues{Stage: role, Mode: mode, Source: strings.TrimSpace(rec.ProviderID), Values: fields})
+		meta := analyzeFlowOutput(json.RawMessage(rec.OutputJSON))
+		out = append(out, dashboardFlowStageData{
+			Stage:   role,
+			Mode:    mode,
+			Source:  strings.TrimSpace(rec.ProviderID),
+			Status:  dashboardStatusFromTradeable(rec.Tradeable),
+			Reason:  firstNonEmpty(meta.Reason, firstBlockingFieldReason(meta.Fields)),
+			Summary: summarizeProviderOutcomeFromMeta(rec.Tradeable, meta),
+			Values:  meta.Fields,
+		})
 	}
 	return out
 }
 
-func buildAgentTrace(records []store.AgentEventRecord) []DashboardFlowStageValues {
+func buildAgentStageData(records []store.AgentEventRecord) []dashboardFlowStageData {
 	ordered := []string{"indicator", "structure", "mechanics"}
 	latest := mapByAgentStage(records)
-	out := make([]DashboardFlowStageValues, 0, len(ordered))
+	out := make([]dashboardFlowStageData, 0, len(ordered))
 	for _, stage := range ordered {
 		rec, ok := latest[stage]
 		if !ok {
 			continue
 		}
-		fields := extractTraceFields([]byte(rec.OutputJSON))
-		out = append(out, DashboardFlowStageValues{Stage: stage, Source: strings.TrimSpace(rec.Stage), Values: fields})
+		meta := analyzeFlowOutput(json.RawMessage(rec.OutputJSON))
+		out = append(out, dashboardFlowStageData{
+			Stage:   stage,
+			Source:  strings.TrimSpace(rec.Stage),
+			Status:  "ok",
+			Reason:  meta.Reason,
+			Summary: summarizeAgentOutcomeFromMeta(meta),
+			Values:  meta.Fields,
+		})
 	}
 	return out
 }
 
+func buildStageTrace(items []dashboardFlowStageData) []DashboardFlowStageValues {
+	out := make([]DashboardFlowStageValues, 0, len(items))
+	for _, item := range items {
+		out = append(out, DashboardFlowStageValues{
+			Stage:   item.Stage,
+			Mode:    item.Mode,
+			Source:  item.Source,
+			Status:  item.Status,
+			Reason:  item.Reason,
+			Summary: item.Summary,
+			Values:  item.Values,
+		})
+	}
+	return out
+}
+
+func dashboardStatusFromTradeable(tradeable bool) string {
+	if tradeable {
+		return "ok"
+	}
+	return "blocked"
+}
+
+func firstBlockingFieldReason(fields []DashboardFlowValueField) string {
+	for _, field := range fields {
+		if strings.EqualFold(strings.TrimSpace(field.State), "block") {
+			return strings.TrimSpace(field.Key) + "=" + strings.TrimSpace(field.Value)
+		}
+	}
+	return ""
+}
+
 func extractTraceFields(raw json.RawMessage) []DashboardFlowValueField {
 	obj := decodeJSONObject(raw)
+	if len(obj) == 0 {
+		return nil
+	}
+	return extractTraceFieldsFromObject(obj)
+}
+
+func extractTraceFieldsFromObject(obj map[string]any) []DashboardFlowValueField {
 	if len(obj) == 0 {
 		return nil
 	}
@@ -301,47 +374,105 @@ func selectLatestFlowGate(gates []store.GateEventRecord) *store.GateEventRecord 
 	return &gates[0]
 }
 
-func buildDashboardFlowNodes(providerByRole map[string]store.ProviderEventRecord, providerInPositionMode bool, agents []store.AgentEventRecord, gate *store.GateEventRecord, tighten *DashboardTightenInfo) []DashboardFlowNode {
+func buildDashboardFlowNodes(providerByRole map[string]store.ProviderEventRecord, providerInPositionMode bool, providerStages []dashboardFlowStageData, agentStages []dashboardFlowStageData, gate *store.GateEventRecord, tighten *DashboardTightenInfo) []DashboardFlowNode {
 	nodes := make([]DashboardFlowNode, 0, 10)
 	providerTitlePrefix := "Provider"
 	if providerInPositionMode {
 		providerTitlePrefix = "InPositionProvider"
 	}
+	providerStageByName := mapFlowStageData(providerStages)
 	for _, role := range dashboardFlowOrderedRoles {
-		rec, ok := providerByRole[role]
+		_, ok := providerByRole[role]
 		if !ok {
-			nodes = append(nodes, DashboardFlowNode{Stage: "gap", Title: fmt.Sprintf("%s/%s", providerTitlePrefix, role), Outcome: "missing_provider_stage"})
+			nodes = append(nodes, DashboardFlowNode{Stage: "gap", Title: fmt.Sprintf("%s/%s", providerTitlePrefix, role), Outcome: "missing_provider_stage", Status: "blocked", Reason: "missing_provider_stage"})
 			continue
 		}
-		nodes = append(nodes, DashboardFlowNode{Stage: "provider", Title: fmt.Sprintf("%s/%s", providerTitlePrefix, role), Outcome: summarizeProviderOutcome(rec)})
+		meta := providerStageByName[role]
+		nodes = append(nodes, DashboardFlowNode{Stage: "provider", Title: fmt.Sprintf("%s/%s", providerTitlePrefix, role), Outcome: meta.Summary, Status: meta.Status, Reason: meta.Reason})
 	}
 
-	agentByStage := mapByAgentStage(agents)
+	agentByStage := mapByAgentStageData(agentStages)
 	for _, stage := range dashboardFlowOrderedRoles {
-		rec, ok := agentByStage[stage]
+		meta, ok := agentByStage[stage]
 		if !ok {
-			nodes = append(nodes, DashboardFlowNode{Stage: "gap", Title: fmt.Sprintf("Agent/%s", stage), Outcome: "missing_agent_stage"})
+			nodes = append(nodes, DashboardFlowNode{Stage: "gap", Title: fmt.Sprintf("Agent/%s", stage), Outcome: "missing_agent_stage", Status: "blocked", Reason: "missing_agent_stage"})
 			continue
 		}
-		nodes = append(nodes, DashboardFlowNode{Stage: "agent", Title: fmt.Sprintf("Agent/%s", stage), Outcome: summarizeAgentOutcome(rec)})
+		nodes = append(nodes, DashboardFlowNode{Stage: "agent", Title: fmt.Sprintf("Agent/%s", stage), Outcome: meta.Summary, Status: meta.Status, Reason: meta.Reason})
 	}
 
 	if gate == nil {
 		nodes = append(nodes,
-			DashboardFlowNode{Stage: "gap", Title: "Gate", Outcome: "missing_gate_stage"},
-			DashboardFlowNode{Stage: "result", Title: "Terminal Outcome", Outcome: "missing_gate_event"},
+			DashboardFlowNode{Stage: "gap", Title: "Gate", Outcome: "missing_gate_stage", Status: "blocked", Reason: "missing_gate_stage"},
+			DashboardFlowNode{Stage: "result", Title: "Terminal Outcome", Outcome: "missing_gate_event", Status: "blocked", Reason: "missing_gate_event"},
 		)
 		return nodes
 	}
 
-	nodes = append(nodes, DashboardFlowNode{Stage: "gate", Title: "Gate", Outcome: summarizeGateOutcome(*gate)})
+	nodes = append(nodes, DashboardFlowNode{Stage: "gate", Title: "Gate", Outcome: summarizeGateOutcome(*gate), Status: dashboardStatusFromTradeable(gate.GlobalTradeable), Reason: strings.TrimSpace(gate.GateReason)})
 
 	if shouldRenderPlanNode(*gate, tighten) {
-		nodes = append(nodes, DashboardFlowNode{Stage: "plan", Title: "Plan", Outcome: summarizePlanOutcome(*gate, tighten)})
+		nodes = append(nodes, DashboardFlowNode{Stage: "plan", Title: "Plan", Outcome: summarizePlanOutcome(*gate, tighten), Status: "ok", Reason: summarizePlanReason(*gate, tighten), Values: summarizeResultFields(*gate, tighten)})
 	}
 
-	nodes = append(nodes, DashboardFlowNode{Stage: "result", Title: "Terminal Outcome", Outcome: summarizeTerminalOutcome(*gate, tighten)})
+	nodes = append(nodes, DashboardFlowNode{Stage: "result", Title: "Terminal Outcome", Outcome: summarizeTerminalOutcome(*gate, tighten), Status: summarizeTerminalStatus(*gate, tighten), Reason: summarizeTerminalReason(*gate, tighten), Values: summarizeResultFields(*gate, tighten)})
 	return nodes
+}
+
+func mapFlowStageData(items []dashboardFlowStageData) map[string]dashboardFlowStageData {
+	out := make(map[string]dashboardFlowStageData, len(items))
+	for _, item := range items {
+		out[item.Stage] = item
+	}
+	return out
+}
+
+func mapByAgentStageData(items []dashboardFlowStageData) map[string]dashboardFlowStageData {
+	out := make(map[string]dashboardFlowStageData, len(items))
+	for _, item := range items {
+		out[item.Stage] = item
+	}
+	return out
+}
+
+func summarizePlanReason(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {
+	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
+	if action == "TIGHTEN" && tighten != nil {
+		return strings.TrimSpace(tighten.Reason)
+	}
+	if direction := strings.TrimSpace(gate.Direction); direction != "" {
+		return "direction=" + direction
+	}
+	return "plan_ready"
+}
+
+func summarizeTerminalStatus(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {
+	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
+	if action == "TIGHTEN" && tighten != nil && !tighten.Triggered {
+		return "blocked"
+	}
+	if !gate.GlobalTradeable {
+		return "blocked"
+	}
+	return "ok"
+}
+
+func summarizeTerminalReason(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {
+	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
+	if action == "TIGHTEN" && tighten != nil {
+		return strings.TrimSpace(tighten.Reason)
+	}
+	if !gate.GlobalTradeable {
+		reason := strings.TrimSpace(gate.GateReason)
+		if reason == "" {
+			return "gate_blocked"
+		}
+		return reason
+	}
+	if shouldRenderPlanNode(gate, tighten) {
+		return "plan_emitted"
+	}
+	return "gate_pass_no_plan"
 }
 
 func mapByProviderRoleWithMode(providers []store.ProviderEventRecord, preferInPosition bool) (map[string]store.ProviderEventRecord, bool) {
@@ -432,43 +563,53 @@ func normalizeFlowStageKey(raw string) string {
 	}
 }
 
-func summarizeProviderOutcome(rec store.ProviderEventRecord) string {
-	monitorTag, reason := readMonitorTagAndReason(json.RawMessage(rec.OutputJSON))
-	parts := []string{fmt.Sprintf("tradeable=%t", rec.Tradeable)}
-	if monitorTag != "" {
-		parts = append(parts, "monitor_tag="+monitorTag)
+func summarizeProviderOutcomeFromMeta(tradeable bool, meta dashboardFlowOutputMeta) string {
+	parts := []string{fmt.Sprintf("tradeable=%t", tradeable)}
+	if meta.MonitorTag != "" {
+		parts = append(parts, "monitor_tag="+meta.MonitorTag)
 	}
-	if reason != "" {
-		parts = append(parts, "reason="+reason)
+	if meta.Reason != "" {
+		parts = append(parts, "reason="+meta.Reason)
 	}
 	return strings.Join(parts, " | ")
 }
 
-func summarizeAgentOutcome(rec store.AgentEventRecord) string {
-	monitorTag, reason := readMonitorTagAndReason(json.RawMessage(rec.OutputJSON))
-	if monitorTag != "" && reason != "" {
-		return "monitor_tag=" + monitorTag + " | reason=" + reason
+func summarizeAgentOutcomeFromMeta(meta dashboardFlowOutputMeta) string {
+	if meta.MonitorTag != "" && meta.Reason != "" {
+		return "monitor_tag=" + meta.MonitorTag + " | reason=" + meta.Reason
 	}
-	if monitorTag != "" {
-		return "monitor_tag=" + monitorTag
+	if meta.MonitorTag != "" {
+		return "monitor_tag=" + meta.MonitorTag
 	}
-	if reason != "" {
-		return "reason=" + reason
+	if meta.Reason != "" {
+		return "reason=" + meta.Reason
 	}
 	return "agent_output_available"
 }
 
+type dashboardFlowOutputMeta struct {
+	MonitorTag string
+	Reason     string
+	Fields     []DashboardFlowValueField
+}
+
+func analyzeFlowOutput(raw json.RawMessage) dashboardFlowOutputMeta {
+	obj := decodeJSONObject(raw)
+	if len(obj) == 0 {
+		return dashboardFlowOutputMeta{}
+	}
+	monitorTag, _ := obj["monitor_tag"].(string)
+	reason, _ := obj["reason"].(string)
+	return dashboardFlowOutputMeta{
+		MonitorTag: strings.TrimSpace(monitorTag),
+		Reason:     strings.TrimSpace(reason),
+		Fields:     extractTraceFieldsFromObject(obj),
+	}
+}
+
 func readMonitorTagAndReason(raw json.RawMessage) (string, string) {
-	if len(raw) == 0 {
-		return "", ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", ""
-	}
-	monitorTag, _ := payload["monitor_tag"].(string)
-	reason, _ := payload["reason"].(string)
-	return strings.TrimSpace(monitorTag), strings.TrimSpace(reason)
+	meta := analyzeFlowOutput(raw)
+	return meta.MonitorTag, meta.Reason
 }
 
 func summarizeGateOutcome(gate store.GateEventRecord) string {
@@ -505,33 +646,95 @@ func shouldRenderPlanNode(gate store.GateEventRecord, tighten *DashboardTightenI
 func summarizePlanOutcome(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {
 	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
 	if action == "TIGHTEN" && tighten != nil {
-		return "risk_plan_update | reason=" + strings.TrimSpace(tighten.Reason)
+		return "tighten risk plan prepared"
 	}
 	if strings.TrimSpace(gate.Direction) != "" {
-		return "plan_ready | direction=" + strings.TrimSpace(gate.Direction)
+		return "open plan ready | direction=" + strings.TrimSpace(gate.Direction)
 	}
-	return "plan_ready"
+	return "open plan ready"
 }
 
 func summarizeTerminalOutcome(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {
 	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
 	if action == "TIGHTEN" && tighten != nil {
 		if tighten.Triggered {
-			return "tighten_executed | reason=" + strings.TrimSpace(tighten.Reason)
+			return "tighten executed"
 		}
-		return "tighten_blocked | reason=" + strings.TrimSpace(tighten.Reason)
+		return "tighten blocked"
 	}
 	if !gate.GlobalTradeable {
 		reason := strings.TrimSpace(gate.GateReason)
 		if reason == "" {
 			reason = "gate_blocked"
 		}
-		return "blocked | reason=" + reason
+		return "blocked"
 	}
 	if shouldRenderPlanNode(gate, tighten) {
-		return "plan_emitted"
+		return "plan emitted"
 	}
-	return "gate_pass_no_plan"
+	return "gate passed"
+}
+
+func summarizeResultFields(gate store.GateEventRecord, tighten *DashboardTightenInfo) []DashboardFlowValueField {
+	derived := decodeJSONObject(json.RawMessage(gate.DerivedJSON))
+	if len(derived) == 0 {
+		return nil
+	}
+	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
+	if action == "TIGHTEN" {
+		return summarizeTightenResultFields(derived, tighten)
+	}
+	return summarizePlanResultFields(derived)
+}
+
+func summarizePlanResultFields(derived map[string]any) []DashboardFlowValueField {
+	plan, ok := derived["plan"].(map[string]any)
+	if !ok || len(plan) == 0 {
+		return nil
+	}
+	fields := make([]DashboardFlowValueField, 0, 7)
+	appendFlowField := func(key string, value any) {
+		if field, ok := traceFieldFromValue(key, value); ok {
+			fields = append(fields, field)
+		}
+	}
+	appendFlowField("direction", plan["direction"])
+	appendFlowField("entry", plan["entry"])
+	appendFlowField("stop_loss", plan["stop_loss"])
+	appendFlowField("risk_pct", plan["risk_pct"])
+	appendFlowField("position_size", plan["position_size"])
+	appendFlowField("leverage", plan["leverage"])
+	if takeProfits, ok := plan["take_profits"].([]any); ok && len(takeProfits) > 0 {
+		appendFlowField("tp1", takeProfits[0])
+	}
+	return fields
+}
+
+func summarizeTightenResultFields(derived map[string]any, tighten *DashboardTightenInfo) []DashboardFlowValueField {
+	execRaw, ok := derived["execution"].(map[string]any)
+	if !ok || len(execRaw) == 0 {
+		if tighten == nil {
+			return nil
+		}
+		return []DashboardFlowValueField{{Key: "tighten", Value: strings.TrimSpace(tighten.Reason)}}
+	}
+	fields := make([]DashboardFlowValueField, 0, 6)
+	appendFlowField := func(key string, value any) {
+		if field, ok := traceFieldFromValue(key, value); ok {
+			fields = append(fields, field)
+		}
+	}
+	appendFlowField("executed", execRaw["executed"])
+	appendFlowField("eligible", execRaw["eligible"])
+	appendFlowField("tp_tightened", execRaw["tp_tightened"])
+	if blockedBy, ok := execRaw["blocked_by"].([]any); ok && len(blockedBy) > 0 {
+		appendFlowField("blocked_by", blockedBy[0])
+	}
+	if score, ok := execRaw["score"].(map[string]any); ok {
+		appendFlowField("score", score["total"])
+		appendFlowField("threshold", score["threshold"])
+	}
+	return fields
 }
 
 func resolveDashboardTightenInfo(gate *store.GateEventRecord) *DashboardTightenInfo {

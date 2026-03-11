@@ -795,6 +795,10 @@ type InitialExitSummary struct {
 
 type TightenATRSummary struct {
 	StructureThreatened  float64 `json:"structure_threatened"`
+	TP1ATR               float64 `json:"tp1_atr"`
+	TP2ATR               float64 `json:"tp2_atr"`
+	MinTPDistancePct     float64 `json:"min_tp_distance_pct"`
+	MinTPGapPct          float64 `json:"min_tp_gap_pct"`
 	MinUpdateIntervalSec int64   `json:"min_update_interval_sec"`
 }
 
@@ -871,6 +875,10 @@ func (s Server) buildConfigGraph() ConfigGraphResponse {
 						},
 						TightenATR: TightenATRSummary{
 							StructureThreatened:  bundle.Strategy.RiskManagement.TightenATR.StructureThreatened,
+							TP1ATR:               bundle.Strategy.RiskManagement.TightenATR.TP1ATR,
+							TP2ATR:               bundle.Strategy.RiskManagement.TightenATR.TP2ATR,
+							MinTPDistancePct:     bundle.Strategy.RiskManagement.TightenATR.MinTPDistancePct,
+							MinTPGapPct:          bundle.Strategy.RiskManagement.TightenATR.MinTPGapPct,
 							MinUpdateIntervalSec: bundle.Strategy.RiskManagement.TightenATR.MinUpdateIntervalSec,
 						},
 					},

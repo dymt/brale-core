@@ -56,12 +56,23 @@ type DashboardOverviewSymbol struct {
 }
 
 type DashboardPositionCard struct {
-	Side         string    `json:"side"`
-	Amount       float64   `json:"amount"`
-	EntryPrice   float64   `json:"entry_price"`
-	CurrentPrice float64   `json:"current_price"`
-	TakeProfits  []float64 `json:"take_profits"`
-	StopLoss     float64   `json:"stop_loss"`
+	Side             string                          `json:"side"`
+	Amount           float64                         `json:"amount"`
+	EntryPrice       float64                         `json:"entry_price"`
+	CurrentPrice     float64                         `json:"current_price"`
+	TakeProfits      []float64                       `json:"take_profits"`
+	StopLoss         float64                         `json:"stop_loss"`
+	RiskPlanTimeline []DashboardRiskPlanTimelineItem `json:"risk_plan_timeline,omitempty"`
+}
+
+type DashboardRiskPlanTimelineItem struct {
+	Source              string    `json:"source"`
+	Label               string    `json:"label"`
+	CreatedAt           string    `json:"created_at"`
+	StopLoss            float64   `json:"stop_loss"`
+	TakeProfits         []float64 `json:"take_profits,omitempty"`
+	PreviousStopLoss    float64   `json:"previous_stop_loss"`
+	PreviousTakeProfits []float64 `json:"previous_take_profits,omitempty"`
 }
 
 type DashboardPnLCard struct {
@@ -121,10 +132,13 @@ type DashboardFlowTrace struct {
 }
 
 type DashboardFlowStageValues struct {
-	Stage  string                    `json:"stage"`
-	Mode   string                    `json:"mode,omitempty"`
-	Source string                    `json:"source"`
-	Values []DashboardFlowValueField `json:"values,omitempty"`
+	Stage   string                    `json:"stage"`
+	Mode    string                    `json:"mode,omitempty"`
+	Source  string                    `json:"source"`
+	Status  string                    `json:"status,omitempty"`
+	Reason  string                    `json:"reason,omitempty"`
+	Summary string                    `json:"summary,omitempty"`
+	Values  []DashboardFlowValueField `json:"values,omitempty"`
 }
 
 type DashboardFlowValueField struct {
@@ -136,12 +150,16 @@ type DashboardFlowValueField struct {
 type DashboardFlowInPosition struct {
 	Active bool   `json:"active"`
 	Side   string `json:"side,omitempty"`
+	Status string `json:"status,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type DashboardFlowGateTrace struct {
 	Action    string                    `json:"action"`
 	Tradeable bool                      `json:"tradeable"`
+	Status    string                    `json:"status,omitempty"`
 	Reason    string                    `json:"reason,omitempty"`
+	Summary   string                    `json:"summary,omitempty"`
 	Rules     []DashboardFlowValueField `json:"rules,omitempty"`
 }
 
@@ -153,9 +171,12 @@ type DashboardFlowAnchor struct {
 }
 
 type DashboardFlowNode struct {
-	Stage   string `json:"stage"`
-	Title   string `json:"title"`
-	Outcome string `json:"outcome"`
+	Stage   string                    `json:"stage"`
+	Title   string                    `json:"title"`
+	Outcome string                    `json:"outcome"`
+	Status  string                    `json:"status,omitempty"`
+	Reason  string                    `json:"reason,omitempty"`
+	Values  []DashboardFlowValueField `json:"values,omitempty"`
 }
 
 type DashboardTightenInfo struct {
@@ -184,19 +205,89 @@ type DashboardDecisionHistoryItem struct {
 }
 
 type DashboardDecisionDetail struct {
-	SnapshotID                   uint     `json:"snapshot_id"`
-	Action                       string   `json:"action"`
-	Reason                       string   `json:"reason"`
-	Tradeable                    bool     `json:"tradeable"`
-	ConsensusScore               *float64 `json:"consensus_score,omitempty"`
-	ConsensusConfidence          *float64 `json:"consensus_confidence,omitempty"`
-	ConsensusScoreThreshold      *float64 `json:"consensus_score_threshold,omitempty"`
-	ConsensusConfidenceThreshold *float64 `json:"consensus_confidence_threshold,omitempty"`
-	ConsensusScorePassed         *bool    `json:"consensus_score_passed,omitempty"`
-	ConsensusConfidencePassed    *bool    `json:"consensus_confidence_passed,omitempty"`
-	ConsensusPassed              *bool    `json:"consensus_passed,omitempty"`
-	Providers                    []string `json:"providers"`
-	Agents                       []string `json:"agents"`
-	ReportMarkdown               string   `json:"report_markdown"`
-	DecisionViewURL              string   `json:"decision_view_url"`
+	SnapshotID                   uint                            `json:"snapshot_id"`
+	Action                       string                          `json:"action"`
+	Reason                       string                          `json:"reason"`
+	Tradeable                    bool                            `json:"tradeable"`
+	ConsensusScore               *float64                        `json:"consensus_score,omitempty"`
+	ConsensusConfidence          *float64                        `json:"consensus_confidence,omitempty"`
+	ConsensusScoreThreshold      *float64                        `json:"consensus_score_threshold,omitempty"`
+	ConsensusConfidenceThreshold *float64                        `json:"consensus_confidence_threshold,omitempty"`
+	ConsensusScorePassed         *bool                           `json:"consensus_score_passed,omitempty"`
+	ConsensusConfidencePassed    *bool                           `json:"consensus_confidence_passed,omitempty"`
+	ConsensusPassed              *bool                           `json:"consensus_passed,omitempty"`
+	Providers                    []string                        `json:"providers"`
+	Agents                       []string                        `json:"agents"`
+	Tighten                      *DashboardDecisionTightenDetail `json:"tighten,omitempty"`
+	PlanContext                  *DashboardDecisionPlanContext   `json:"plan_context,omitempty"`
+	Plan                         *DashboardDecisionPlanSummary   `json:"plan,omitempty"`
+	Sieve                        *DashboardDecisionSieveDetail   `json:"sieve,omitempty"`
+	ReportMarkdown               string                          `json:"report_markdown"`
+	DecisionViewURL              string                          `json:"decision_view_url"`
+}
+
+type DashboardDecisionTightenDetail struct {
+	Action         string   `json:"action"`
+	Evaluated      bool     `json:"evaluated"`
+	Eligible       bool     `json:"eligible"`
+	Executed       bool     `json:"executed"`
+	TPTightened    bool     `json:"tp_tightened"`
+	BlockedBy      []string `json:"blocked_by,omitempty"`
+	Score          float64  `json:"score"`
+	ScoreThreshold float64  `json:"score_threshold"`
+	ScoreParseOK   bool     `json:"score_parse_ok"`
+	DisplayReason  string   `json:"display_reason,omitempty"`
+}
+
+type DashboardDecisionPlanContext struct {
+	RiskPerTradePct float64 `json:"risk_per_trade_pct"`
+	MaxInvestPct    float64 `json:"max_invest_pct"`
+	MaxLeverage     float64 `json:"max_leverage"`
+	EntryOffsetATR  float64 `json:"entry_offset_atr"`
+	EntryMode       string  `json:"entry_mode"`
+	InitialExit     string  `json:"initial_exit"`
+}
+
+type DashboardDecisionPlanSummary struct {
+	Status           string                         `json:"status"`
+	Direction        string                         `json:"direction"`
+	EntryPrice       float64                        `json:"entry_price"`
+	StopLoss         float64                        `json:"stop_loss"`
+	TakeProfits      []float64                      `json:"take_profits,omitempty"`
+	TakeProfitLevels []DashboardDecisionPlanTPLevel `json:"take_profit_levels,omitempty"`
+	PositionSize     float64                        `json:"position_size"`
+	RiskPct          float64                        `json:"risk_pct"`
+	Leverage         float64                        `json:"leverage"`
+	InitialQty       float64                        `json:"initial_qty"`
+	OpenedAt         string                         `json:"opened_at,omitempty"`
+}
+
+type DashboardDecisionPlanTPLevel struct {
+	LevelID string  `json:"level_id"`
+	Price   float64 `json:"price"`
+	QtyPct  float64 `json:"qty_pct"`
+	Hit     bool    `json:"hit"`
+}
+
+type DashboardDecisionSieveDetail struct {
+	Action            string                      `json:"action"`
+	ReasonCode        string                      `json:"reason_code"`
+	Hit               bool                        `json:"hit"`
+	SizeFactor        float64                     `json:"size_factor"`
+	MinSizeFactor     float64                     `json:"min_size_factor"`
+	DefaultAction     string                      `json:"default_action"`
+	DefaultSizeFactor float64                     `json:"default_size_factor"`
+	ActionBefore      string                      `json:"action_before"`
+	PolicyHash        string                      `json:"policy_hash"`
+	Rows              []DashboardDecisionSieveRow `json:"rows,omitempty"`
+}
+
+type DashboardDecisionSieveRow struct {
+	MechanicsTag  string  `json:"mechanics_tag"`
+	LiqConfidence string  `json:"liq_confidence"`
+	CrowdingAlign *bool   `json:"crowding_align,omitempty"`
+	GateAction    string  `json:"gate_action"`
+	SizeFactor    float64 `json:"size_factor"`
+	ReasonCode    string  `json:"reason_code"`
+	Matched       bool    `json:"matched"`
 }
