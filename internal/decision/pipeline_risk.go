@@ -561,7 +561,16 @@ func (p *Pipeline) applyStructureTighten(ctx context.Context, pos store.Position
 		}
 	}
 	plan.StopPrice = newStop
-	plan, tpTightened := risk.TightenTPLevels(plan, pos.Side, pos.AvgEntry, oldStop, newStop)
+	plan, tpTightened := risk.TightenTPLevels(
+		plan,
+		pos.Side,
+		pos.AvgEntry,
+		updateCtx.ATR,
+		updateCtx.Binding.RiskManagement.TightenATR.TP1ATR,
+		updateCtx.Binding.RiskManagement.TightenATR.TP2ATR,
+		updateCtx.Binding.RiskManagement.TightenATR.MinTPDistancePct,
+		updateCtx.Binding.RiskManagement.TightenATR.MinTPGapPct,
+	)
 	_, err := p.RiskPlans.ApplyUpdate(ctx, pos.PositionID, plan, "monitor-tighten")
 	executed := err == nil && plan.StopPrice != oldStop
 	if executed {
@@ -673,7 +682,7 @@ const (
 	tightenV2GateATRChangePctMin = 0.4
 
 	// Tighten V2 评分阈值（总分达到才触发）。
-	tightenV2ScoreThreshold = 3.0
+	tightenV2ScoreThreshold = 4.5
 
 	// Tighten V2 评分权重：monitor_tag=tighten。
 	tightenV2ScoreMonitorTag = 2.0
