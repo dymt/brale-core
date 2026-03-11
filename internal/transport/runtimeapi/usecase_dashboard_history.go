@@ -11,6 +11,7 @@ import (
 
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/pkg/parseutil"
+	"brale-core/internal/position"
 	"brale-core/internal/runtime"
 	"brale-core/internal/store"
 )
@@ -18,13 +19,14 @@ import (
 type dashboardHistoryUsecase struct {
 	store       store.Store
 	allowSymbol func(string) bool
+	configs     map[string]ConfigBundle
 }
 
 func newDashboardHistoryUsecase(s *Server) dashboardHistoryUsecase {
 	if s == nil {
 		return dashboardHistoryUsecase{}
 	}
-	return dashboardHistoryUsecase{store: s.Store, allowSymbol: s.AllowSymbol}
+	return dashboardHistoryUsecase{store: s.Store, allowSymbol: s.AllowSymbol, configs: s.SymbolConfigs}
 }
 
 func (u dashboardHistoryUsecase) build(ctx context.Context, rawSymbol string, limit int, snapshotQuery string) (DashboardDecisionHistoryResponse, *usecaseError) {
@@ -64,7 +66,7 @@ func (u dashboardHistoryUsecase) build(ctx context.Context, rawSymbol string, li
 		return DashboardDecisionHistoryResponse{}, &usecaseError{Status: 400, Code: "invalid_snapshot_id", Message: "snapshot_id 非法", Details: parseErr.Error()}
 	}
 	if hasDetail {
-		detail, detailErr := buildDecisionDetail(ctx, u.store, normalizedSymbol, detailSnapshotID)
+		detail, detailErr := buildDecisionDetail(ctx, u.store, u.configs, normalizedSymbol, detailSnapshotID)
 		if detailErr != nil {
 			return DashboardDecisionHistoryResponse{}, detailErr
 		}
@@ -97,10 +99,11 @@ func mapHistoryItems(gates []store.GateEventRecord) []DashboardDecisionHistoryIt
 			at = time.Unix(gate.Timestamp, 0).UTC().Format(time.RFC3339)
 		}
 		consensus := extractConsensusMetrics(json.RawMessage(gate.DerivedJSON))
+		tighten := buildDecisionTightenDetail(json.RawMessage(gate.DerivedJSON))
 		out = append(out, DashboardDecisionHistoryItem{
 			SnapshotID:          gate.SnapshotID,
 			Action:              strings.ToUpper(strings.TrimSpace(gate.DecisionAction)),
-			Reason:              strings.TrimSpace(gate.GateReason),
+			Reason:              decisionDisplayReason(strings.ToUpper(strings.TrimSpace(gate.DecisionAction)), strings.TrimSpace(gate.GateReason), tighten),
 			At:                  at,
 			ConsensusScore:      consensus.Score,
 			ConsensusConfidence: consensus.Confidence,
@@ -112,7 +115,7 @@ func mapHistoryItems(gates []store.GateEventRecord) []DashboardDecisionHistoryIt
 	return out
 }
 
-func buildDecisionDetail(ctx context.Context, st store.Store, symbol string, snapshotID uint) (*DashboardDecisionDetail, *usecaseError) {
+func buildDecisionDetail(ctx context.Context, st store.Store, configs map[string]ConfigBundle, symbol string, snapshotID uint) (*DashboardDecisionDetail, *usecaseError) {
 	if snapshotID == 0 {
 		return nil, &usecaseError{Status: 400, Code: "invalid_snapshot_id", Message: "snapshot_id 非法"}
 	}
@@ -172,11 +175,12 @@ func buildDecisionDetail(ctx context.Context, st store.Store, symbol string, sna
 		agentSummaries = append(agentSummaries, strings.TrimSpace(stage.Role+": "+stage.Summary))
 	}
 	consensus := extractConsensusMetrics(json.RawMessage(selected.DerivedJSON))
+	tighten := buildDecisionTightenDetail(json.RawMessage(selected.DerivedJSON))
 
 	detail := &DashboardDecisionDetail{
 		SnapshotID:                   selected.SnapshotID,
 		Action:                       strings.ToUpper(strings.TrimSpace(selected.DecisionAction)),
-		Reason:                       strings.TrimSpace(selected.GateReason),
+		Reason:                       decisionDisplayReason(strings.ToUpper(strings.TrimSpace(selected.DecisionAction)), strings.TrimSpace(selected.GateReason), tighten),
 		Tradeable:                    selected.GlobalTradeable,
 		ConsensusScore:               consensus.Score,
 		ConsensusConfidence:          consensus.Confidence,
@@ -187,10 +191,250 @@ func buildDecisionDetail(ctx context.Context, st store.Store, symbol string, sna
 		ConsensusPassed:              consensus.Passed,
 		Providers:                    providerSummaries,
 		Agents:                       agentSummaries,
+		Tighten:                      tighten,
+		PlanContext:                  buildDecisionPlanContext(configs, symbol),
+		Plan:                         buildDecisionPlanSummary(ctx, st, symbol),
+		Sieve:                        buildDecisionSieveDetail(json.RawMessage(selected.DerivedJSON), configs, symbol),
 		ReportMarkdown:               prependDecisionHeader("🚦 决策报告", formatter.RenderDecisionMarkdown(report)),
 		DecisionViewURL:              fmt.Sprintf("/decision-view/?symbol=%s&snapshot_id=%d", symbol, snapshotID),
 	}
 	return detail, nil
+}
+
+func decisionDisplayReason(action string, fallback string, tighten *DashboardDecisionTightenDetail) string {
+	if strings.EqualFold(strings.TrimSpace(action), "TIGHTEN") && tighten != nil && strings.TrimSpace(tighten.DisplayReason) != "" {
+		return strings.TrimSpace(tighten.DisplayReason)
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func buildDecisionTightenDetail(raw json.RawMessage) *DashboardDecisionTightenDetail {
+	if len(raw) == 0 {
+		return nil
+	}
+	var derived map[string]any
+	if err := json.Unmarshal(raw, &derived); err != nil {
+		return nil
+	}
+	execRaw, ok := derived["execution"].(map[string]any)
+	if !ok || len(execRaw) == 0 {
+		return nil
+	}
+	action := strings.TrimSpace(fmt.Sprint(execRaw["action"]))
+	if !strings.EqualFold(action, "tighten") {
+		return nil
+	}
+	detail := &DashboardDecisionTightenDetail{
+		Action:      strings.ToUpper(action),
+		Evaluated:   parseDecisionBool(execRaw["evaluated"]),
+		Eligible:    parseDecisionBool(execRaw["eligible"]),
+		Executed:    parseDecisionBool(execRaw["executed"]),
+		TPTightened: parseDecisionBool(execRaw["tp_tightened"]),
+	}
+	if blockedBy, ok := execRaw["blocked_by"].([]any); ok {
+		list := make([]string, 0, len(blockedBy))
+		for _, item := range blockedBy {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				list = append(list, text)
+			}
+		}
+		detail.BlockedBy = list
+	}
+	if score, ok := execRaw["score"].(map[string]any); ok {
+		detail.Score = parseDecisionFloat(score["total"])
+		detail.ScoreThreshold = parseDecisionFloat(score["threshold"])
+		detail.ScoreParseOK = parseDecisionBool(score["parse_ok"])
+	}
+	detail.DisplayReason = tightenDisplayReason(detail)
+	return detail
+}
+
+func tightenDisplayReason(detail *DashboardDecisionTightenDetail) string {
+	if detail == nil {
+		return ""
+	}
+	if detail.Executed {
+		if detail.TPTightened {
+			return "已执行收紧，并同步收紧止盈"
+		}
+		return "已执行持仓收紧"
+	}
+	if len(detail.BlockedBy) > 0 {
+		return "收紧未执行: " + detail.BlockedBy[0]
+	}
+	if detail.Eligible {
+		return "满足收紧条件，等待执行"
+	}
+	if detail.Evaluated {
+		return "已评估持仓收紧，但未触发"
+	}
+	return "持仓收紧未评估"
+}
+
+func buildDecisionPlanContext(configs map[string]ConfigBundle, symbol string) *DashboardDecisionPlanContext {
+	bundle, ok := configs[runtime.NormalizeSymbol(symbol)]
+	if !ok {
+		return nil
+	}
+	riskMgmt := bundle.Strategy.RiskManagement
+	return &DashboardDecisionPlanContext{
+		RiskPerTradePct: riskMgmt.RiskPerTradePct,
+		MaxInvestPct:    riskMgmt.MaxInvestPct,
+		MaxLeverage:     riskMgmt.MaxLeverage,
+		EntryOffsetATR:  riskMgmt.EntryOffsetATR,
+		EntryMode:       strings.TrimSpace(riskMgmt.EntryMode),
+		InitialExit:     strings.TrimSpace(riskMgmt.InitialExit.Policy),
+	}
+}
+
+func buildDecisionPlanSummary(ctx context.Context, st store.Store, symbol string) *DashboardDecisionPlanSummary {
+	if st == nil {
+		return nil
+	}
+	pos, ok, err := st.FindPositionBySymbol(ctx, symbol, position.OpenPositionStatuses)
+	if err != nil || !ok {
+		return nil
+	}
+	plan := &DashboardDecisionPlanSummary{
+		Status:       strings.TrimSpace(pos.Status),
+		Direction:    strings.ToLower(strings.TrimSpace(pos.Side)),
+		EntryPrice:   pos.AvgEntry,
+		PositionSize: pos.Qty,
+		RiskPct:      pos.RiskPct,
+		Leverage:     pos.Leverage,
+	}
+	if !pos.CreatedAt.IsZero() {
+		plan.OpenedAt = pos.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	decoded, err := position.DecodeRiskPlan(pos.RiskJSON)
+	if err != nil {
+		return plan
+	}
+	plan.StopLoss = decoded.StopPrice
+	plan.InitialQty = decoded.InitialQty
+	plan.TakeProfitLevels = make([]DashboardDecisionPlanTPLevel, 0, len(decoded.TPLevels))
+	plan.TakeProfits = make([]float64, 0, len(decoded.TPLevels))
+	for _, level := range decoded.TPLevels {
+		plan.TakeProfits = append(plan.TakeProfits, level.Price)
+		plan.TakeProfitLevels = append(plan.TakeProfitLevels, DashboardDecisionPlanTPLevel{
+			LevelID: level.LevelID,
+			Price:   level.Price,
+			QtyPct:  level.QtyPct,
+			Hit:     level.Hit,
+		})
+	}
+	return plan
+}
+
+func buildDecisionSieveDetail(raw json.RawMessage, configs map[string]ConfigBundle, symbol string) *DashboardDecisionSieveDetail {
+	if len(raw) == 0 {
+		return nil
+	}
+	var derived map[string]any
+	if err := json.Unmarshal(raw, &derived); err != nil {
+		return nil
+	}
+	if !hasDecisionSieveSignal(derived) {
+		return nil
+	}
+	return buildDecisionSieveDetailFromConfig(configs, symbol, derived)
+}
+
+func hasDecisionSieveSignal(derived map[string]any) bool {
+	if len(derived) == 0 {
+		return false
+	}
+	keys := []string{"sieve_action", "sieve_reason", "sieve_hit", "sieve_size_factor", "gate_action_before_sieve"}
+	for _, key := range keys {
+		if _, ok := derived[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func buildDecisionSieveDetailFromConfig(configs map[string]ConfigBundle, symbol string, derived map[string]any) *DashboardDecisionSieveDetail {
+	bundle, ok := configs[runtime.NormalizeSymbol(symbol)]
+	if !ok {
+		if len(derived) == 0 {
+			return nil
+		}
+		return &DashboardDecisionSieveDetail{
+			Action:            strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["sieve_action"]))),
+			ReasonCode:        strings.TrimSpace(fmt.Sprint(derived["sieve_reason"])),
+			Hit:               parseDecisionBool(derived["sieve_hit"]),
+			SizeFactor:        parseDecisionFloat(derived["sieve_size_factor"]),
+			MinSizeFactor:     parseDecisionFloat(derived["sieve_min_size_factor"]),
+			DefaultAction:     strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["sieve_default_action"]))),
+			DefaultSizeFactor: parseDecisionFloat(derived["sieve_default_size_factor"]),
+			ActionBefore:      strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["gate_action_before_sieve"]))),
+			PolicyHash:        strings.TrimSpace(fmt.Sprint(derived["sieve_policy_hash"])),
+		}
+	}
+	sieveCfg := bundle.Strategy.RiskManagement.Sieve
+	detail := &DashboardDecisionSieveDetail{
+		Action:            strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["sieve_action"]))),
+		ReasonCode:        strings.TrimSpace(fmt.Sprint(derived["sieve_reason"])),
+		Hit:               parseDecisionBool(derived["sieve_hit"]),
+		SizeFactor:        parseDecisionFloat(derived["sieve_size_factor"]),
+		MinSizeFactor:     firstPositive(parseDecisionFloat(derived["sieve_min_size_factor"]), sieveCfg.MinSizeFactor),
+		DefaultAction:     firstNonEmpty(strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["sieve_default_action"]))), strings.ToUpper(strings.TrimSpace(sieveCfg.DefaultGateAction))),
+		DefaultSizeFactor: firstPositive(parseDecisionFloat(derived["sieve_default_size_factor"]), sieveCfg.DefaultSizeFactor),
+		ActionBefore:      strings.ToUpper(strings.TrimSpace(fmt.Sprint(derived["gate_action_before_sieve"]))),
+		PolicyHash:        firstNonEmpty(strings.TrimSpace(fmt.Sprint(derived["sieve_policy_hash"])), bundle.Strategy.Hash),
+	}
+	if detail.Action == "" && detail.ReasonCode == "" && !detail.Hit {
+		return nil
+	}
+	rows := make([]DashboardDecisionSieveRow, 0, len(sieveCfg.Rows))
+	for _, row := range sieveCfg.Rows {
+		matched := detail.ReasonCode != "" && strings.EqualFold(strings.TrimSpace(row.ReasonCode), detail.ReasonCode)
+		if !matched {
+			continue
+		}
+		rows = append(rows, DashboardDecisionSieveRow{
+			MechanicsTag:  strings.TrimSpace(row.MechanicsTag),
+			LiqConfidence: strings.TrimSpace(row.LiqConfidence),
+			CrowdingAlign: row.CrowdingAlign,
+			GateAction:    strings.ToUpper(strings.TrimSpace(row.GateAction)),
+			SizeFactor:    row.SizeFactor,
+			ReasonCode:    strings.TrimSpace(row.ReasonCode),
+			Matched:       matched,
+		})
+	}
+	detail.Rows = rows
+	return detail
+}
+
+func firstPositive(values ...float64) float64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func parseDecisionFloat(value any) float64 {
+	if parsed, ok := parseutil.FloatOK(value); ok {
+		return parsed
+	}
+	return 0
+}
+
+func parseDecisionBool(value any) bool {
+	parsed, ok := parseConsensusBool(value)
+	return ok && parsed
 }
 
 type dashboardConsensusMetrics struct {
