@@ -9,20 +9,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
   <div class="ambient-glow"></div>
   <main class="dashboard-shell">
     <header class="hero">
-      <div>
-        <p class="hero-kicker">Execution Intelligence Console</p>
+      <div class="hero-copy">
+        <p class="hero-kicker">策略执行与风控总览</p>
         <h1 id="hero-title" data-text="Brale Dashboard - Break A Leg">Brale Dashboard - Break A Leg</h1>
       </div>
       <div class="hero-meta">
-        <div class="chip"><span class="dot"></span> Runtime: <span id="runtime-status">Loading</span></div>
+        <div class="chip"><span class="dot" aria-hidden="true"></span> 系统状态: <span id="runtime-status" role="status" aria-live="polite" aria-atomic="true">检查中...</span></div>
         <div class="chip" id="clock-chip">--:--:--</div>
-        <a class="chip link-chip" id="decision-view-link" href="/decision-view/" target="_blank" rel="noopener noreferrer">Open Decision View</a>
+        <a class="chip link-chip" id="decision-view-link" href="/decision-view/" target="_blank" rel="noopener noreferrer">打开决策视图</a>
       </div>
     </header>
 
@@ -30,7 +30,7 @@
       <article class="panel" id="live-position-panel">
         <div class="panel-head">
           <h2>实时仓位</h2>
-          <span class="subtle">Per Symbol TP/SL + PnL</span>
+          <span class="subtle">按交易对查看止盈止损与盈亏</span>
         </div>
         <div class="live-position-list" id="live-position-list"></div>
       </article>
@@ -38,7 +38,7 @@
       <article class="panel" aria-label="盈亏统计">
         <div class="panel-head">
           <h2>账户与收益</h2>
-          <span class="subtle">Balance + ProfitAll</span>
+          <span class="subtle">账户余额与累计收益概览</span>
         </div>
         <div class="pnl-stack">
           <div class="pnl-card">
@@ -57,11 +57,11 @@
             <span>监控币种</span>
             <strong id="acct-symbols">--</strong>
           </div>
-          <div class="pnl-card positive">
+          <div class="pnl-card">
             <span>已平仓收益</span>
             <strong id="acct-profit-closed">--</strong>
           </div>
-          <div class="pnl-card positive">
+          <div class="pnl-card">
             <span>综合收益</span>
             <strong id="acct-profit-all">--</strong>
           </div>
@@ -78,7 +78,6 @@
             <select id="symbol-select"></select>
             <label for="interval-select" class="subtle">周期</label>
             <select id="interval-select"></select>
-            <span class="subtle" id="kline-range">--</span>
           </div>
         </div>
         <div id="kline-chart" class="chart"></div>
@@ -90,10 +89,10 @@
       <article class="panel flow-panel full-span">
         <div class="panel-head">
           <h2>AI 决策关联链路</h2>
-          <span class="subtle">Latest for selected symbol</span>
+          <span class="subtle">展示当前交易对最近一次决策链路</span>
         </div>
         <div id="flow-graph" class="flow-graph"></div>
-      <div id="flow-meta" class="flow-meta" hidden></div>
+        <div id="flow-meta" class="flow-meta" role="status" aria-live="polite" hidden></div>
       </article>
     </section>
 
@@ -101,17 +100,18 @@
       <article class="panel">
         <div class="panel-head">
           <h2>历史仓位</h2>
-          <span class="subtle">Recent Closed Positions</span>
+          <span class="subtle">最近已平仓记录</span>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap position-history-wrap">
           <table>
+            <caption class="sr-only">历史仓位列表</caption>
             <thead>
               <tr>
-                <th>交易对</th>
-                <th>时间</th>
-                <th>方向</th>
-                <th>仓位</th>
-                <th>结果</th>
+                <th scope="col">交易对</th>
+                <th scope="col">时间</th>
+                <th scope="col">方向</th>
+                <th scope="col">仓位</th>
+                <th scope="col">结果</th>
               </tr>
             </thead>
             <tbody id="position-history-body"></tbody>
@@ -122,24 +122,25 @@
       <article class="panel">
         <div class="panel-head">
           <h2>历史决策与详情</h2>
-          <span class="subtle">Click row for details</span>
+          <span class="subtle">点击任意一行查看该次决策详情</span>
         </div>
         <div class="table-wrap decision-wrap">
           <table>
+            <caption class="sr-only">历史决策列表</caption>
             <thead>
               <tr>
-                <th>时间</th>
-                <th>动作</th>
-                <th>原因</th>
-                <th>共识总分</th>
-                <th>置信度</th>
-                <th>Snapshot</th>
+                <th scope="col">时间</th>
+                <th scope="col">动作</th>
+                <th scope="col">原因</th>
+                <th scope="col">共识总分</th>
+                <th scope="col">置信度</th>
+                <th scope="col">快照ID</th>
               </tr>
             </thead>
             <tbody id="decision-history-body"></tbody>
           </table>
         </div>
-        <div class="decision-detail" id="decision-detail"></div>
+        <div class="decision-detail" id="decision-detail" aria-live="polite"></div>
       </article>
     </section>
   </main>
@@ -147,6 +148,6 @@
   <script>
     window.__DASHBOARD_BASE__ = window.__DASHBOARD_BASE__ || "/dashboard";
   </script>
-  <script src="./main.js"></script>
+  <script defer src="./main.js"></script>
 </body>
 </html>

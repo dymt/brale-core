@@ -18,10 +18,22 @@ const state = {
   selectedDecisionSnapshotID: 0,
   selectedDecisionSnapshotSymbol: "",
   lastPositionHistory: [],
+  selectedDecisionAt: "",
   historyRequestSeq: 0,
   reportCollapsed: true,
   refreshing: false,
-  pendingRefreshMode: ""
+  pendingRefreshMode: "",
+  renderCache: {
+    symbolOptions: "",
+    intervalOptions: "",
+    livePositions: "",
+    positionHistory: "",
+    decisionHistory: "",
+    flowGraph: "",
+    flowMeta: "",
+    flowDataKey: "",
+    klineDataKey: ""
+  }
 };
 
 const els = {
@@ -30,7 +42,6 @@ const els = {
   clock: document.getElementById("clock-chip"),
   symbolSelect: document.getElementById("symbol-select"),
   intervalSelect: document.getElementById("interval-select"),
-  klineRange: document.getElementById("kline-range"),
   klinePriceTags: document.getElementById("kline-price-tags"),
   livePositionList: document.getElementById("live-position-list"),
   acctTotal: document.getElementById("acct-total"),
@@ -48,8 +59,64 @@ const els = {
 };
 
 let chart = null;
-let positionHoldTimer = 0;
 let activeHeldPositionCard = null;
+let activeHeldHistoryRow = null;
+
+const FLOW_LAYOUT_MIN_INTERVAL_MS = 120;
+const KLINE_TAG_MIN_INTERVAL_MS = 120;
+
+const flowLayoutTask = {
+  raf: 0,
+  timer: 0,
+  settleTimer: 0,
+  lastRunAt: 0,
+  runner: null
+};
+
+const klineTagTask = {
+  raf: 0,
+  timer: 0,
+  settleTimer: 0,
+  lastRunAt: 0,
+  runner: null
+};
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function addTransientClass(element, className, durationMs) {
+  if (!element || !className) {
+    return;
+  }
+  element.classList.remove(className);
+  if (window.requestAnimationFrame) {
+    window.requestAnimationFrame(() => {
+      element.classList.add(className);
+    });
+  } else {
+    element.classList.add(className);
+  }
+  const delay = Number.isFinite(Number(durationMs)) ? Number(durationMs) : 260;
+  window.setTimeout(() => {
+    element.classList.remove(className);
+  }, delay);
+}
+
+function animateDecisionDetailEntry() {
+  const target = els.decisionDetail;
+  if (!target || prefersReducedMotion()) {
+    return;
+  }
+  target.classList.remove("motion-enter", "motion-enter-active");
+  target.classList.add("motion-enter");
+  window.requestAnimationFrame(() => {
+    target.classList.add("motion-enter-active");
+  });
+  window.setTimeout(() => {
+    target.classList.remove("motion-enter", "motion-enter-active");
+  }, 320);
+}
 
 function startHeroTitleTyping() {
   const el = els.heroTitle;
@@ -58,6 +125,12 @@ function startHeroTitleTyping() {
   }
   const fullText = String(el.getAttribute("data-text") || el.textContent || "");
   if (!fullText) {
+    return;
+  }
+  if (prefersReducedMotion()) {
+    el.textContent = fullText;
+    el.classList.remove("typing");
+    el.classList.add("typed");
     return;
   }
   el.textContent = "";
@@ -174,12 +247,12 @@ function actionLabel(action) {
 
 function flowStatusLabel(status) {
   if (status === "blocked") {
-    return "阻拦";
+    return "已阻断";
   }
   if (status === "ok") {
     return "通过";
   }
-  return "观察中";
+  return "评估中";
 }
 
 function translateSieveReason(reason) {
@@ -191,7 +264,7 @@ function translateSieveReason(reason) {
     LIQ_LOW_WAIT: "清算强度不足，先不激活更高仓位。",
     LIQ_HIGH_ALLOW: "清算与力学标签匹配，允许按筛网规则推进。"
   };
-  return labels[code] || (code ? `筛网命中 ${code}` : "当前未命中额外筛网原因");
+  return labels[code] || (code ? `风险筛选命中 ${code}` : "当前未命中额外风险筛选原因");
 }
 
 function calcRR(entry, target, stop) {
@@ -233,6 +306,210 @@ function escapeHtml(input) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function sanitizeLinkHref(input, fallback) {
+  const fallbackHref = String(fallback || "/decision-view/");
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return fallbackHref;
+  }
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return fallbackHref;
+    }
+    return parsed.href;
+  } catch (_err) {
+    return fallbackHref;
+  }
+}
+
+function setInnerHTMLIfChanged(element, cacheKey, html) {
+  if (!element) {
+    return false;
+  }
+  const next = String(html || "");
+  if (state.renderCache[cacheKey] === next) {
+    return false;
+  }
+  element.innerHTML = next;
+  state.renderCache[cacheKey] = next;
+  return true;
+}
+
+function cssVar(name, fallback) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function readThemePalette() {
+  return {
+    accent: cssVar("--accent", "#3ad6a3"),
+    accent2: cssVar("--accent-2", "#f6bd43"),
+    danger: cssVar("--danger", "#ff6a78"),
+    info: cssVar("--info", "#5bc0ff"),
+    axis: cssVar("--axis", "#8ea2bb"),
+    lineMuted: cssVar("--line-muted", "rgba(255,255,255,0.08)"),
+    textSubtle: cssVar("--txt-2", "#9caec6"),
+    signalLabel: cssVar("--signal-label", "#08101a"),
+    flowLink: cssVar("--flow-link", "#6db9ff")
+  };
+}
+
+const HASH_OFFSET_BASIS = 2166136261;
+
+function hashAppend(hash, value) {
+  let next = hash >>> 0;
+  const text = String(value ?? "");
+  for (let i = 0; i < text.length; i += 1) {
+    next ^= text.charCodeAt(i);
+    next = Math.imul(next, 16777619);
+  }
+  next ^= 124;
+  return Math.imul(next, 16777619) >>> 0;
+}
+
+function hashToKey(hash) {
+  return (hash >>> 0).toString(36);
+}
+
+function buildFlowRenderKey(flow) {
+  const nodes = flow && Array.isArray(flow.nodes) ? flow.nodes : [];
+  const trace = flow && flow.trace ? flow.trace : {};
+  const tighten = flow && flow.tighten ? flow.tighten : {};
+  const anchor = flow && flow.anchor ? flow.anchor : {};
+  let hash = HASH_OFFSET_BASIS;
+
+  hash = hashAppend(hash, nodes.length);
+  nodes.forEach((node) => {
+    hash = hashAppend(hash, node && node.stage);
+    hash = hashAppend(hash, node && node.status);
+    hash = hashAppend(hash, node && node.outcome);
+    hash = hashAppend(hash, node && node.reason);
+    const values = Array.isArray(node && node.values) ? node.values : [];
+    hash = hashAppend(hash, values.length);
+    values.forEach((field) => {
+      hash = hashAppend(hash, field && field.key);
+      hash = hashAppend(hash, field && field.value);
+      hash = hashAppend(hash, field && field.state);
+    });
+  });
+
+  function appendStageList(label, items) {
+    const list = Array.isArray(items) ? items : [];
+    hash = hashAppend(hash, label);
+    hash = hashAppend(hash, list.length);
+    list.forEach((item) => {
+      hash = hashAppend(hash, item && item.stage);
+      hash = hashAppend(hash, item && item.status);
+      hash = hashAppend(hash, item && item.reason);
+      hash = hashAppend(hash, item && item.summary);
+      hash = hashAppend(hash, item && item.mode);
+      hash = hashAppend(hash, item && item.action);
+      const values = Array.isArray(item && item.values) ? item.values : [];
+      hash = hashAppend(hash, values.length);
+      values.forEach((field) => {
+        hash = hashAppend(hash, field && field.key);
+        hash = hashAppend(hash, field && field.value);
+        hash = hashAppend(hash, field && field.state);
+      });
+    });
+  }
+
+  appendStageList("agents", trace.agents);
+  appendStageList("providers", trace.providers);
+
+  const gate = trace && trace.gate ? trace.gate : {};
+  hash = hashAppend(hash, gate && gate.action);
+  hash = hashAppend(hash, gate && gate.status);
+  hash = hashAppend(hash, gate && gate.reason);
+  const gateRules = Array.isArray(gate && gate.rules) ? gate.rules : [];
+  hash = hashAppend(hash, gateRules.length);
+  gateRules.forEach((rule) => {
+    hash = hashAppend(hash, rule && rule.key);
+    hash = hashAppend(hash, rule && rule.value);
+    hash = hashAppend(hash, rule && rule.state);
+  });
+
+  const inPosition = trace && trace.in_position ? trace.in_position : {};
+  hash = hashAppend(hash, inPosition && inPosition.active);
+  hash = hashAppend(hash, inPosition && inPosition.side);
+  hash = hashAppend(hash, inPosition && inPosition.status);
+  hash = hashAppend(hash, inPosition && inPosition.reason);
+
+  hash = hashAppend(hash, tighten && tighten.executed);
+  hash = hashAppend(hash, tighten && tighten.score);
+  hash = hashAppend(hash, tighten && tighten.score_threshold);
+  hash = hashAppend(hash, tighten && tighten.display_reason);
+
+  hash = hashAppend(hash, anchor && anchor.type);
+  hash = hashAppend(hash, anchor && anchor.snapshot_id);
+
+  return hashToKey(hash);
+}
+
+function runThrottledTask(task) {
+  if (!task.runner) {
+    return;
+  }
+  const runner = task.runner;
+  task.lastRunAt = Date.now();
+  runner();
+}
+
+function scheduleThrottledTask(task, minIntervalMs) {
+  if (!task.runner) {
+    return;
+  }
+  if (task.raf || task.timer) {
+    return;
+  }
+  const now = Date.now();
+  const elapsed = now - task.lastRunAt;
+  const wait = Math.max(0, minIntervalMs - elapsed);
+  const queueRaf = () => {
+    task.raf = window.requestAnimationFrame(() => {
+      task.raf = 0;
+      runThrottledTask(task);
+    });
+  };
+  if (wait === 0) {
+    queueRaf();
+    return;
+  }
+  task.timer = window.setTimeout(() => {
+    task.timer = 0;
+    queueRaf();
+  }, wait);
+}
+
+function scheduleFlowLayout(needSettle) {
+  scheduleThrottledTask(flowLayoutTask, FLOW_LAYOUT_MIN_INTERVAL_MS);
+  if (!needSettle) {
+    return;
+  }
+  if (flowLayoutTask.settleTimer) {
+    window.clearTimeout(flowLayoutTask.settleTimer);
+  }
+  flowLayoutTask.settleTimer = window.setTimeout(() => {
+    flowLayoutTask.settleTimer = 0;
+    scheduleThrottledTask(flowLayoutTask, FLOW_LAYOUT_MIN_INTERVAL_MS);
+  }, 240);
+}
+
+function scheduleKlineTagRelayout(needSettle) {
+  scheduleThrottledTask(klineTagTask, KLINE_TAG_MIN_INTERVAL_MS);
+  if (!needSettle) {
+    return;
+  }
+  if (klineTagTask.settleTimer) {
+    window.clearTimeout(klineTagTask.settleTimer);
+  }
+  klineTagTask.settleTimer = window.setTimeout(() => {
+    klineTagTask.settleTimer = 0;
+    scheduleThrottledTask(klineTagTask, KLINE_TAG_MIN_INTERVAL_MS);
+  }, 200);
 }
 
 function updateClock() {
@@ -282,16 +559,18 @@ async function fetchJSON(path, params) {
 
 function renderGlobalError(err) {
   const msg = err instanceof Error ? err.message : String(err);
-  els.flowGraph.innerHTML = "";
-  els.flowMeta.innerHTML = `<div>加载失败: ${escapeHtml(msg)}</div>`;
-  els.decisionDetail.textContent = `加载失败: ${msg}`;
+  flowLayoutTask.runner = null;
+  state.renderCache.flowDataKey = "";
+  setInnerHTMLIfChanged(els.flowGraph, "flowGraph", "");
+  setInnerHTMLIfChanged(els.flowMeta, "flowMeta", `<div>加载失败：${escapeHtml(msg)}。请稍后重试。</div>`);
+  els.decisionDetail.textContent = `加载失败：${msg}。请刷新页面后重试。`;
 }
 
 function renderSymbolSelect() {
   const options = state.symbols
     .map((symbol) => `<option value="${escapeHtml(symbol)}" ${symbol === state.symbol ? "selected" : ""}>${escapeHtml(symbol)}</option>`)
     .join("");
-  els.symbolSelect.innerHTML = options;
+  setInnerHTMLIfChanged(els.symbolSelect, "symbolOptions", options);
   els.symbolSelect.disabled = state.symbols.length === 0;
 }
 
@@ -305,12 +584,77 @@ function fmtShortTime(value) {
     return text;
   }
   return new Date(ts).toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     hour12: false,
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+const beijingDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit"
+});
+
+function parseTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return Number.NaN;
+  }
+  const ts = Date.parse(text);
+  return Number.isFinite(ts) ? ts : Number.NaN;
+}
+
+function formatBeijingDateTime(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "--";
+  }
+  const ts = parseTimestamp(text);
+  if (!Number.isFinite(ts)) {
+    return text;
+  }
+  const parts = beijingDateTimeFormatter.formatToParts(new Date(ts));
+  const partMap = {};
+  parts.forEach((part) => {
+    if (part.type !== "literal") {
+      partMap[part.type] = part.value;
+    }
+  });
+  return `${partMap.year || "0000"}-${partMap.month || "00"}-${partMap.day || "00"} ${partMap.hour || "00"}:${partMap.minute || "00"}:${partMap.second || "00"}`;
+}
+
+function sortByDateFieldDesc(items, fieldName) {
+  const rows = Array.isArray(items) ? items : [];
+  return rows
+    .map((item, index) => ({
+      item,
+      index,
+      ts: parseTimestamp(item && item[fieldName])
+    }))
+    .sort((left, right) => {
+      const leftValid = Number.isFinite(left.ts);
+      const rightValid = Number.isFinite(right.ts);
+      if (leftValid && rightValid && left.ts !== right.ts) {
+        return right.ts - left.ts;
+      }
+      if (leftValid && !rightValid) {
+        return -1;
+      }
+      if (!leftValid && rightValid) {
+        return 1;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.item);
 }
 
 const INITIAL_RISK_TIMELINE_SOURCES = new Set(["entry-fill", "open-fill", "init", "init_from_plan"]);
@@ -406,28 +750,28 @@ function renderRiskPlanTimeline(items) {
   }
   return `<div class="position-hold-panel" data-hold-panel>
     <div class="position-hold-head">
-      <strong>止盈止损变化</strong>
-      <span>${versions.length} 个版本，从旧到新</span>
+      <strong>止盈止损历史</strong>
+      <span>共 ${versions.length} 个版本（从旧到新）</span>
     </div>
     <div class="position-hold-timeline">
       ${versions.map((item, index) => {
         const isCurrent = index === versions.length - 1;
         const card = `<article class="risk-version-card ${isCurrent ? "current" : ""}">
           <div class="risk-version-top">
-            <span class="risk-version-label">${escapeHtml(isCurrent ? "当前版本" : `版本 ${index + 1}`)}</span>
+            <span class="risk-version-label">${escapeHtml(isCurrent ? "当前版本" : `历史版本 ${index + 1}`)}</span>
             <em>${escapeHtml(fmtShortTime(item.created_at))}</em>
           </div>
           <div class="risk-version-values">
             <div class="risk-version-metric stop">
-              <span>止损 SL</span>
+              <span>止损价</span>
               <strong>${fmtNumber(Number(item.stop_loss))}</strong>
             </div>
             <div class="risk-version-metric tp">
-              <span>止盈 TP</span>
+              <span>止盈价</span>
               <div class="risk-version-tp-list">${renderRiskTakeProfitPills(item.take_profits)}</div>
             </div>
           </div>
-          <div class="risk-version-foot">${escapeHtml(String(item.label || item.source || "risk_update"))}</div>
+          <div class="risk-version-foot">${escapeHtml(String(item.label || item.source || "系统更新"))}</div>
         </article>`;
         if (index === versions.length - 1) {
           return card;
@@ -439,61 +783,164 @@ function renderRiskPlanTimeline(items) {
 }
 
 function clearPositionHold(card) {
-  if (positionHoldTimer) {
-    window.clearTimeout(positionHoldTimer);
-    positionHoldTimer = 0;
-  }
   const target = card || activeHeldPositionCard;
   if (target) {
     target.classList.remove("pressing", "holding");
+    if (target.getAttribute("data-holdable") === "true") {
+      target.setAttribute("aria-expanded", "false");
+    }
   }
   if (!card || card === activeHeldPositionCard) {
     activeHeldPositionCard = null;
   }
 }
 
+function clearHistoryPositionHold(row) {
+  const target = row || activeHeldHistoryRow;
+  if (!target) {
+    if (!row) {
+      activeHeldHistoryRow = null;
+    }
+    return;
+  }
+  target.classList.remove("pressing", "holding");
+  if (target.getAttribute("data-history-holdable") === "true") {
+    target.setAttribute("aria-expanded", "false");
+  }
+  const rowID = String(target.getAttribute("data-history-row-id") || "");
+  if (rowID) {
+    const preview = els.positionHistoryBody.querySelector(`[data-history-preview-for='${CSS.escape(rowID)}']`);
+    if (preview) {
+      preview.classList.remove("holding");
+      preview.setAttribute("aria-hidden", "true");
+    }
+  }
+  if (!row || row === activeHeldHistoryRow) {
+    activeHeldHistoryRow = null;
+  }
+}
+
 function bindLivePositionHold() {
   const cards = els.livePositionList.querySelectorAll("[data-position-card][data-holdable='true']");
   cards.forEach((card) => {
-    const startHold = () => {
+    const startHold = (event) => {
+      if (event && Number.isFinite(Number(event.button)) && Number(event.button) !== 0) {
+        return;
+      }
       clearPositionHold(activeHeldPositionCard);
-      card.classList.add("pressing");
-      positionHoldTimer = window.setTimeout(() => {
-        card.classList.remove("pressing");
-        card.classList.add("holding");
-        activeHeldPositionCard = card;
-        positionHoldTimer = 0;
-      }, 320);
+      card.classList.remove("pressing");
+      card.classList.add("holding");
+      card.setAttribute("aria-expanded", "true");
+      activeHeldPositionCard = card;
+      if (event && Number.isFinite(Number(event.pointerId)) && typeof card.setPointerCapture === "function") {
+        try {
+          card.setPointerCapture(event.pointerId);
+        } catch (_err) {
+          void _err;
+        }
+      }
     };
-    const endHold = () => clearPositionHold(card);
+    const endHold = (event) => {
+      if (event && Number.isFinite(Number(event.pointerId)) && typeof card.hasPointerCapture === "function" && card.hasPointerCapture(event.pointerId) && typeof card.releasePointerCapture === "function") {
+        try {
+          card.releasePointerCapture(event.pointerId);
+        } catch (_err) {
+          void _err;
+        }
+      }
+      clearPositionHold(card);
+    };
     card.addEventListener("pointerdown", startHold);
     card.addEventListener("pointerup", endHold);
     card.addEventListener("pointerleave", endHold);
     card.addEventListener("pointercancel", endHold);
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        startHold();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        clearPositionHold(card);
+      }
+    });
+    card.addEventListener("keyup", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        endHold();
+      }
+    });
+    card.addEventListener("blur", () => {
+      clearPositionHold(card);
+    });
+  });
+}
+
+function bindHistoryPositionHold() {
+  const rows = els.positionHistoryBody.querySelectorAll("[data-history-row-id][data-history-holdable='true']");
+  rows.forEach((row) => {
+    const rowID = String(row.getAttribute("data-history-row-id") || "");
+    const preview = rowID
+      ? els.positionHistoryBody.querySelector(`[data-history-preview-for='${CSS.escape(rowID)}']`)
+      : null;
+    const togglePreview = () => {
+      const expanded = row.classList.contains("holding");
+      if (expanded) {
+        clearHistoryPositionHold(row);
+        return;
+      }
+      clearHistoryPositionHold(activeHeldHistoryRow);
+      row.classList.remove("pressing");
+      row.classList.add("holding");
+      row.setAttribute("aria-expanded", "true");
+      if (preview) {
+        preview.classList.add("holding");
+        preview.setAttribute("aria-hidden", "false");
+      }
+      activeHeldHistoryRow = row;
+    };
+
+    row.addEventListener("click", togglePreview);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        togglePreview();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        clearHistoryPositionHold(row);
+      }
+    });
+    row.addEventListener("blur", () => {
+      clearHistoryPositionHold(row);
+    });
   });
 }
 
 function renderLivePositions(cards) {
   if (!Array.isArray(cards) || cards.length === 0) {
-    els.livePositionList.innerHTML = `<div class="position-empty">当前无实时持仓</div>`;
+    setInnerHTMLIfChanged(els.livePositionList, "livePositions", `<div class="position-empty">当前没有持仓。开仓后会在这里显示。</div>`);
     clearPositionHold();
     return;
   }
 
-  els.livePositionList.innerHTML = cards
+  const markup = cards
     .map((card) => {
       const position = card.position || {};
       const timeline = Array.isArray(position.risk_plan_timeline) ? position.risk_plan_timeline : [];
       const timelineMarkup = renderRiskPlanTimeline(timeline);
       const holdable = timelineMarkup !== "";
+      const holdAttrs = holdable
+        ? `tabindex="0" role="button" aria-expanded="false" aria-label="查看 ${escapeHtml(card.symbol)} 的止盈止损历史版本"`
+        : "";
       const pnl = card.pnl || {};
       const realizedClass = Number(pnl.realized) >= 0 ? "positive" : "negative";
       const unrealizedClass = Number(pnl.unrealized) >= 0 ? "positive" : "negative";
-      return `<article class="position-card ${holdable ? "holdable" : ""}" data-position-card data-holdable="${holdable ? "true" : "false"}">
+      return `<article class="position-card ${holdable ? "holdable" : ""}" data-position-card data-holdable="${holdable ? "true" : "false"}" ${holdAttrs}>
         <div class="position-head">
           <div>
             <div class="position-symbol">${escapeHtml(card.symbol)}</div>
-            ${holdable ? `<div class="position-hold-hint">按住查看止盈止损版本</div>` : ""}
+            ${holdable ? `<div class="position-hold-hint">按住查看止盈止损历史版本</div>` : ""}
           </div>
           <span class="side-chip">${escapeHtml(position.side || "--")}</span>
         </div>
@@ -511,7 +958,10 @@ function renderLivePositions(cards) {
       </article>`;
     })
     .join("");
-  bindLivePositionHold();
+  const updated = setInnerHTMLIfChanged(els.livePositionList, "livePositions", markup);
+  if (updated) {
+    bindLivePositionHold();
+  }
 }
 
 function renderIntervalSelect() {
@@ -522,7 +972,7 @@ function renderIntervalSelect() {
       return `<option value="${escapeHtml(intervalValue)}" ${selected}>${escapeHtml(intervalValue.toUpperCase())}</option>`;
     })
     .join("");
-  els.intervalSelect.innerHTML = options;
+  setInnerHTMLIfChanged(els.intervalSelect, "intervalOptions", options);
   els.intervalSelect.disabled = intervals.length === 0;
 }
 
@@ -541,16 +991,41 @@ function renderAccountSummary(payload) {
   els.acctSymbols.textContent = monitored.length > 0 ? `${monitored.length} (${monitored.join(" / ")})` : "--";
   els.acctProfitClosed.textContent = fmtUsd(Number(profit.closed_profit || 0));
   els.acctProfitAll.textContent = fmtUsd(Number(profit.all_profit || 0));
+
+  function applyPnlState(el, value) {
+    if (!el) {
+      return;
+    }
+    const card = el.closest(".pnl-card");
+    if (!card) {
+      return;
+    }
+    card.classList.remove("positive", "negative");
+    const numeric = Number(value || 0);
+    card.classList.add(numeric >= 0 ? "positive" : "negative");
+  }
+
+  applyPnlState(els.acctProfitClosed, profit.closed_profit);
+  applyPnlState(els.acctProfitAll, profit.all_profit);
 }
 
 function renderFlow(flow) {
   const nodes = flow && Array.isArray(flow.nodes) ? flow.nodes : [];
   const trace = flow && flow.trace ? flow.trace : {};
   if (nodes.length === 0) {
-    els.flowGraph.innerHTML = "";
-    els.flowMeta.innerHTML = "";
+    flowLayoutTask.runner = null;
+    state.renderCache.flowDataKey = "";
+    setInnerHTMLIfChanged(els.flowGraph, "flowGraph", "");
+    setInnerHTMLIfChanged(els.flowMeta, "flowMeta", "");
     return;
   }
+
+  const flowDataKey = buildFlowRenderKey(flow);
+  if (state.renderCache.flowDataKey === flowDataKey) {
+    setInnerHTMLIfChanged(els.flowMeta, "flowMeta", "");
+    return;
+  }
+  state.renderCache.flowDataKey = flowDataKey;
 
   const gate = trace && trace.gate ? trace.gate : null;
   const inPosition = trace && trace.in_position ? trace.in_position : null;
@@ -569,7 +1044,7 @@ function renderFlow(flow) {
     const pass = values.filter((field) => String(field && field.state || "") === "pass").length;
     const block = values.filter((field) => String(field && field.state || "") === "block").length;
     const enumCount = values.length - pass - block;
-    return `pass:${pass} block:${block} enum:${enumCount}`;
+    return `通过 ${pass} · 阻断 ${block} · 枚举 ${enumCount}`;
   }
 
   function findStage(items, stageName) {
@@ -584,7 +1059,7 @@ function renderFlow(flow) {
   const providerStructure = findStage(trace.providers, "structure");
   const providerMechanics = findStage(trace.providers, "mechanics");
   const providerMode = String((providerIndicator && providerIndicator.mode) || (providerStructure && providerStructure.mode) || (providerMechanics && providerMechanics.mode) || "standard").toLowerCase();
-  const providerTitlePrefix = providerMode === "in_position" ? "InPositionProvider" : "Provider";
+  const providerTitlePrefix = providerMode === "in_position" ? "持仓管理汇总" : "规则汇总";
 
   function stageStatus(stage, fallbackStatus) {
     const normalized = String(stage && stage.status || "").trim().toLowerCase();
@@ -611,27 +1086,27 @@ function renderFlow(flow) {
   }
 
   const graphNodes = [
-    node("agent-indicator", "flow-pos-agent-indicator", stageStatus(agentIndicator, "ok"), "Agent/indicator", stageSummary(agentIndicator, summarizeStageValues(agentIndicator && agentIndicator.values)), agentIndicator && agentIndicator.values, stageReason(agentIndicator, ""), "agent"),
-    node("agent-structure", "flow-pos-agent-structure", stageStatus(agentStructure, "ok"), "Agent/structure", stageSummary(agentStructure, summarizeStageValues(agentStructure && agentStructure.values)), agentStructure && agentStructure.values, stageReason(agentStructure, ""), "agent"),
-    node("agent-mechanics", "flow-pos-agent-mechanics", stageStatus(agentMechanics, "ok"), "Agent/mechanics", stageSummary(agentMechanics, summarizeStageValues(agentMechanics && agentMechanics.values)), agentMechanics && agentMechanics.values, stageReason(agentMechanics, ""), "agent"),
-    node("provider-indicator", "flow-pos-provider-indicator", stageStatus(providerIndicator, "ok"), `${providerTitlePrefix}/indicator`, stageSummary(providerIndicator, summarizeStageValues(providerIndicator && providerIndicator.values)), providerIndicator && providerIndicator.values, stageReason(providerIndicator, ""), "provider"),
-    node("provider-structure", "flow-pos-provider-structure", stageStatus(providerStructure, "ok"), `${providerTitlePrefix}/structure`, stageSummary(providerStructure, summarizeStageValues(providerStructure && providerStructure.values)), providerStructure && providerStructure.values, stageReason(providerStructure, ""), "provider"),
-    node("provider-mechanics", "flow-pos-provider-mechanics", stageStatus(providerMechanics, "ok"), `${providerTitlePrefix}/mechanics`, stageSummary(providerMechanics, summarizeStageValues(providerMechanics && providerMechanics.values)), providerMechanics && providerMechanics.values, stageReason(providerMechanics, ""), "provider")
+    node("agent-indicator", "flow-pos-agent-indicator", stageStatus(agentIndicator, "ok"), "Agent / 指标", stageSummary(agentIndicator, summarizeStageValues(agentIndicator && agentIndicator.values)), agentIndicator && agentIndicator.values, stageReason(agentIndicator, ""), "agent"),
+    node("agent-structure", "flow-pos-agent-structure", stageStatus(agentStructure, "ok"), "Agent / 结构", stageSummary(agentStructure, summarizeStageValues(agentStructure && agentStructure.values)), agentStructure && agentStructure.values, stageReason(agentStructure, ""), "agent"),
+    node("agent-mechanics", "flow-pos-agent-mechanics", stageStatus(agentMechanics, "ok"), "Agent / 力学", stageSummary(agentMechanics, summarizeStageValues(agentMechanics && agentMechanics.values)), agentMechanics && agentMechanics.values, stageReason(agentMechanics, ""), "agent"),
+    node("provider-indicator", "flow-pos-provider-indicator", stageStatus(providerIndicator, "ok"), `${providerTitlePrefix} / 指标`, stageSummary(providerIndicator, summarizeStageValues(providerIndicator && providerIndicator.values)), providerIndicator && providerIndicator.values, stageReason(providerIndicator, ""), "provider"),
+    node("provider-structure", "flow-pos-provider-structure", stageStatus(providerStructure, "ok"), `${providerTitlePrefix} / 结构`, stageSummary(providerStructure, summarizeStageValues(providerStructure && providerStructure.values)), providerStructure && providerStructure.values, stageReason(providerStructure, ""), "provider"),
+    node("provider-mechanics", "flow-pos-provider-mechanics", stageStatus(providerMechanics, "ok"), `${providerTitlePrefix} / 力学`, stageSummary(providerMechanics, summarizeStageValues(providerMechanics && providerMechanics.values)), providerMechanics && providerMechanics.values, stageReason(providerMechanics, ""), "provider")
   ];
 
   if (inPosition && inPosition.active) {
-    graphNodes.push(node("inposition", "flow-pos-inposition", stageStatus(inPosition, "ok"), "InPosition", String(inPosition.side || "open"), [{ key: "active", value: "true", state: "pass" }, { key: "side", value: String(inPosition.side || "-") }], stageReason(inPosition, "已有持仓，链路进入监控/管理路径"), "monitor"));
+    graphNodes.push(node("inposition", "flow-pos-inposition", stageStatus(inPosition, "ok"), "持仓状态", String(inPosition.side || "open"), [{ key: "active", value: "true", state: "pass" }, { key: "side", value: String(inPosition.side || "-") }], stageReason(inPosition, "已有持仓，链路进入监控/管理路径"), "monitor"));
   }
 
   const gateStatus = stageStatus(gate, "ok");
   const gateReason = stageReason(gate, "");
-  graphNodes.push(node("gate", "flow-pos-gate", gateStatus, "Gate", `${actionLabel(gate && gate.action ? gate.action : "--")}`, gate && Array.isArray(gate.rules) ? gate.rules : [], gateReason, "gate"));
+  graphNodes.push(node("gate", "flow-pos-gate", gateStatus, "决策网关", `${actionLabel(gate && gate.action ? gate.action : "--")}`, gate && Array.isArray(gate.rules) ? gate.rules : [], gateReason, "gate"));
 
   const resultStatus = String(resultNode && resultNode.status || "").trim().toLowerCase() || "ok";
   const resultReason = String(resultNode && resultNode.reason || "").trim();
   const resultDesc = resultNode ? String(resultNode.outcome || "-") : "-";
   const resultValues = resultNode && Array.isArray(resultNode.values) ? resultNode.values : [];
-  graphNodes.push(node("result", "flow-pos-result", resultStatus, "Result", resultDesc, resultValues, resultReason, "result"));
+  graphNodes.push(node("result", "flow-pos-result", resultStatus, "执行结果", resultDesc, resultValues, resultReason, "result"));
 
   function renderFieldList(fields) {
     if (!Array.isArray(fields) || fields.length === 0) {
@@ -644,11 +1119,31 @@ function renderFlow(flow) {
     }).join("");
   }
 
+  function stageTypeLabel(stageType) {
+    const key = String(stageType || "").trim().toLowerCase();
+    if (key === "agent") {
+      return "agent";
+    }
+    if (key === "provider") {
+      return "汇总";
+    }
+    if (key === "monitor") {
+      return "监控";
+    }
+    if (key === "gate") {
+      return "网关";
+    }
+    if (key === "result") {
+      return "结果";
+    }
+    return "阶段";
+  }
+
   const nodesHTML = graphNodes.map((item, index) => {
     const reasonAttr = item.reason ? ` title="${escapeHtml(item.reason)}" data-reason="${escapeHtml(item.reason)}"` : "";
     return `<article id="flow-node-${escapeHtml(item.id)}" class="flow-node ${escapeHtml(item.status)} ${escapeHtml(item.posClass)}" style="--flow-index:${index}"${reasonAttr}>
       <div class="flow-node-topline">
-        <span class="flow-node-kind">${escapeHtml(item.stageType || "stage")}</span>
+        <span class="flow-node-kind">${escapeHtml(stageTypeLabel(item.stageType))}</span>
         <span class="flow-node-state ${escapeHtml(item.status)}">${escapeHtml(flowStatusLabel(item.status))}</span>
       </div>
       <div class="flow-node-title">${escapeHtml(item.title)}</div>
@@ -657,13 +1152,16 @@ function renderFlow(flow) {
     </article>`;
   }).join("");
 
-  els.flowGraph.innerHTML = `<div class="flow-backdrop"></div><svg class="flow-links" id="flow-links" aria-hidden="true"></svg><div class="flow-dag">${nodesHTML}</div>`;
+  const flowMarkup = `<div class="flow-backdrop"></div><svg class="flow-links" id="flow-links" aria-hidden="true"></svg><div class="flow-dag">${nodesHTML}</div>`;
+  setInnerHTMLIfChanged(els.flowGraph, "flowGraph", flowMarkup);
 
   function drawFlowLinks() {
     const svg = document.getElementById("flow-links");
     if (!svg) {
       return;
     }
+    const palette = readThemePalette();
+    const flowLinkColor = escapeHtml(String(palette.flowLink || "#6db9ff"));
     const graphRect = els.flowGraph.getBoundingClientRect();
 
     function pointOf(id, side) {
@@ -677,7 +1175,7 @@ function renderFlow(flow) {
       return { x, y };
     }
 
-    const defs = `<defs><marker id="flow-arrow-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6db9ff"></path></marker></defs>`;
+    const defs = `<defs><marker id="flow-arrow-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${flowLinkColor}"></path></marker></defs>`;
     const links = [];
 
     function pushLink(fromID, toID, status) {
@@ -706,27 +1204,24 @@ function renderFlow(flow) {
     svg.innerHTML = `${defs}${links.join("")}`;
   }
 
-  function scheduleFlowLinksDraw() {
+  flowLayoutTask.runner = () => {
+    drawFlowLinks();
+    const svg = document.getElementById("flow-links");
+    if (!svg) {
+      return;
+    }
     window.requestAnimationFrame(() => {
-      drawFlowLinks();
-      const svg = document.getElementById("flow-links");
-      if (!svg) {
-        return;
-      }
-      window.requestAnimationFrame(() => {
-        svg.classList.add("ready");
-      });
+      svg.classList.add("ready");
     });
-  }
+  };
 
-  scheduleFlowLinksDraw();
-  window.setTimeout(scheduleFlowLinksDraw, 240);
+  scheduleFlowLayout(true);
 
-  els.flowMeta.innerHTML = "";
+  setInnerHTMLIfChanged(els.flowMeta, "flowMeta", "");
 }
 
 function reportToggleLabel(collapsed) {
-  return collapsed ? "展开报告" : "收起报告";
+  return collapsed ? "展开完整报告" : "收起完整报告";
 }
 
 function syncDecisionReportCollapse(root) {
@@ -778,23 +1273,47 @@ function ensureChart() {
     return chart;
   }
   const dom = document.getElementById("kline-chart");
+  if (!window.echarts || !dom) {
+    throw new Error("图表模块加载失败，请刷新页面后重试");
+  }
   chart = window.echarts.init(dom);
   return chart;
 }
 
 function renderKline(payload, flow) {
   const candles = Array.isArray(payload && payload.candles) ? payload.candles : [];
-  els.klineRange.textContent = `${String(payload && payload.interval ? payload.interval : state.klineInterval).toUpperCase()} Window`;
+  const intervalLabel = String(payload && payload.interval ? payload.interval : state.klineInterval).toUpperCase();
   const c = ensureChart();
+  const palette = readThemePalette();
 
   if (candles.length === 0) {
-    els.klinePriceTags.innerHTML = "";
-    c.setOption({ title: { text: "No Kline Data", left: "center", top: "middle", textStyle: { color: "#9caec6", fontSize: 14 } }, xAxis: { show: false }, yAxis: { show: false }, series: [] });
+    const emptyDataKey = `empty|${state.symbol || "ALL"}|${intervalLabel}`;
+    klineTagTask.runner = null;
+    if (state.renderCache.klineDataKey !== emptyDataKey) {
+      state.renderCache.klineDataKey = emptyDataKey;
+      els.klinePriceTags.innerHTML = "";
+      c.setOption({ title: { text: "暂无K线数据，请切换周期或稍后重试", left: "center", top: "middle", textStyle: { color: palette.textSubtle, fontSize: 14 } }, xAxis: { show: false }, yAxis: { show: false }, series: [] });
+    }
     return;
   }
 
-  const labels = candles.map((item) => Number(item.open_time || 0));
-  const values = candles.map((item) => [Number(item.open || 0), Number(item.close || 0), Number(item.low || 0), Number(item.high || 0)]);
+  const labels = [];
+  const values = [];
+  let candleHash = HASH_OFFSET_BASIS;
+  candles.forEach((item) => {
+    const openTime = Number(item && item.open_time || 0);
+    const open = Number(item && item.open || 0);
+    const close = Number(item && item.close || 0);
+    const low = Number(item && item.low || 0);
+    const high = Number(item && item.high || 0);
+    labels.push(openTime);
+    values.push([open, close, low, high]);
+    candleHash = hashAppend(candleHash, openTime);
+    candleHash = hashAppend(candleHash, open);
+    candleHash = hashAppend(candleHash, close);
+    candleHash = hashAppend(candleHash, low);
+    candleHash = hashAppend(candleHash, high);
+  });
   const selectedCard = Array.isArray(state.overviewCards)
     ? state.overviewCards.find((item) => String(item && item.symbol || "").toUpperCase() === String(state.symbol || "").toUpperCase())
     : null;
@@ -816,36 +1335,37 @@ function renderKline(payload, flow) {
     return { x: labels[idx], y: values[idx][1] };
   }
 
-  const markerName = flow && flow.anchor ? `${flow.anchor.type || "anchor"}#${flow.anchor.snapshot_id || 0}` : "Anchor";
-  const markerData = [
-    {
-      name: markerName,
-      coord: [labels[labels.length - 1], values[values.length - 1][1]],
-      value: `锚点: ${markerName}`,
-      itemStyle: { color: "#f6bd43" }
-    }
-  ];
+  const markerName = flow && flow.anchor ? `${flow.anchor.type || "anchor"}#${flow.anchor.snapshot_id || 0}` : "锚点";
+  const markerData = [];
+  let markerHash = HASH_OFFSET_BASIS;
+
+  function pushMarker(name, coord, value, color) {
+    const item = {
+      name,
+      coord,
+      value,
+      itemStyle: { color }
+    };
+    markerData.push(item);
+    markerHash = hashAppend(markerHash, name);
+    markerHash = hashAppend(markerHash, coord && coord[0]);
+    markerHash = hashAppend(markerHash, coord && coord[1]);
+    markerHash = hashAppend(markerHash, value);
+    markerHash = hashAppend(markerHash, color);
+  }
+
+  pushMarker(markerName, [labels[labels.length - 1], values[values.length - 1][1]], `锚点: ${markerName}`, palette.accent2);
 
   state.lastPositionHistory.forEach((trade) => {
     const openedAt = trade && trade.opened_at ? Date.parse(trade.opened_at) : 0;
     const closedAt = trade && trade.closed_at ? Date.parse(trade.closed_at) : 0;
     const openPoint = nearestPointByTime(openedAt);
     if (openPoint) {
-      markerData.push({
-        name: "开仓",
-        coord: [openPoint.x, openPoint.y],
-        value: `开仓 ${trade.symbol || ""} ${trade.side || ""} 数量:${fmtNumber(Number(trade.amount || 0))}`,
-        itemStyle: { color: "#3ad6a3" }
-      });
+      pushMarker("开仓", [openPoint.x, openPoint.y], `开仓 ${trade.symbol || ""} ${trade.side || ""} 数量:${fmtNumber(Number(trade.amount || 0))}`, palette.accent);
     }
     const closePoint = nearestPointByTime(closedAt);
     if (closePoint) {
-      markerData.push({
-        name: "平仓",
-        coord: [closePoint.x, closePoint.y],
-        value: `平仓 ${trade.symbol || ""} 收益:${fmtUsd(Number(trade.profit || 0))}`,
-        itemStyle: { color: "#ff6a78" }
-      });
+      pushMarker("平仓", [closePoint.x, closePoint.y], `平仓 ${trade.symbol || ""} 收益:${fmtUsd(Number(trade.profit || 0))}`, palette.danger);
     }
   });
 
@@ -859,12 +1379,7 @@ function renderKline(payload, flow) {
     if (!point) {
       return;
     }
-    markerData.push({
-      name: "收紧",
-      coord: [point.x, point.y],
-      value: `收紧止损: ${item.reason || "-"}`,
-      itemStyle: { color: "#f6bd43" }
-    });
+    pushMarker("收紧", [point.x, point.y], `收紧止损: ${item.reason || "-"}`, palette.accent2);
   });
 
   const currentPrice = selectedPosition && Number.isFinite(Number(selectedPosition.current_price))
@@ -894,19 +1409,27 @@ function renderKline(payload, flow) {
   }
 
   const lineData = [];
-  const currentLine = priceLine("当前", currentPrice, "#5bc0ff", "solid");
+  const currentLine = priceLine("当前", currentPrice, palette.info, "solid");
   if (currentLine) {
     lineData.push(currentLine);
   }
-  const stopLine = priceLine("止损", stopLoss, "#ff6a78", "dashed");
+  const stopLine = priceLine("止损", stopLoss, palette.danger, "dashed");
   if (stopLine) {
     lineData.push(stopLine);
   }
   takeProfits.forEach((value, index) => {
-    const tpLine = priceLine(`止盈${index + 1}`, value, "#3ad6a3", "dashed");
+    const tpLine = priceLine(`止盈${index + 1}`, value, palette.accent, "dashed");
     if (tpLine) {
       lineData.push(tpLine);
     }
+  });
+
+  let lineHash = HASH_OFFSET_BASIS;
+  lineData.forEach((line) => {
+    lineHash = hashAppend(lineHash, line && line.name);
+    lineHash = hashAppend(lineHash, line && line.yAxis);
+    lineHash = hashAppend(lineHash, line && line.lineStyle && line.lineStyle.color);
+    lineHash = hashAppend(lineHash, line && line.lineStyle && line.lineStyle.type);
   });
 
   function measurePriceTagColumn(lines, compactViewport) {
@@ -954,6 +1477,23 @@ function renderKline(payload, flow) {
   els.klinePriceTags.style.width = `${tagMetrics.tagColumnWidth}px`;
   els.klinePriceTags.style.right = `${tagMetrics.tagColumnRight}px`;
 
+  let klineHash = HASH_OFFSET_BASIS;
+  klineHash = hashAppend(klineHash, state.symbol || "ALL");
+  klineHash = hashAppend(klineHash, intervalLabel);
+  klineHash = hashAppend(klineHash, candleHash);
+  klineHash = hashAppend(klineHash, markerHash);
+  klineHash = hashAppend(klineHash, lineHash);
+  klineHash = hashAppend(klineHash, compactViewport ? "compact" : "wide");
+  klineHash = hashAppend(klineHash, tagMetrics.klineGridRight);
+  const klineDataKey = hashToKey(klineHash);
+  if (state.renderCache.klineDataKey === klineDataKey) {
+    klineTagTask.runner = () => {
+      renderKlinePriceTags(lineData);
+    };
+    return;
+  }
+  state.renderCache.klineDataKey = klineDataKey;
+
   const signalData = markerData.map((item) => ({
     name: item.name,
     value: [item.coord[0], item.coord[1]],
@@ -984,7 +1524,7 @@ function renderKline(payload, flow) {
       if (pixel > maxY) {
         pixel = maxY;
       }
-      const color = line && line.lineStyle ? line.lineStyle.color : "#5bc0ff";
+      const color = line && line.lineStyle ? line.lineStyle.color : palette.info;
       tagItems.push({
         name: String(line.name || "价格"),
         y,
@@ -1052,11 +1592,11 @@ function renderKline(payload, flow) {
       axisPointer: { type: "cross" },
       formatter(params) {
         if (params && params.seriesType === "scatter" && params.data) {
-          return `${escapeHtml(String(params.name || "信号"))}<br/>${escapeHtml(String(params.data.detail || ""))}`;
+          return `${escapeHtml(String(params.name || "交易信号"))}<br/>${escapeHtml(String(params.data.detail || ""))}`;
         }
         if (params && params.seriesType === "candlestick" && Array.isArray(params.data)) {
           const v = params.data;
-          return `O ${fmtNumber(Number(v[0]))}<br/>C ${fmtNumber(Number(v[1]))}<br/>L ${fmtNumber(Number(v[2]))}<br/>H ${fmtNumber(Number(v[3]))}`;
+          return `开 ${fmtNumber(Number(v[0]))}<br/>收 ${fmtNumber(Number(v[1]))}<br/>低 ${fmtNumber(Number(v[2]))}<br/>高 ${fmtNumber(Number(v[3]))}`;
         }
         return "";
       }
@@ -1065,7 +1605,7 @@ function renderKline(payload, flow) {
       type: "category",
       data: labels,
       boundaryGap: true,
-      axisLine: { lineStyle: { color: "#8ea2bb" } },
+      axisLine: { lineStyle: { color: palette.axis } },
       axisPointer: {
         label: {
           formatter(params) {
@@ -1074,7 +1614,7 @@ function renderKline(payload, flow) {
         }
       },
       axisLabel: {
-        color: "#9caec6",
+        color: palette.textSubtle,
         formatter(value) {
           return formatBeijingTime(value);
         }
@@ -1082,9 +1622,9 @@ function renderKline(payload, flow) {
     },
     yAxis: {
       scale: true,
-      axisLine: { lineStyle: { color: "#8ea2bb" } },
-      splitLine: { lineStyle: { color: "rgba(255,255,255,0.08)" } },
-      axisLabel: { color: "#9caec6" }
+      axisLine: { lineStyle: { color: palette.axis } },
+      splitLine: { lineStyle: { color: palette.lineMuted } },
+      axisLabel: { color: palette.textSubtle }
     },
     series: [
       {
@@ -1092,10 +1632,10 @@ function renderKline(payload, flow) {
         type: "candlestick",
         data: values,
         itemStyle: {
-          color: "#3ad6a3",
-          color0: "#ff6a78",
-          borderColor: "#3ad6a3",
-          borderColor0: "#ff6a78"
+          color: palette.accent,
+          color0: palette.danger,
+          borderColor: palette.accent,
+          borderColor0: palette.danger
         },
         markLine: {
           symbol: ["none", "none"],
@@ -1117,7 +1657,7 @@ function renderKline(payload, flow) {
           formatter(params) {
             return String(params.name || "").slice(0, 2);
           },
-          color: "#08101a",
+          color: palette.signalLabel,
           fontWeight: 700,
           fontSize: 10
         }
@@ -1125,41 +1665,65 @@ function renderKline(payload, flow) {
     ]
   });
 
-  renderKlinePriceTags(lineData);
+  klineTagTask.runner = () => {
+    renderKlinePriceTags(lineData);
+  };
+  scheduleKlineTagRelayout(true);
 }
 
 function renderPositionHistory(trades) {
   if (!Array.isArray(trades) || trades.length === 0) {
-    els.positionHistoryBody.innerHTML = `<tr><td colspan="5">暂无历史仓位</td></tr>`;
+    clearHistoryPositionHold();
+    setInnerHTMLIfChanged(els.positionHistoryBody, "positionHistory", `<tr><td colspan="5">暂无历史仓位，平仓后会在这里显示。</td></tr>`);
     return;
   }
-  els.positionHistoryBody.innerHTML = trades
-    .map((trade) => {
+  clearHistoryPositionHold();
+  const orderedTrades = sortByDateFieldDesc(trades, "opened_at");
+  const markup = orderedTrades
+    .map((trade, index) => {
       const profit = Number(trade.profit || 0);
       const pnlClass = profit >= 0 ? "positive" : "negative";
-      const opened = trade.opened_at ? new Date(trade.opened_at).toLocaleString("zh-CN", { hour12: false }) : "--";
-      return `<tr>
+      const opened = formatBeijingDateTime(trade.opened_at);
+      const timeline = Array.isArray(trade.risk_plan_timeline) ? trade.risk_plan_timeline : [];
+      const timelineMarkup = renderRiskPlanTimeline(timeline);
+      const holdable = timelineMarkup !== "";
+      const rowID = `history-position-${index}`;
+      const rowAttrs = holdable
+        ? `data-history-holdable="true" data-history-row-id="${rowID}" tabindex="0" role="button" aria-expanded="false" aria-label="展开查看 ${escapeHtml(trade.symbol || "该仓位")} 的止盈止损历史版本"`
+        : `data-history-holdable="false" data-history-row-id="${rowID}"`;
+      const previewRow = holdable
+        ? `<tr class="position-history-preview-row" data-history-preview-for="${rowID}" aria-hidden="true">
+        <td colspan="5">
+          ${timelineMarkup}
+        </td>
+      </tr>`
+        : "";
+      return `<tr class="position-history-row ${holdable ? "holdable" : ""}" ${rowAttrs}>
         <td>${escapeHtml(trade.symbol || "--")}</td>
         <td>${escapeHtml(opened)}</td>
         <td>${escapeHtml(trade.side || "--")}</td>
         <td>${fmtNumber(Number(trade.amount || 0))}</td>
         <td class="${pnlClass}">${fmtUsd(profit)}</td>
-      </tr>`;
+      </tr>${previewRow}`;
     })
     .join("");
+  const updated = setInnerHTMLIfChanged(els.positionHistoryBody, "positionHistory", markup);
+  if (updated) {
+    bindHistoryPositionHold();
+  }
 }
 
 function renderDecisionHistoryRows(items, selectedSnapshotID) {
   if (!Array.isArray(items) || items.length === 0) {
-    els.decisionHistoryBody.innerHTML = `<tr><td colspan="6">暂无历史决策</td></tr>`;
+    setInnerHTMLIfChanged(els.decisionHistoryBody, "decisionHistory", `<tr><td colspan="6">暂无历史决策，系统产生新决策后会在这里显示。</td></tr>`);
     return;
   }
-  els.decisionHistoryBody.innerHTML = items
+  const markup = items
     .map((item) => {
       const active = Number(item.snapshot_id) === Number(selectedSnapshotID) ? "active" : "";
-      return `<tr class="${active}" data-snapshot-id="${Number(item.snapshot_id || 0)}">
-        <td>${escapeHtml(item.at || "--")}</td>
-        <td>${escapeHtml(item.action || "--")}</td>
+      return `<tr class="${active}" data-snapshot-id="${Number(item.snapshot_id || 0)}" tabindex="0" role="button" aria-label="查看快照 ${Number(item.snapshot_id || 0)} 的决策详情">
+        <td>${escapeHtml(formatBeijingDateTime(item.at))}</td>
+        <td>${escapeHtml(actionLabel(String(item.action || "--").toUpperCase()))}</td>
         <td>${escapeHtml(item.reason || "--")}</td>
         <td>${escapeHtml(fmtConsensusValue(item.consensus_score))}</td>
         <td>${escapeHtml(fmtConsensusValue(item.consensus_confidence))}</td>
@@ -1167,11 +1731,25 @@ function renderDecisionHistoryRows(items, selectedSnapshotID) {
       </tr>`;
     })
     .join("");
+  const updated = setInnerHTMLIfChanged(els.decisionHistoryBody, "decisionHistory", markup);
+
+  if (!updated) {
+    return;
+  }
 
   els.decisionHistoryBody.querySelectorAll("tr[data-snapshot-id]").forEach((row) => {
-    row.addEventListener("click", async () => {
+    const openDetail = async () => {
+      addTransientClass(row, "row-activated", 220);
       const snapshotID = row.getAttribute("data-snapshot-id");
       await refreshDecisionHistory(snapshotID);
+    };
+    row.addEventListener("click", openDetail);
+    row.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      await openDetail();
     });
   });
 }
@@ -1180,6 +1758,17 @@ function renderDecisionPlan(plan) {
   if (!plan) {
     return "";
   }
+  function formatPlanStatus(status) {
+    const key = String(status || "").trim().toUpperCase();
+    const labels = {
+      OPEN_ACTIVE: "执行中",
+      OPENED: "已开仓",
+      PENDING: "待执行",
+      CLOSED: "已结束"
+    };
+    return labels[key] || (key || "执行中");
+  }
+
   const takeProfits = Array.isArray(plan.take_profits) ? plan.take_profits : [];
   const levels = Array.isArray(plan.take_profit_levels) ? plan.take_profit_levels : [];
   const stopDistance = Number.isFinite(Number(plan.entry_price)) && Number.isFinite(Number(plan.stop_loss))
@@ -1202,34 +1791,34 @@ function renderDecisionPlan(plan) {
 
   return `<section class="decision-section">
     <div class="decision-section-head">
-      <h3>当前执行几何（非快照）</h3>
-      <span>${escapeHtml(plan.status || "OPEN_ACTIVE")}</span>
+      <h3>当前执行计划（非历史快照）</h3>
+      <span>${escapeHtml(formatPlanStatus(plan.status))}</span>
     </div>
     <div class="plan-hero-grid">
       <div class="plan-hero-card entry">
-        <span>Entry</span>
+        <span>入场价</span>
         <strong>${fmtNumber(Number(plan.entry_price))}</strong>
         <em>${escapeHtml(actionLabel(plan.direction || "--"))}</em>
       </div>
       <div class="plan-hero-card stop">
-        <span>Stop Loss</span>
+        <span>止损价</span>
         <strong>${fmtNumber(Number(plan.stop_loss))}</strong>
-        <em>${Number.isFinite(stopDistance) ? `Risk Distance ${fmtSignedDelta(stopDistance)}` : "Risk Distance --"}</em>
+        <em>${Number.isFinite(stopDistance) ? `风险距离 ${fmtSignedDelta(stopDistance)}` : "风险距离 --"}</em>
       </div>
       <div class="plan-hero-card leverage">
-        <span>Size / Leverage</span>
+        <span>仓位 / 杠杆</span>
         <strong>${fmtNumber(Number(plan.position_size))}</strong>
         <em>${Number.isFinite(Number(plan.leverage)) ? `${fmtNumber(Number(plan.leverage))}x` : "--"}</em>
       </div>
       <div class="plan-hero-card risk">
-        <span>Risk</span>
+        <span>单笔风险</span>
         <strong>${fmtPercent(Number(plan.risk_pct), 2)}</strong>
-        <em>${Number.isFinite(Number(plan.initial_qty)) && Number(plan.initial_qty) > 0 ? `Initial Qty ${fmtNumber(Number(plan.initial_qty))}` : "实时持仓映射"}</em>
+        <em>${Number.isFinite(Number(plan.initial_qty)) && Number(plan.initial_qty) > 0 ? `初始数量 ${fmtNumber(Number(plan.initial_qty))}` : "根据实时持仓计算"}</em>
       </div>
     </div>
     <div class="plan-ladder">
       <div class="plan-ladder-head">
-        <span>Profit Ladder</span>
+        <span>止盈阶梯</span>
         <span>${takeProfits.length > 0 ? `${takeProfits.length} 个目标位` : "暂无目标位"}</span>
       </div>
       <div class="plan-level-list">${ratioItems || `<div class="decision-empty-inline">暂无止盈层级</div>`}</div>
@@ -1246,13 +1835,13 @@ function renderDecisionPlanContext(planContext) {
     ["最大占用", fmtPercent(planContext.max_invest_pct, 0)],
     ["最大杠杆", Number.isFinite(Number(planContext.max_leverage)) ? `${fmtNumber(Number(planContext.max_leverage))}x` : "--"],
     ["入场偏移", Number.isFinite(Number(planContext.entry_offset_atr)) ? `${fmtNumber(Number(planContext.entry_offset_atr))} ATR` : "--"],
-    ["Entry Mode", String(planContext.entry_mode || "--")],
-    ["Initial Exit", String(planContext.initial_exit || "--")]
+    ["入场模式", String(planContext.entry_mode || "--")],
+    ["初始退出规则", String(planContext.initial_exit || "--")]
   ];
   return `<section class="decision-section">
     <div class="decision-section-head">
       <h3>开仓计算依据</h3>
-      <span>Risk Management</span>
+      <span>风险参数</span>
     </div>
     <div class="decision-fact-grid">
       ${items.map(([label, value]) => `<div class="decision-fact-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}
@@ -1272,7 +1861,7 @@ function renderDecisionSieve(sieve) {
   const matched = rows[0] || null;
   return `<section class="decision-section sieve-section ${decisionActionClass(sieve.action)}">
     <div class="decision-section-head">
-      <h3>risk_management.sieve</h3>
+      <h3>风险筛选器</h3>
       <span>${escapeHtml(actionLabel(sieve.action || "--"))}</span>
     </div>
     <div class="sieve-rule-focus ${matched ? "matched" : ""}">
@@ -1281,14 +1870,14 @@ function renderDecisionSieve(sieve) {
         <span>${escapeHtml(actionLabel(sieve.action || "--"))}</span>
       </div>
       <div class="sieve-rule-meta">
-        <span class="flow-chip pass">size:${escapeHtml(fmtPercent(Number(sieve.size_factor), 0))}</span>
-        <span class="flow-chip">min:${escapeHtml(fmtPercent(Number(sieve.min_size_factor), 0))}</span>
-        <span class="flow-chip">default:${escapeHtml(fmtPercent(Number(sieve.default_size_factor), 0))}</span>
-        ${matched ? `<span class="flow-chip">mechanics:${escapeHtml(matched.mechanics_tag || "--")}</span>
-        <span class="flow-chip">liq:${escapeHtml(matched.liq_confidence || "--")}</span>
-        <span class="flow-chip">crowd:${matched.crowding_align === true ? "same" : matched.crowding_align === false ? "opp" : "any"}</span>` : ""}
+        <span class="flow-chip pass">仓位系数:${escapeHtml(fmtPercent(Number(sieve.size_factor), 0))}</span>
+        <span class="flow-chip">最小仓位:${escapeHtml(fmtPercent(Number(sieve.min_size_factor), 0))}</span>
+        <span class="flow-chip">默认仓位:${escapeHtml(fmtPercent(Number(sieve.default_size_factor), 0))}</span>
+        ${matched ? `<span class="flow-chip">力学标签:${escapeHtml(matched.mechanics_tag || "--")}</span>
+        <span class="flow-chip">清算置信:${escapeHtml(matched.liq_confidence || "--")}</span>
+        <span class="flow-chip">拥挤方向:${matched.crowding_align === true ? "同向" : matched.crowding_align === false ? "反向" : "不限"}</span>` : ""}
       </div>
-      <div class="sieve-reason-code">${escapeHtml(sieve.reason_code || "NO_SIEVE_REASON")}</div>
+      <div class="sieve-reason-code">${escapeHtml(sieve.reason_code || "无命中原因")}</div>
       <div class="sieve-meter"><span class="sieve-meter-fill" style="width:${meterWidth.toFixed(1)}%"></span></div>
     </div>
   </section>`;
@@ -1308,20 +1897,20 @@ function renderTightenDetail(tighten) {
   const stateClass = tighten.executed ? "pass" : blockedBy.length > 0 ? "fail" : "neutral";
   return `<section class="decision-section tighten-section ${stateClass}">
     <div class="decision-section-head">
-      <h3>持仓收紧信息</h3>
+      <h3>持仓收紧评估</h3>
       <span>${escapeHtml(stateLabel)}</span>
     </div>
     <div class="decision-fact-grid tighten-fact-grid">
       <div class="decision-fact-card">
         <span>执行状态</span>
-        <strong>${escapeHtml(tighten.executed ? "TIGHTEN EXECUTED" : "TIGHTEN CHECKED")}</strong>
+        <strong>${escapeHtml(tighten.executed ? "已执行收紧" : "仅完成评估")}</strong>
       </div>
       <div class="decision-fact-card">
-        <span>TP 同步收紧</span>
-        <strong>${escapeHtml(tighten.tp_tightened ? "YES" : "NO")}</strong>
+        <span>止盈同步收紧</span>
+        <strong>${escapeHtml(tighten.tp_tightened ? "是" : "否")}</strong>
       </div>
       <div class="decision-fact-card">
-        <span>主阻断原因</span>
+        <span>主要阻断原因</span>
         <strong>${escapeHtml(blockedBy[0] || tighten.display_reason || "--")}</strong>
       </div>
     </div>
@@ -1331,7 +1920,7 @@ function renderTightenDetail(tighten) {
         <span class="decision-chip ${stateClass}">${escapeHtml(stateLabel)}</span>
       </div>
       <div class="decision-kpi-value">${escapeHtml(fmtConsensusValue(tighten.score))}</div>
-      <div class="decision-kpi-sub">阈值 ${escapeHtml(fmtConsensusValue(tighten.score_threshold))} / parse ${tighten.score_parse_ok ? "ok" : "fail"}</div>
+      <div class="decision-kpi-sub">阈值 ${escapeHtml(fmtConsensusValue(tighten.score_threshold))} / 解析${tighten.score_parse_ok ? "成功" : "失败"}</div>
       <div class="decision-meter"><span class="decision-meter-fill ${stateClass}" style="width:${progress.toFixed(1)}%"></span></div>
       <div class="decision-meter-meta">达成率 ${Number.isFinite(progress) ? `${Math.round(progress)}%` : "--"}</div>
     </div>
@@ -1339,9 +1928,10 @@ function renderTightenDetail(tighten) {
   </section>`;
 }
 
-function renderDecisionDetail(detail, fallbackMessage) {
+function renderDecisionDetail(detail, fallbackMessage, selectedDecisionAt) {
   if (!detail) {
-    els.decisionDetail.innerHTML = `<div class="decision-empty">${escapeHtml(fallbackMessage || "暂无详情")}</div>`;
+    els.decisionDetail.innerHTML = `<div class="decision-empty">${escapeHtml(fallbackMessage || "暂无详情，请先选择一条决策记录")}</div>`;
+    animateDecisionDetailEntry();
     return;
   }
   state.reportCollapsed = true;
@@ -1355,18 +1945,24 @@ function renderDecisionDetail(detail, fallbackMessage) {
   const confidenceProgress = decisionMetricProgress(detail.consensus_confidence, detail.consensus_confidence_threshold, false);
   const reportMarkdown = cleanDecisionMarkdown(detail.report_markdown || "");
   const isTighten = action === "TIGHTEN" && detail.tighten;
+  const decisionAtRaw = selectedDecisionAt || detail.at || (detail.plan && detail.plan.opened_at) || "";
+  const decisionAtText = formatBeijingDateTime(decisionAtRaw);
+  const decisionTimeLine = decisionAtText === "--" ? "" : `<div class="decision-snapshot-time">北京时间 ${escapeHtml(decisionAtText)}</div>`;
+  const reportBodyID = `decision-report-body-${snapshotID || "latest"}`;
+  const decisionViewHref = sanitizeLinkHref(detail.decision_view_url, "/decision-view/");
   els.decisionDetail.innerHTML = `
     <div class="decision-card">
       <div class="decision-top">
         <div>
-          <div class="decision-snapshot">Snapshot <span>#${snapshotID}</span></div>
+          <div class="decision-snapshot">快照 <span>#${snapshotID}</span></div>
+          ${decisionTimeLine}
           <div class="decision-chip-row">
             <span class="decision-chip ${decisionActionClass(action)}">${escapeHtml(actionLabel(action))}</span>
-            <span class="decision-chip ${tradeable ? "pass" : "fail"}">Tradeable ${tradeable ? "YES" : "NO"}</span>
+            <span class="decision-chip ${tradeable ? "pass" : "fail"}">可交易 ${tradeable ? "是" : "否"}</span>
             <span class="decision-chip ${decisionBoolClass(overallPassed)}">共识 ${escapeHtml(fmtConsensusPassed(overallPassed))}</span>
           </div>
         </div>
-        <a class="decision-link-btn" href="${escapeHtml(detail.decision_view_url || "/decision-view/")}" target="_blank" rel="noopener noreferrer">Decision View</a>
+        <a class="decision-link-btn" href="${escapeHtml(decisionViewHref)}" target="_blank" rel="noopener noreferrer">打开决策视图</a>
       </div>
       <div class="decision-reason-line">
         <span>触发原因</span>
@@ -1404,19 +2000,20 @@ function renderDecisionDetail(detail, fallbackMessage) {
       ${renderDecisionPlan(detail.plan)}
       <section class="decision-section decision-report-shell collapsed" data-report-shell data-collapsed="true">
         <div class="decision-section-head decision-report-head">
-          <h3>决策报告</h3>
-          <button type="button" class="decision-report-toggle" data-report-toggle aria-expanded="false">${reportToggleLabel(true)}</button>
+          <h3>模型决策报告</h3>
+          <button type="button" class="decision-report-toggle" data-report-toggle aria-expanded="false" aria-controls="${reportBodyID}">${reportToggleLabel(true)}</button>
         </div>
-        <div class="decision-report-collapsible">
+        <div class="decision-report-collapsible" id="${reportBodyID}">
           <pre class="decision-report-body">${escapeHtml(reportMarkdown)}</pre>
           <div class="decision-report-footer">
-            <button type="button" class="decision-report-toggle ghost" data-report-toggle aria-expanded="false">${reportToggleLabel(true)}</button>
+            <button type="button" class="decision-report-toggle ghost" data-report-toggle aria-expanded="false" aria-controls="${reportBodyID}">${reportToggleLabel(true)}</button>
           </div>
         </div>
       </section>
     </div>
   `;
   bindDecisionReportToggle();
+  animateDecisionDetailEntry();
 }
 
 function cleanDecisionMarkdown(input) {
@@ -1542,8 +2139,9 @@ async function refreshPositionHistory() {
     const fallbackData = await fetchJSON(`${runtimeBase}/position/history`);
     trades = Array.isArray(fallbackData.trades) ? fallbackData.trades : [];
   }
-  state.lastPositionHistory = trades;
-  renderPositionHistory(trades);
+  const orderedTrades = sortByDateFieldDesc(trades, "opened_at");
+  state.lastPositionHistory = orderedTrades;
+  renderPositionHistory(orderedTrades);
 }
 
 async function refreshDecisionHistory(snapshotID) {
@@ -1551,8 +2149,9 @@ async function refreshDecisionHistory(snapshotID) {
     state.lastDecisionItems = [];
     state.selectedDecisionSnapshotID = 0;
     state.selectedDecisionSnapshotSymbol = "";
+    state.selectedDecisionAt = "";
     renderDecisionHistoryRows([], 0);
-    renderDecisionDetail(null, "暂无历史决策");
+    renderDecisionDetail(null, "暂无历史决策，请等待下一次策略评估。", "");
     const flow = await refreshFlow();
     await refreshKline(flow);
     return;
@@ -1569,7 +2168,7 @@ async function refreshDecisionHistory(snapshotID) {
   if (requestSeq !== state.historyRequestSeq) {
     return;
   }
-  const items = Array.isArray(data.items) ? data.items : [];
+  const items = sortByDateFieldDesc(Array.isArray(data.items) ? data.items : [], "at");
   state.lastDecisionItems = items;
   state.lastHistoryItems = items;
   const preferredSnapshotID = Number(snapshotID || state.selectedDecisionSnapshotID || 0);
@@ -1577,6 +2176,8 @@ async function refreshDecisionHistory(snapshotID) {
   const selectedSnapshotID = matchedSnapshot
     ? preferredSnapshotID
     : Number(items[0] && items[0].snapshot_id ? items[0].snapshot_id : 0);
+  const selectedSnapshotItem = items.find((item) => Number(item.snapshot_id || 0) === selectedSnapshotID) || null;
+  state.selectedDecisionAt = selectedSnapshotItem && selectedSnapshotItem.at ? String(selectedSnapshotItem.at) : "";
   state.selectedDecisionSnapshotID = selectedSnapshotID;
   state.selectedDecisionSnapshotSymbol = state.symbol;
   renderDecisionHistoryRows(items, selectedSnapshotID);
@@ -1589,7 +2190,7 @@ async function refreshDecisionHistory(snapshotID) {
     if (requestSeq !== state.historyRequestSeq) {
       return;
     }
-    renderDecisionDetail(detailData.detail || null, detailData.message || "");
+    renderDecisionDetail(detailData.detail || null, detailData.message || "", state.selectedDecisionAt);
     const flow = await refreshFlow(selectedSnapshotID);
     if (requestSeq !== state.historyRequestSeq) {
       return;
@@ -1597,7 +2198,7 @@ async function refreshDecisionHistory(snapshotID) {
     await refreshKline(flow);
     return;
   }
-  renderDecisionDetail(null, data.message || "暂无历史决策");
+  renderDecisionDetail(null, data.message || "暂无历史决策，请等待下一次策略评估。", "");
   const flow = await refreshFlow();
   if (requestSeq !== state.historyRequestSeq) {
     return;
@@ -1609,12 +2210,14 @@ async function refreshStatus() {
   try {
     await fetchJSON(`${runtimeBase}/schedule/status`);
     els.status.classList.remove("positive", "negative");
-    els.status.textContent = "Healthy";
+    els.status.textContent = "运行正常";
     els.status.classList.add("positive");
+    addTransientClass(els.status, "status-pulse", 320);
   } catch (_err) {
     els.status.classList.remove("positive", "negative");
-    els.status.textContent = "Degraded";
+    els.status.textContent = "连接异常";
     els.status.classList.add("negative");
+    addTransientClass(els.status, "status-pulse", 320);
   }
 }
 
@@ -1632,6 +2235,7 @@ async function runRefreshCycle(mode) {
     return;
   }
   state.refreshing = true;
+  document.body.classList.add("dashboard-refreshing");
   try {
     if (cycleMode === "full" || cycleMode === "auto") {
       await refreshOverview();
@@ -1646,6 +2250,7 @@ async function runRefreshCycle(mode) {
     renderGlobalError(err);
   } finally {
     state.refreshing = false;
+    document.body.classList.remove("dashboard-refreshing");
   }
 
   if (state.pendingRefreshMode) {
@@ -1661,6 +2266,7 @@ async function bootstrap() {
   setInterval(updateClock, 1000);
 
   els.symbolSelect.addEventListener("change", async () => {
+    addTransientClass(els.symbolSelect, "control-bump", 240);
     state.symbol = els.symbolSelect.value;
     state.selectedDecisionSnapshotID = 0;
     state.selectedDecisionSnapshotSymbol = state.symbol;
@@ -1668,6 +2274,7 @@ async function bootstrap() {
   });
 
   els.intervalSelect.addEventListener("change", async () => {
+    addTransientClass(els.intervalSelect, "control-bump", 240);
     const nextInterval = String(els.intervalSelect.value || "").toLowerCase();
     if (!nextInterval) {
       return;
@@ -1695,9 +2302,10 @@ async function bootstrap() {
       resizeQueued = false;
       if (chart) {
         chart.resize();
+        scheduleKlineTagRelayout(false);
       }
       if (state.lastFlow) {
-        renderFlow(state.lastFlow);
+        scheduleFlowLayout(false);
       }
     });
   });
