@@ -102,12 +102,12 @@ func (g *Generator) Generate(req Request) (GenerateResult, error) {
 		return GenerateResult{}, err
 	}
 	for _, f := range result.Files {
-		if err := writeAtomic(filepath.Join(g.repoRoot, f.Path), f.Content); err != nil {
+		if err := writeAtomic(g.repoRoot, filepath.Join(g.repoRoot, f.Path), f.Content); err != nil {
 			return GenerateResult{}, err
 		}
 	}
 	done := fmt.Sprintf("generated_at=%s\n", time.Now().UTC().Format(time.RFC3339))
-	if err := writeAtomic(filepath.Join(g.repoRoot, "data/onboarding/.done"), done); err != nil {
+	if err := writeAtomic(g.repoRoot, filepath.Join(g.repoRoot, "data/onboarding/.done"), done); err != nil {
 		return GenerateResult{}, err
 	}
 	return result, nil
@@ -563,7 +563,7 @@ func cloneSymbolMap(in map[string]SymbolDetail) map[string]SymbolDetail {
 	return out
 }
 
-func writeAtomic(path string, content string) error {
+func writeAtomic(repoRoot string, path string, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -571,5 +571,8 @@ func writeAtomic(path string, content string) error {
 	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return applyHostOwnership(repoRoot, path)
 }

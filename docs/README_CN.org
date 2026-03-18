@@ -46,7 +46,7 @@ brale-core/
 ** 首次部署
 #+begin_src bash
 # 推荐：使用精简 bootstrap（拉代码/更新代码 -> 启动 onboarding 容器 -> 打开页面）
-curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
 
 # 如果仓库已经在本地
 make init
@@ -62,17 +62,17 @@ make start
 ** 常用命令速查
 | 命令             | 说明                                             |
 |------------------+--------------------------------------------------|
-| =make init=      | 构建并启动 onboarding 容器（=127.0.0.1:9992=）   |
+| =make init=      | 在同一 Compose 项目内构建并启动常驻 onboarding 服务（=127.0.0.1:9992=） |
 | =make init-stop= | 停止 onboarding 容器                             |
 | =make init-logs= | 查看 onboarding 容器日志                         |
 | =make start=     | 首次启动 / 全量启动（freqtrade → brale）         |
-| =make apply-config= | 重新生成运行配置，并按最新配置重启整套服务    |
-| =make stop=      | 停止所有服务（保留容器与数据）                   |
+| =make apply-config= | 重新生成运行配置，并按最新配置重启 =freqtrade= + =brale= |
+| =make stop=      | 仅停止 =freqtrade= + =brale=（=onboarding= 保持运行） |
 | =make restart=   | 等同于 =make start=（先 check + prepare 再启动） |
 | =make rebuild=   | 代码更新后重新构建 brale 镜像并启动              |
 | =make status=    | 查看各服务运行状态                               |
 | =make logs=      | 实时查看 freqtrade + brale 日志                  |
-| =make down=      | 销毁容器（数据目录 =data/= 不受影响）            |
+| =make down=      | 销毁整个 Compose 项目（包括 =onboarding=，数据目录 =data/= 不受影响） |
 ** 更新代码后重启
 #+begin_src bash
 # 仅重新构建 brale 镜像，不影响历史数据
@@ -87,7 +87,7 @@ make stop && make start
 #+end_src
 - 修改了 Go 源码 → 需要 =make rebuild=。
 
-onboarding 页面里的“应用配置并重启服务”按钮也是走这一套 =stop + start= 语义。
+onboarding 页面里的“应用配置并重启服务”按钮也是走这一套 =stop + start= 语义，页面本身作为控制面会保持在线。
 ** 数据持久化
 | 宿主机路径                  | 容器内路径                  | 说明                      |
 |-----------------------------+-----------------------------+---------------------------|
