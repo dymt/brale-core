@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_URL_DEFAULT="https://github.com/laukkw/brale-core.git"
-REF_DEFAULT="main"
+REF_DEFAULT="master"
 TARGET_DIR_DEFAULT="${HOME}/brale-core"
 ONBOARDING_URL_DEFAULT="http://127.0.0.1:9992"
 
@@ -10,7 +10,10 @@ repo_url="${BRALE_REPO_URL:-${REPO_URL_DEFAULT}}"
 ref="${BRALE_REF:-${REF_DEFAULT}}"
 target_dir="${BRALE_DIR:-${TARGET_DIR_DEFAULT}}"
 onboarding_url="${BRALE_ONBOARDING_URL:-${ONBOARDING_URL_DEFAULT}}"
+compose_project_name="${BRALE_COMPOSE_PROJECT_NAME:-brale-core}"
 open_browser=1
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 
 usage() {
   cat <<'EOF'
@@ -18,7 +21,7 @@ Usage: bootstrap.sh [options]
 
 Options:
   --dir PATH          Target checkout directory (default: ~/brale-core)
-  --ref REF           Git ref to checkout (default: main)
+  --ref REF           Git ref to checkout (default: master)
   --repo-url URL      Repository URL
   --onboarding-url U  Expected onboarding URL (default: http://127.0.0.1:9992)
   --no-open           Do not try to open the browser automatically
@@ -27,11 +30,11 @@ EOF
 }
 
 log() {
-  printf '%s
+  printf '%s\n' "$1"
 }
 
 fail() {
-  printf '[ERR] %s
+  printf '[ERR] %s\n' "$1" >&2
   exit 1
 }
 
@@ -119,7 +122,11 @@ else
 fi
 
 log "[INFO] building and starting onboarding container"
-HOST_REPO_ROOT="$target_dir" docker compose --project-directory "$target_dir" -f "$target_dir/docker-compose.yml" up -d --build onboarding
+make_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make init 2>&1)" || {
+  printf '%s\n' "$make_output"
+  fail "failed to start onboarding via make init"
+}
+printf '%s\n' "$make_output"
 
 ready=0
 for _ in $(seq 1 60); do
@@ -131,7 +138,7 @@ for _ in $(seq 1 60); do
 done
 
 if [[ "$ready" -ne 1 ]]; then
-  HOST_REPO_ROOT="$target_dir" docker compose --project-directory "$target_dir" -f "$target_dir/docker-compose.yml" logs --tail=200 onboarding || true
+  (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" docker compose -f docker-compose.yml logs --tail=200 onboarding) || true
   fail "onboarding did not become ready in time"
 fi
 

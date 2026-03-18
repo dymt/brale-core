@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 COMPOSE_FILE ?= docker-compose.yml
-PROJECT_NAME ?= brale-stack
+COMPOSE_PROJECT_NAME ?= brale-core
 
 BRALE_CONFIG_ROOT ?= $(CURDIR)/configs
 BRALE_DATA_ROOT ?= $(CURDIR)/data/brale
@@ -10,15 +10,17 @@ FREQTRADE_CONFIG_ROOT ?= $(CURDIR)/configs/freqtrade
 FREQTRADE_RUNTIME_ROOT ?= $(CURDIR)/data/freqtrade/user_data
 FREQTRADE_CONFIG_FILE ?= $(FREQTRADE_RUNTIME_ROOT)/config.json
 STACK_PROXY_ENV_FILE ?= $(CURDIR)/data/freqtrade/proxy.env
+HOST_UID ?= $(shell id -u)
+HOST_GID ?= $(shell id -g)
 ONBOARDING_ADDR ?= 127.0.0.1:9992
 ONBOARDING_URL ?= http://$(ONBOARDING_ADDR)
 ONBOARDING_PID_FILE ?= $(BRALE_DATA_ROOT)/onboarding.pid
 ONBOARDING_LOG_FILE ?= $(FREQTRADE_RUNTIME_ROOT)/logs/onboarding.log
 ONBOARDING_BIN ?= $(BRALE_DATA_ROOT)/bin/onboarding
 
-COMPOSE = docker compose -p "$(PROJECT_NAME)" -f "$(COMPOSE_FILE)" --env-file ".env"
-INIT_COMPOSE = docker compose -p "$(PROJECT_NAME)" -f "$(COMPOSE_FILE)"
-STACK_ENV = BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" BRALE_SYSTEM_FILE="$(BRALE_SYSTEM_FILE)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
+COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)" --env-file ".env"
+INIT_COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
+STACK_ENV = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" BRALE_SYSTEM_FILE="$(BRALE_SYSTEM_FILE)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
 
 .PHONY: init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale stop-freqtrade stop-brale stop restart rebuild down status logs
 
@@ -132,6 +134,9 @@ prepare:
 		"$(dir $(STACK_PROXY_ENV_FILE))"
 	@python3 scripts/prepare_stack.py --env-file .env --config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" --config-out "$(FREQTRADE_CONFIG_FILE)" --proxy-env-out "$(STACK_PROXY_ENV_FILE)" --system-in "$(BRALE_CONFIG_ROOT)/system.toml" --system-out "$(BRALE_SYSTEM_FILE)"
 	@cp -f "$(FREQTRADE_CONFIG_ROOT)/brale_shared_strategy.py" "$(FREQTRADE_RUNTIME_ROOT)/strategies/BraleSharedStrategy.py"
+	@if [ "$$(id -u)" = "0" ] && [ -n "$(HOST_UID)" ] && [ -n "$(HOST_GID)" ]; then \
+		chown -R "$(HOST_UID):$(HOST_GID)" "$(BRALE_DATA_ROOT)" "$(FREQTRADE_RUNTIME_ROOT)" "$(dir $(STACK_PROXY_ENV_FILE))"; \
+	fi
 
 start: check prepare start-freqtrade wait-freqtrade start-brale
 

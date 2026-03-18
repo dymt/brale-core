@@ -66,13 +66,13 @@ brale-core/
 
 ```bash
 # Recommended: thin bootstrap (clone/update repo -> start onboarding container -> open page)
-curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
 
 # Or if you already cloned the repo locally
 make init
 ```
 
-`make init` now starts the dedicated onboarding container on `http://127.0.0.1:9992`.
+`make init` starts the always-on onboarding service on `http://127.0.0.1:9992` inside the same Compose project as `brale` and `freqtrade`.
 Complete the setup in the onboarding page, then use the page's "Apply config and restart services"
 action to run the equivalent of `make stop && make start`.
 
@@ -88,17 +88,17 @@ make start
 
 | Command | Description |
 |---|---|
-| `make init` | Build/start the onboarding container on `127.0.0.1:9992` |
+| `make init` | Build/start the always-on onboarding service on `127.0.0.1:9992` |
 | `make init-stop` | Stop the onboarding container |
 | `make init-logs` | Tail onboarding container logs |
 | `make start` | First-time / full start (freqtrade → brale) |
-| `make apply-config` | Re-prepare config and restart the stack with latest files |
-| `make stop` | Stop all services (containers and data preserved) |
+| `make apply-config` | Re-prepare config and restart `freqtrade` + `brale` with latest files |
+| `make stop` | Stop `freqtrade` + `brale` only (`onboarding` stays up) |
 | `make restart` | Same as `make start` (runs check + prepare first) |
 | `make rebuild` | Rebuild brale image after code changes and restart |
 | `make status` | Show service status |
 | `make logs` | Tail freqtrade + brale logs |
-| `make down` | Destroy containers (`data/` directory unaffected) |
+| `make down` | Destroy the whole Compose project, including `onboarding` (`data/` directory unaffected) |
 
 ### Restart After Code Changes
 
@@ -120,7 +120,7 @@ make stop && make start
 
 - Changed Go source code → use `make rebuild`.
 
-The onboarding UI uses this same `stop + start` semantics when you apply updated config.
+The onboarding UI uses this same `stop + start` semantics when you apply updated config, while the onboarding service itself stays up as the control plane.
 
 ### Data Persistence
 

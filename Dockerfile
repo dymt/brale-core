@@ -22,7 +22,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/onboarding ./cmd/onboarding
 RUN go build -o /out/brale-core ./cmd/brale-core
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS brale-runtime
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY

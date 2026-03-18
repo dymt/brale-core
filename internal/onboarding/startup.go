@@ -75,11 +75,11 @@ type startupServiceActionResult struct {
 }
 
 const (
-	braleDashboardAddr = "127.0.0.1:9991"
-	braleDashboardURL  = "http://127.0.0.1:9991/dashboard/"
-	freqtradeAddr      = "127.0.0.1:8080"
-	freqtradeURL       = "http://127.0.0.1:8080"
+	braleDashboardURL = "http://127.0.0.1:9991/dashboard/"
+	freqtradeURL      = "http://127.0.0.1:8080"
 )
+
+var startupProbeReachable = probeReachable
 
 var startupHTTPClient = &http.Client{
 	Timeout: 700 * time.Millisecond,
@@ -125,11 +125,19 @@ func runStartupCheck(repoRoot string) startupCheckResult {
 
 func runStartupMonitor() startupMonitorResult {
 	return startupMonitorResult{
-		BraleRunning:     probeReachable([]string{"http://127.0.0.1:9991/healthz", "http://brale:9991/healthz"}),
+		BraleRunning:     startupProbeReachable(braleMonitorTargets()),
 		BraleURL:         braleDashboardURL,
-		FreqtradeRunning: probeReachable([]string{"http://127.0.0.1:8080/api/v1/ping", "http://freqtrade:8080/api/v1/ping"}),
+		FreqtradeRunning: startupProbeReachable(freqtradeMonitorTargets()),
 		FreqtradeURL:     freqtradeURL,
 	}
+}
+
+func braleMonitorTargets() []string {
+	return []string{"http://brale:9991/healthz", "http://127.0.0.1:9991/healthz"}
+}
+
+func freqtradeMonitorTargets() []string {
+	return []string{"http://freqtrade:8080/api/v1/ping", "http://127.0.0.1:8080/api/v1/ping"}
 }
 
 func runStartupServiceAction(repoRoot string, req startupServiceActionRequest) startupServiceActionResult {
