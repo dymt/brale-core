@@ -154,7 +154,7 @@ func NewManager(cfg NotificationConfig, formatter decisionfmt.Formatter) (Notifi
 		}
 		senders = append(senders, sender)
 	}
-	if len(senders) == 0 {
+	if len(senders) == 0 && !cfg.Feishu.BotEnabled {
 		return nil, fmt.Errorf("notification enabled but no channel configured")
 	}
 	return Manager{formatter: formatter, senders: senders, dedupe: newDedupeGuard(defaultNotifyDedupeTTL)}, nil

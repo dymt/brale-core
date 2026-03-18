@@ -315,6 +315,7 @@ function payload() {
 }
 
 function renderEnv(data) {
+  const notificationEnabled = data.telegram_enabled || data.feishu_enabled || data.feishu_bot_enabled;
   return [
     `EXEC_USERNAME=${data.exec_username}`,
     `EXEC_SECRET=${data.exec_secret}`,
@@ -334,6 +335,8 @@ function renderEnv(data) {
     `LLM_MECHANICS_ENDPOINT=${data.llm_mechanics_endpoint}`,
     `LLM_MECHANICS_API_KEY=${data.llm_mechanics_key}`,
     "",
+    `NOTIFICATION_ENABLED=${notificationEnabled}`,
+    `NOTIFICATION_STARTUP_NOTIFY_ENABLED=false`,
     `NOTIFICATION_TELEGRAM_ENABLED=${data.telegram_enabled}`,
     `NOTIFICATION_TELEGRAM_TOKEN=${data.telegram_token}`,
     `NOTIFICATION_TELEGRAM_CHAT_ID=${data.telegram_chat_id}`,

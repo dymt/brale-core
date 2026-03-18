@@ -42,6 +42,7 @@ type envContext struct {
 	LLMModelMechanics          string
 	LLMMechanicsEndpoint       string
 	LLMMechanicsAPIKey         string
+	NotificationEnabled        bool
 	TelegramEnabled            bool
 	TelegramToken              string
 	TelegramChatID             string
@@ -408,6 +409,7 @@ func envContextFromRequest(req Request) envContext {
 		LLMModelMechanics:          req.LLMModelMechanics,
 		LLMMechanicsEndpoint:       req.LLMMechanicsEndpoint,
 		LLMMechanicsAPIKey:         req.LLMMechanicsKey,
+		NotificationEnabled:        notificationEnabled(req),
 		TelegramEnabled:            req.TelegramEnabled,
 		TelegramToken:              req.TelegramToken,
 		TelegramChatID:             req.TelegramChatID,
@@ -421,6 +423,10 @@ func envContextFromRequest(req Request) envContext {
 		FeishuDefaultReceiveIDType: req.FeishuDefaultReceiveIDType,
 		FeishuDefaultReceiveID:     req.FeishuDefaultReceiveID,
 	}
+}
+
+func notificationEnabled(req Request) bool {
+	return req.TelegramEnabled || req.FeishuEnabled || req.FeishuBotEnabled
 }
 
 func mergeSymbolDetail(symbol string, override SymbolDetail) SymbolDetail {

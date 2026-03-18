@@ -1,34 +1,17 @@
-# brale-core 全局配置示例（仅放所有币种通用的数据）
-# - 该文件不包含任何币种差异项（如 intervals/require/LLM model 等）
-# - 币种差异配置请放到 configs/symbols/*.toml
-
-# 日志格式，例：json 或 text
 log_format = "text"
-# 日志级别，例：debug/info/warn/error
 log_level = "info"
-# 日志文件路径，默认与 db 同目录
 log_path = "./data/brale-core.log"
- # SQLite 路径，例：data/brale-core.db
 db_path = "./data/brale-core.db"
-# 持久化模式：minimal(默认) 或 full(回测)
 persist_mode = "minimal"
-# 执行系统标识，例：freqtrade
 execution_system = "freqtrade"
-# 执行端 API 地址，例：http://freqtrade:8080/api/v1
 exec_endpoint = "http://127.0.0.1:8080/api/v1"
-# 执行端 API Key，例：abc123
 exec_api_key = "${EXEC_USERNAME}"
- # 执行端 API Secret，例：secret123
 exec_api_secret = "${EXEC_SECRET}"
- # 执行端鉴权方式：basic 或 header
 exec_auth = "basic"
- # 是否启用定时 LLM 决策任务；true=定时+API，false=仅API
 enable_scheduled_decision = true
 
-
-# LLM 配置（symbols 中的 llm.*.model 需要匹配这里的 key）
-# # LLM 请求最小间隔，避免触发 RPM 限流
 llm_min_interval = "5s"
+
 [llm_models.'${LLM_MODEL_INDICATOR}']
 endpoint = "${LLM_INDICATOR_ENDPOINT}"
 api_key = "${LLM_INDICATOR_API_KEY}"
@@ -48,19 +31,15 @@ timeout_sec = 300
 concurrency = 1
 
 [webhook]
-enabled = true # 是否启用 webhook 接收器
-addr = ":9991" # webhook 监听地址
-# # webhook 队列大小
+enabled = true
+addr = ":9991"
 queue_size = 1024
-# webhook 处理并发数
 worker_count = 4
-# 兜底订单轮询（秒）
 fallback_order_poll_sec = 120
-# 兜底对账轮询（秒）
 fallback_reconcile_sec = 300
 
 [notification]
-enabled = true
+enabled = ${NOTIFICATION_ENABLED}
 startup_notify_enabled = ${NOTIFICATION_STARTUP_NOTIFY_ENABLED}
 
 [notification.telegram]
