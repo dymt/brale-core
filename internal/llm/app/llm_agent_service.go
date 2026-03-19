@@ -13,17 +13,21 @@ import (
 	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/interval"
+	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/pkg/parallel"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type LLMAgentService struct {
-	Runner  *agent.Runner
-	Prompts LLMPromptBuilder
-	Cache   *LLMStageCache
-	Tracker *LLMRunTracker
+	Runner         *agent.Runner
+	Prompts        LLMPromptBuilder
+	Cache          *LLMStageCache
+	Tracker        *LLMRunTracker
+	SessionManager *llm.RoundSessionManager
+	SessionMode    llm.SessionMode
 }
 
 func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, error) {
@@ -263,7 +267,7 @@ func (s LLMAgentService) runIndicatorStage(ctx context.Context, symbol string, i
 	if out, ok := loadAgentCache(s.Cache, symbol, "agent_indicator", indJSON.RawJSON); ok {
 		return out, prompt, nil
 	}
-	indOut, err := s.Runner.RunIndicator(ctx, sysInd, userInd)
+	indOut, err := s.runIndicatorWithLaneSession(ctx, symbol, sysInd, userInd)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "indicator", err)
 		prompt.Error = stageErr.Error()
@@ -290,7 +294,7 @@ func (s LLMAgentService) runStructureStage(ctx context.Context, symbol string, t
 	if out, ok := loadStructureCache(s.Cache, symbol, "agent_structure", input); ok {
 		return out, prompt, nil
 	}
-	stOut, err := s.Runner.RunStructure(ctx, sysSt, userSt)
+	stOut, err := s.runStructureWithLaneSession(ctx, symbol, sysSt, userSt)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "structure", err)
 		prompt.Error = stageErr.Error()
@@ -410,7 +414,7 @@ func (s LLMAgentService) runMechanicsStage(ctx context.Context, symbol string, m
 	if out, ok := loadMechanicsCache(s.Cache, symbol, "agent_mechanics", mechInput); ok {
 		return out, prompt, nil
 	}
-	mechOut, err := s.Runner.RunMechanics(ctx, sysMech, userMech)
+	mechOut, err := s.runMechanicsWithLaneSession(ctx, symbol, sysMech, userMech)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "mechanics", err)
 		prompt.Error = stageErr.Error()
@@ -421,6 +425,103 @@ func (s LLMAgentService) runMechanicsStage(ctx context.Context, symbol string, m
 	}
 	cacheAgentOutput(s.Cache, symbol, "agent_mechanics", mechOut, mechInput)
 	return mechOut, prompt, nil
+}
+
+func (s LLMAgentService) runIndicatorWithLaneSession(ctx context.Context, symbol, system, user string) (agent.IndicatorSummary, error) {
+	return runAgentWithLaneSession(ctx, s, symbol, llm.LLMStageIndicator, func(callCtx context.Context, sessionID string) (agent.IndicatorSummary, error) {
+		return s.Runner.RunIndicatorWithSession(callCtx, sessionID, system, user)
+	})
+}
+
+func (s LLMAgentService) runStructureWithLaneSession(ctx context.Context, symbol, system, user string) (agent.StructureSummary, error) {
+	return runAgentWithLaneSession(ctx, s, symbol, llm.LLMStageStructure, func(callCtx context.Context, sessionID string) (agent.StructureSummary, error) {
+		return s.Runner.RunStructureWithSession(callCtx, sessionID, system, user)
+	})
+}
+
+func (s LLMAgentService) runMechanicsWithLaneSession(ctx context.Context, symbol, system, user string) (agent.MechanicsSummary, error) {
+	return runAgentWithLaneSession(ctx, s, symbol, llm.LLMStageMechanics, func(callCtx context.Context, sessionID string) (agent.MechanicsSummary, error) {
+		return s.Runner.RunMechanicsWithSession(callCtx, sessionID, system, user)
+	})
+}
+
+func runAgentWithLaneSession[T any](ctx context.Context, service LLMAgentService, symbol string, stage llm.LLMStage, invoke func(context.Context, string) (T, error)) (T, error) {
+	var zero T
+	callCtx := llm.WithSessionSymbol(ctx, symbol)
+	key, laneMode, err := service.resolveLaneMode(callCtx, stage)
+	if err != nil || laneMode != llm.SessionModeSession {
+		service.logLaneCall(callCtx, stage, llm.SessionModeStateless, "", false, "")
+		return invoke(callCtx, "")
+	}
+	sessionID, reused, err := service.acquireLaneSession(key)
+	if err != nil {
+		service.markLaneFallback(callCtx, key, stage, string(llm.SessionCapabilityCreateFailed))
+		return invoke(callCtx, "")
+	}
+	out, err := invoke(callCtx, sessionID)
+	if err == nil {
+		service.logLaneCall(callCtx, stage, laneMode, sessionID, reused, "")
+		return out, nil
+	}
+	if !llm.IsSessionCapabilityError(err) {
+		return zero, err
+	}
+	fallbackReason := string(llm.SessionCapabilityUnsupported)
+	if llm.IsSessionCapabilityReason(err, llm.SessionCapabilityCreateFailed) {
+		fallbackReason = string(llm.SessionCapabilityCreateFailed)
+	}
+	if llm.IsSessionCapabilityReason(err, llm.SessionCapabilityExpired) {
+		fallbackReason = string(llm.SessionCapabilityExpired)
+	}
+	service.markLaneFallback(callCtx, key, stage, fallbackReason)
+	return invoke(callCtx, "")
+}
+
+func (s LLMAgentService) resolveLaneMode(ctx context.Context, stage llm.LLMStage) (llm.RoundLaneKey, llm.SessionMode, error) {
+	if s.SessionMode != llm.SessionModeSession || s.SessionManager == nil {
+		return "", llm.SessionModeStateless, nil
+	}
+	key, err := llm.RoundLaneKeyFromContext(ctx, stage)
+	if err != nil {
+		return "", llm.SessionModeStateless, err
+	}
+	return key, s.SessionManager.Mode(key), nil
+}
+
+func (s LLMAgentService) acquireLaneSession(key llm.RoundLaneKey) (string, bool, error) {
+	if s.SessionManager == nil {
+		return "", false, nil
+	}
+	return s.SessionManager.AcquireOrCreate(key, func() (string, error) {
+		return uuid.NewString(), nil
+	})
+}
+
+func (s LLMAgentService) markLaneFallback(ctx context.Context, key llm.RoundLaneKey, stage llm.LLMStage, fallbackReason string) {
+	if s.SessionManager != nil {
+		s.SessionManager.MarkFallback(key)
+	}
+	s.logLaneCall(ctx, stage, llm.SessionModeStateless, "", false, fallbackReason)
+}
+
+func (s LLMAgentService) logLaneCall(ctx context.Context, stage llm.LLMStage, mode llm.SessionMode, sessionID string, reused bool, fallbackReason string) {
+	fields := []zap.Field{
+		zap.String("stage", stage.String()),
+		zap.String("session_mode", mode.String()),
+		zap.String("session_id", strings.TrimSpace(sessionID)),
+		zap.Bool("session_reused", reused),
+		zap.String("fallback_reason", strings.TrimSpace(fallbackReason)),
+	}
+	if roundID, ok := llm.SessionRoundIDFromContext(ctx); ok {
+		fields = append(fields, zap.String("round_id", roundID.String()))
+	}
+	if symbol, ok := llm.SessionSymbolFromContext(ctx); ok {
+		fields = append(fields, zap.String("symbol", symbol))
+	}
+	if flow, ok := llm.SessionFlowFromContext(ctx); ok {
+		fields = append(fields, zap.String("flow", flow.String()))
+	}
+	logging.FromContext(ctx).Named("decision").Info("agent lane session", fields...)
 }
 
 func (s LLMAgentService) logStageError(ctx context.Context, stage string, err error) error {

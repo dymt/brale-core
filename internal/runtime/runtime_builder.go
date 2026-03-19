@@ -70,13 +70,18 @@ func BuildSymbolRuntime(metricsCtx context.Context, sys config.SystemConfig, ind
 }
 
 func buildSymbolRuntimeFromConfig(metricsCtx context.Context, sys config.SystemConfig, symbolCfg config.SymbolConfig, stratCfg config.StrategyConfig, bind strategy.StrategyBinding, st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource, barInterval time.Duration, enabledCfg config.AgentEnabled, enabledApp decision.AgentEnabled, requireMechanics bool) (SymbolRuntime, error) {
-	agentSvc, providerSvc, tracker := buildSymbolAgents(sys, symbolCfg)
+	sessionManager := llm.NewRoundSessionManager()
+	sessionMode, err := config.ResolveSessionMode(sys, symbolCfg)
+	if err != nil {
+		return SymbolRuntime{}, err
+	}
+	agentSvc, providerSvc, tracker := buildSymbolAgents(sys, symbolCfg, sessionManager, sessionMode)
 	enabledMap := map[string]decision.AgentEnabled{symbolCfg.Symbol: enabledApp}
 	fetcher := buildSnapshotFetcher(symbolCfg, requireMechanics)
 	compressor := buildCompressor(metricsCtx, symbolCfg, enabledCfg, enabledMap)
 	exitConfirmCache := decision.NewExitConfirmCache()
 	runner := buildRunner(sys, fetcher, compressor, agentSvc, providerSvc, symbolCfg, bind, enabledMap)
-	pipeline, err := buildPipeline(sys, st, stateProvider, positioner, riskPlanSvc, priceSource, barInterval, symbolCfg.Symbol, bind, symbolCfg, stratCfg, &runner, exitConfirmCache)
+	pipeline, err := buildPipeline(sys, st, stateProvider, positioner, riskPlanSvc, priceSource, barInterval, symbolCfg.Symbol, bind, symbolCfg, stratCfg, &runner, exitConfirmCache, sessionManager, sessionMode)
 	if err != nil {
 		return SymbolRuntime{}, err
 	}
@@ -88,6 +93,8 @@ func buildSymbolRuntimeFromConfig(metricsCtx context.Context, sys config.SystemC
 		RiskPerTradePct: stratCfg.RiskManagement.RiskPerTradePct,
 		Enabled:         enabledApp,
 		LLMTracker:      tracker,
+		SessionManager:  sessionManager,
+		SessionMode:     sessionMode,
 		Pipeline:        pipeline,
 	}, nil
 }
@@ -210,7 +217,7 @@ func validateInitialExitStructureInterval(symbolCfg config.SymbolConfig, stratCf
 	return fmt.Errorf("risk_management.initial_exit.structure_interval=%q not found in symbol intervals %v", iv, symbolCfg.Intervals)
 }
 
-func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig) (decision.AgentService, decision.ProviderService, *llmapp.LLMRunTracker) {
+func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig, sessionManager *llm.RoundSessionManager, sessionMode llm.SessionMode) (decision.AgentService, decision.ProviderService, *llmapp.LLMRunTracker) {
 	cache := llmapp.NewLLMStageCache()
 	tracker := llmapp.NewLLMRunTracker()
 	defaults := config.DefaultPromptDefaults()
@@ -236,7 +243,7 @@ func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig) (
 		Structure: newLLMClient(sys, symbolCfg.LLM.Provider.Structure),
 		Mechanics: newLLMClient(sys, symbolCfg.LLM.Provider.Mechanics),
 	}
-	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker}, tracker
+	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker, SessionManager: sessionManager, SessionMode: sessionMode}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker, SessionManager: sessionManager, SessionMode: sessionMode}, tracker
 }
 
 func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {
@@ -335,7 +342,7 @@ func buildRunner(sys config.SystemConfig, fetcher *snapshot.Fetcher, compressor 
 	}
 }
 
-func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource, barInterval time.Duration, symbol string, bind strategy.StrategyBinding, symbolCfg config.SymbolConfig, stratCfg config.StrategyConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache) (*decision.Pipeline, error) {
+func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource, barInterval time.Duration, symbol string, bind strategy.StrategyBinding, symbolCfg config.SymbolConfig, stratCfg config.StrategyConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache, sessionManager *llm.RoundSessionManager, sessionMode llm.SessionMode) (*decision.Pipeline, error) {
 	formatter := decision.NewFormatter()
 	notifier, err := notify.NewManager(notify.FromConfig(sys.Notification), formatter)
 	if err != nil {
@@ -371,6 +378,9 @@ func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *recon
 		ProviderInPositionStore: hooks.SaveProviderInPosition,
 		GateStore:               hooks.SaveGate,
 		Notifier:                notifier,
+		SessionManager:          sessionManager,
+		SessionCleanup:          llm.CleanupOpenAISession,
+		SessionMode:             sessionMode,
 	}, nil
 }
 func toIndicatorOptions(cfg config.IndicatorConfig, indicatorEnabled bool) decision.IndicatorCompressOptions {
