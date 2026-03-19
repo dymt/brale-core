@@ -8,6 +8,7 @@ import (
 
 	"brale-core/internal/decision"
 	"brale-core/internal/execution"
+	"brale-core/internal/llm"
 	llmapp "brale-core/internal/llm/app"
 )
 
@@ -103,6 +104,8 @@ type SymbolRuntime struct {
 	RiskPerTradePct float64
 	Enabled         decision.AgentEnabled
 	LLMTracker      *llmapp.LLMRunTracker
+	SessionManager  *llm.RoundSessionManager
+	SessionMode     llm.SessionMode
 	Pipeline        *decision.Pipeline
 }
 

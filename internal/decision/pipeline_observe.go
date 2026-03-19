@@ -9,6 +9,7 @@ import (
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
+	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/prompt/positionprompt"
 
@@ -64,6 +65,15 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 		p.notifyError(ctx, err)
 		return nil, err
 	}
+	roundID, err := p.newRoundID()
+	if err != nil {
+		logger.Error("pipeline observe round init failed", zap.Error(err))
+		p.notifyError(ctx, err)
+		return nil, err
+	}
+	ctx = llm.WithSessionRoundID(ctx, roundID)
+	logger = logger.With(zap.String("round_id", roundID.String()))
+	defer p.cleanupRound(ctx, logger, roundID)
 	if decisionCtx == nil {
 		decisionCtx = make(map[string]symbolDecisionContext)
 	}
@@ -150,6 +160,15 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 		p.notifyError(ctx, err)
 		return SymbolResult{}, err
 	}
+	roundID, err := p.newRoundID()
+	if err != nil {
+		logger.Error("inject observe round init failed", zap.Error(err))
+		p.notifyError(ctx, err)
+		return SymbolResult{}, err
+	}
+	ctx = llm.WithSessionRoundID(ctx, roundID)
+	logger = logger.With(zap.String("round_id", roundID.String()))
+	defer p.cleanupRound(ctx, logger, roundID)
 	opts := RunOptions{BuildPlan: true, ModeBySymbol: map[string]decisionmode.Mode{symbol: decisionmode.ModeInPosition}}
 	results, _, comp, err := p.Runner.RunOnceWithOptions(ctx, []string{symbol}, intervals, limit, acct, risk, opts)
 	if err != nil {

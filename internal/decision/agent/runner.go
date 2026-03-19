@@ -61,19 +61,31 @@ func (r *Runner) providerFor(stage string) (llm.Provider, error) {
 	}
 }
 func (r *Runner) RunIndicator(ctx context.Context, system, user string) (IndicatorSummary, error) {
-	return runAndParse(ctx, r, "indicator", system, user, decodeIndicatorSummary)
+	return r.RunIndicatorWithSession(ctx, "", system, user)
 }
 
 func (r *Runner) RunStructure(ctx context.Context, system, user string) (StructureSummary, error) {
-	return runAndParse(ctx, r, "structure", system, user, decodeStructureSummary)
+	return r.RunStructureWithSession(ctx, "", system, user)
 }
 
 func (r *Runner) RunMechanics(ctx context.Context, system, user string) (MechanicsSummary, error) {
-	return runAndParse(ctx, r, "mechanics", system, user, decodeMechanicsSummary)
+	return r.RunMechanicsWithSession(ctx, "", system, user)
 }
 
-func runAndParse[T any](ctx context.Context, r *Runner, stage, system, user string, decode func(string) (T, error)) (T, error) {
-	return decisionutil.RunAndParse(ctx, r.providerFor, stage, system, user, decode, func(raw string, err error) {
+func (r *Runner) RunIndicatorWithSession(ctx context.Context, sessionID, system, user string) (IndicatorSummary, error) {
+	return runAndParse(ctx, r, "indicator", sessionID, system, user, decodeIndicatorSummary)
+}
+
+func (r *Runner) RunStructureWithSession(ctx context.Context, sessionID, system, user string) (StructureSummary, error) {
+	return runAndParse(ctx, r, "structure", sessionID, system, user, decodeStructureSummary)
+}
+
+func (r *Runner) RunMechanicsWithSession(ctx context.Context, sessionID, system, user string) (MechanicsSummary, error) {
+	return runAndParse(ctx, r, "mechanics", sessionID, system, user, decodeMechanicsSummary)
+}
+
+func runAndParse[T any](ctx context.Context, r *Runner, stage, sessionID, system, user string, decode func(string) (T, error)) (T, error) {
+	return decisionutil.RunAndParseWithSession(ctx, r.providerFor, stage, sessionID, system, user, decode, func(raw string, err error) {
 		logging.FromContext(ctx).Named("agent").Error("agent parse failed",
 			zap.String("stage", stage),
 			zap.Error(err),

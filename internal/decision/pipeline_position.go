@@ -11,6 +11,7 @@ import (
 	"brale-core/internal/decision/provider"
 	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
+	"brale-core/internal/llm"
 	"brale-core/internal/position"
 	"brale-core/internal/prompt/positionprompt"
 	"brale-core/internal/snapshot"
@@ -263,7 +264,9 @@ func (p *Pipeline) judgeInPositionWithFallback(ctx context.Context, symbol strin
 	if res.AgentPrompts.Mechanics.Error != "" {
 		providerEnabled.Mechanics = false
 	}
-	indOut, stOut, mechOut, prompts, err := p.Runner.Provider.JudgeInPosition(ctx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, summary, providerEnabled)
+	runCtx := llm.WithSessionSymbol(ctx, symbol)
+	runCtx = llm.WithSessionFlow(runCtx, llm.LLMFlowInPosition)
+	indOut, stOut, mechOut, prompts, err := p.Runner.Provider.JudgeInPosition(runCtx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, summary, providerEnabled)
 	if err != nil {
 		if provider.IsDecodeError(err) {
 			return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, nil

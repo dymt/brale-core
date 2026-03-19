@@ -21,6 +21,7 @@ import (
 	"brale-core/internal/decision/provider"
 	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
+	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/snapshot"
 	"brale-core/internal/strategy"
@@ -89,6 +90,8 @@ func (r *Runner) runSymbols(ctx context.Context, symbols []string, comp features
 }
 
 func (r *Runner) runSymbol(ctx context.Context, symbol string, comp features.CompressionResult, acct execution.AccountState, risk execution.RiskParams, opts RunOptions) SymbolResult {
+	ctx = llm.WithSessionSymbol(ctx, symbol)
+	ctx = llm.WithSessionFlow(ctx, flowForSymbol(opts, symbol))
 	logger := logging.FromContext(ctx).Named("decision").With(zap.String("symbol", symbol))
 	// 获取币种的详细策略配置
 	bind, err := r.getBinding(symbol)
@@ -178,6 +181,13 @@ func (r *Runner) runSymbol(ctx context.Context, symbol string, comp features.Com
 		logger.Info("gate blocked trade", zap.String("gate_reason", res.Gate.GateReason))
 	}
 	return res
+}
+
+func flowForSymbol(opts RunOptions, symbol string) llm.LLMFlow {
+	if isInPositionMode(opts, symbol) {
+		return llm.LLMFlowInPosition
+	}
+	return llm.LLMFlowFlat
 }
 
 func symbolError(symbol string, err error, code string) SymbolResult {

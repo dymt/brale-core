@@ -9,9 +9,11 @@ import (
 	"brale-core/internal/decision/features"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/execution"
+	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/snapshot"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -33,6 +35,15 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 		p.notifyError(ctx, err)
 		return nil, err
 	}
+	roundID, err := p.newRoundID()
+	if err != nil {
+		logger.Error("pipeline round init failed", zap.Error(err))
+		p.notifyError(ctx, err)
+		return nil, err
+	}
+	ctx = llm.WithSessionRoundID(ctx, roundID)
+	logger = logger.With(zap.String("round_id", roundID.String()))
+	defer p.cleanupRound(ctx, logger, roundID)
 	decisionCtx, err := p.resolveDecisionContexts(ctx, symbols)
 	if err != nil {
 		logger.Error("resolve decision context failed", zap.Error(err))
@@ -114,6 +125,31 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 		zap.Duration("latency", time.Since(start)),
 	)
 	return out, nil
+}
+
+func (p *Pipeline) newRoundID() (llm.RoundID, error) {
+	if p != nil && p.RoundIDFactory != nil {
+		return p.RoundIDFactory()
+	}
+	return llm.NewRoundID(uuid.NewString())
+}
+
+func (p *Pipeline) cleanupRound(ctx context.Context, logger *zap.Logger, roundID llm.RoundID) {
+	if p == nil || p.SessionManager == nil {
+		return
+	}
+	cleanup := p.SessionCleanup
+	if err := p.SessionManager.CleanupRound(roundID, cleanup); err != nil {
+		if logger == nil {
+			logger = logging.FromContext(ctx).Named("pipeline")
+		}
+		logger.Error("round cleanup finished", zap.String("round_id", roundID.String()), zap.Bool("cleanup_ok", false), zap.Error(err))
+		return
+	}
+	if logger == nil {
+		logger = logging.FromContext(ctx).Named("pipeline")
+	}
+	logger.Info("round cleanup finished", zap.String("round_id", roundID.String()), zap.Bool("cleanup_ok", true))
 }
 
 func (p *Pipeline) shouldSkipSymbolByEntryCooldown(symbol string, mode decisionmode.Mode, logger *zap.Logger) bool {
