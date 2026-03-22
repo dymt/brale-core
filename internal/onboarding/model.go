@@ -41,7 +41,6 @@ type SymbolDetail struct {
 	MaxLeverage                 int      `json:"max_leverage"`
 	Intervals                   []string `json:"intervals"`
 	EntryMode                   string   `json:"entry_mode"`
-	ExitPolicy                  string   `json:"exit_policy"`
 	TightenMinUpdateIntervalSec int      `json:"tighten_min_update_interval_sec"`
 	EMAFast                     int      `json:"ema_fast"`
 	EMAMid                      int      `json:"ema_mid"`

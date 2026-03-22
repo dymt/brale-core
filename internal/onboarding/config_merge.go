@@ -102,7 +102,6 @@ func (g *Generator) buildStrategyConfigContent(symbol string, detail SymbolDetai
 			MaxInvestPct:                detail.MaxInvestPct,
 			MaxLeverage:                 detail.MaxLeverage,
 			EntryMode:                   detail.EntryMode,
-			ExitPolicy:                  detail.ExitPolicy,
 			TightenMinUpdateIntervalSec: detail.TightenMinUpdateIntervalSec,
 		})
 		if err != nil {
@@ -244,7 +243,8 @@ func strategyConfigRegistry(symbol string, detail SymbolDetail, setID bool) []to
 		{Path: []string{"risk_management", "max_invest_pct"}, Value: tomlFloat(detail.MaxInvestPct)},
 		{Path: []string{"risk_management", "max_leverage"}, Value: strconv.Itoa(detail.MaxLeverage)},
 		{Path: []string{"risk_management", "entry_mode"}, Value: tomlQuoted(detail.EntryMode)},
-		{Path: []string{"risk_management", "initial_exit", "policy"}, Value: tomlQuoted(detail.ExitPolicy)},
+		{Path: []string{"risk_management", "risk_strategy", "mode"}, Value: tomlQuoted("llm")},
+		{Path: []string{"risk_management", "initial_exit", "policy"}, Value: tomlQuoted("atr_structure_v1")},
 		{Path: []string{"risk_management", "tighten_atr", "min_update_interval_sec"}, Value: strconv.Itoa(detail.TightenMinUpdateIntervalSec)},
 	}
 	if setID {
@@ -260,6 +260,7 @@ func defaultStrategyObserveRegistry() []tomlUpdate {
 		{Path: []string{"risk_management", "risk_per_trade_pct"}, Value: "0.0"},
 		{Path: []string{"risk_management", "max_invest_pct"}, Value: "0.0"},
 		{Path: []string{"risk_management", "max_leverage"}, Value: "1.0"},
+		{Path: []string{"risk_management", "risk_strategy", "mode"}, Value: tomlQuoted("llm")},
 		{Path: []string{"risk_management", "grade_3_factor"}, Value: "0.0"},
 		{Path: []string{"risk_management", "grade_2_factor"}, Value: "0.0"},
 		{Path: []string{"risk_management", "grade_1_factor"}, Value: "0.0"},

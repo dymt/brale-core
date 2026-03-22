@@ -81,7 +81,6 @@ type strategyTemplateContext struct {
 	MaxInvestPct                float64
 	MaxLeverage                 int
 	EntryMode                   string
-	ExitPolicy                  string
 	TightenMinUpdateIntervalSec int
 }
 
@@ -373,9 +372,6 @@ func normalizeRequest(req Request) (Request, error) {
 		if merged.EntryMode == "" {
 			merged.EntryMode = base.EntryMode
 		}
-		if merged.ExitPolicy == "" {
-			merged.ExitPolicy = base.ExitPolicy
-		}
 		if merged.MaxLeverage <= 0 {
 			return Request{}, fmt.Errorf("%s max_leverage must be > 0", symbol)
 		}
@@ -446,9 +442,6 @@ func mergeSymbolDetail(symbol string, override SymbolDetail) SymbolDetail {
 	if strings.TrimSpace(override.EntryMode) != "" {
 		base.EntryMode = strings.TrimSpace(override.EntryMode)
 	}
-	if strings.TrimSpace(override.ExitPolicy) != "" {
-		base.ExitPolicy = strings.TrimSpace(override.ExitPolicy)
-	}
 	if override.TightenMinUpdateIntervalSec > 0 {
 		base.TightenMinUpdateIntervalSec = override.TightenMinUpdateIntervalSec
 	}
@@ -487,7 +480,6 @@ func defaultDetailForSymbol(symbol string) SymbolDetail {
 			MaxLeverage:                 10,
 			Intervals:                   []string{"1h", "4h", "1d"},
 			EntryMode:                   "orderbook",
-			ExitPolicy:                  "atr_structure_v1",
 			TightenMinUpdateIntervalSec: 600,
 			EMAFast:                     21,
 			EMAMid:                      50,
@@ -505,7 +497,6 @@ func defaultDetailForSymbol(symbol string) SymbolDetail {
 		MaxLeverage:                 3,
 		Intervals:                   []string{"1h", "4h", "1d"},
 		EntryMode:                   "orderbook",
-		ExitPolicy:                  "atr_structure_v1",
 		TightenMinUpdateIntervalSec: 300,
 		EMAFast:                     21,
 		EMAMid:                      50,
