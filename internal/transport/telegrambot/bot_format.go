@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"brale-core/internal/transport/botruntime"
 )
 
 func formatMonitorStatus(resp MonitorStatusResponse) string {
@@ -24,11 +26,11 @@ func formatMonitorStatus(resp MonitorStatusResponse) string {
 		b.WriteString("\n")
 		fmt.Fprintf(b, "单笔风险: %.4f (≈ %.2f USDT)\n", sym.RiskPct, sym.RiskAmount)
 		fmt.Fprintf(b, "最大杠杆: %.2f\n", sym.MaxLeverage)
-		fmt.Fprintf(b, "止盈倍数: %.2f\n", sym.TakeProfitMultiple)
-		fmt.Fprintf(b, "初始止损倍数: %.2f\n", sym.InitialStopMultiple)
-		b.WriteString("入场定价: ")
-		b.WriteString(sym.EntryPricingMode)
-		b.WriteString("\n\n")
+		for _, line := range botruntime.DescribeMonitorRiskPlan(sym.RiskPlan) {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
 }

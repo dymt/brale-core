@@ -5,7 +5,6 @@ import (
 	"sort"
 	"time"
 
-	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/runtime"
 )
 
@@ -28,7 +27,6 @@ func (s *Server) handleMonitorStatus(w http.ResponseWriter, r *http.Request) {
 	symbols := make([]MonitorSymbolConfig, 0, len(keys))
 	for _, symbol := range keys {
 		bundle := s.SymbolConfigs[symbol]
-		initialExitParams := bundle.Strategy.RiskManagement.InitialExit.Params
 		riskPct := bundle.Strategy.RiskManagement.RiskPerTradePct
 		riskAmount := 0.0
 		if balance > 0 && riskPct > 0 {
@@ -46,15 +44,13 @@ func (s *Server) handleMonitorStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		symbols = append(symbols, MonitorSymbolConfig{
-			Symbol:              symbol,
-			NextRun:             nextRun,
-			KlineInterval:       klineInterval,
-			RiskPct:             riskPct,
-			RiskAmount:          riskAmount,
-			MaxLeverage:         bundle.Strategy.RiskManagement.MaxLeverage,
-			TakeProfitMultiple:  resolveTakeProfitMultiple(initialExitParams),
-			InitialStopMultiple: resolveInitialStopMultiple(initialExitParams),
-			EntryPricingMode:    bundle.Strategy.RiskManagement.EntryMode,
+			Symbol:        symbol,
+			NextRun:       nextRun,
+			KlineInterval: klineInterval,
+			RiskPct:       riskPct,
+			RiskAmount:    riskAmount,
+			MaxLeverage:   bundle.Strategy.RiskManagement.MaxLeverage,
+			RiskPlan:      buildMonitorRiskPlan(bundle),
 		})
 	}
 	resp := MonitorStatusResponse{
@@ -64,26 +60,4 @@ func (s *Server) handleMonitorStatus(w http.ResponseWriter, r *http.Request) {
 		RequestID: requestIDFromContext(ctx),
 	}
 	writeJSON(w, resp)
-}
-
-func resolveTakeProfitMultiple(params map[string]any) float64 {
-	if len(params) == 0 {
-		return 0
-	}
-	if rrRaw, ok := params["take_profit_rr"]; ok {
-		if val, ok := parseutil.FirstPositiveFloat(rrRaw); ok {
-			return val
-		}
-	}
-	return 0
-}
-
-func resolveInitialStopMultiple(params map[string]any) float64 {
-	if len(params) == 0 {
-		return 0
-	}
-	if val, ok := parseutil.FloatOK(params["stop_min_distance_pct"]); ok && val > 0 {
-		return val
-	}
-	return 0
 }

@@ -32,16 +32,33 @@ type MonitorStatusResponse struct {
 	RequestID string                `json:"request_id"`
 }
 
+type MonitorRiskPlan struct {
+	Mode         string                 `json:"mode"`
+	Label        string                 `json:"label"`
+	EntryPricing MonitorEntryPricing    `json:"entry_pricing"`
+	Initial      MonitorRiskPlanSection `json:"initial"`
+	Tighten      MonitorRiskPlanSection `json:"tighten"`
+}
+
+type MonitorEntryPricing struct {
+	Mode  string `json:"mode"`
+	Label string `json:"label"`
+}
+
+type MonitorRiskPlanSection struct {
+	Source string         `json:"source"`
+	Label  string         `json:"label"`
+	Params map[string]any `json:"params,omitempty"`
+}
+
 type MonitorSymbolConfig struct {
-	Symbol              string    `json:"symbol"`
-	NextRun             time.Time `json:"next_run"`
-	KlineInterval       string    `json:"kline_interval"`
-	RiskPct             float64   `json:"risk_pct"`
-	RiskAmount          float64   `json:"risk_amount"`
-	MaxLeverage         float64   `json:"max_leverage"`
-	TakeProfitMultiple  float64   `json:"take_profit_multiple"`
-	InitialStopMultiple float64   `json:"initial_stop_multiple"`
-	EntryPricingMode    string    `json:"entry_pricing_mode"`
+	Symbol        string          `json:"symbol"`
+	NextRun       time.Time       `json:"next_run"`
+	KlineInterval string          `json:"kline_interval"`
+	RiskPct       float64         `json:"risk_pct"`
+	RiskAmount    float64         `json:"risk_amount"`
+	MaxLeverage   float64         `json:"max_leverage"`
+	RiskPlan      MonitorRiskPlan `json:"risk_plan"`
 }
 
 type PositionStatusResponse struct {
