@@ -79,7 +79,7 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 		return out, nil
 	}
 	runOpts := opts
-	runOpts.ModeBySymbol = modeBySymbol
+	runOpts = p.enrichRunOptions(runOpts, runnableSymbols, modeBySymbol)
 	results, snap, comp, err := p.Runner.RunOnceWithOptions(ctx, runnableSymbols, intervals, limit, acct, risk, runOpts)
 	if err != nil {
 		logger.Error("pipeline runner failed", zap.Error(err))
@@ -125,6 +125,30 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 		zap.Duration("latency", time.Since(start)),
 	)
 	return out, nil
+}
+
+func (p *Pipeline) enrichRunOptions(opts RunOptions, symbols []string, modeBySymbol map[string]decisionmode.Mode) RunOptions {
+	runOpts := opts
+	runOpts.ModeBySymbol = modeBySymbol
+
+	existing := runOpts.RiskStrategyModeBySymbol
+	riskModeBySymbol := make(map[string]string, len(symbols))
+	for symbol, mode := range existing {
+		riskModeBySymbol[symbol] = mode
+	}
+
+	for _, symbol := range symbols {
+		if _, ok := riskModeBySymbol[symbol]; ok {
+			continue
+		}
+		bind, ok := p.Bindings[symbol]
+		if !ok {
+			continue
+		}
+		riskModeBySymbol[symbol] = resolveTightenPlanSource(bind)
+	}
+	runOpts.RiskStrategyModeBySymbol = riskModeBySymbol
+	return runOpts
 }
 
 func (p *Pipeline) newRoundID() (llm.RoundID, error) {

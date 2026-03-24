@@ -104,6 +104,9 @@ func (s *PositionService) SubmitOpenFromPlan(ctx context.Context, plan execution
 	if s.Store == nil || s.Executor == nil {
 		return execution.PlaceOrderResp{}, fmt.Errorf("store/executor is required")
 	}
+	if plan.StopLoss <= 0 {
+		return execution.PlaceOrderResp{}, fmt.Errorf("stop_loss is required")
+	}
 	if s.PlanCache != nil {
 		if entry, ok := s.PlanCache.GetEntry(plan.Symbol); ok && entry != nil {
 			if entry.ExternalID != "" || entry.ClientOrderID != "" {

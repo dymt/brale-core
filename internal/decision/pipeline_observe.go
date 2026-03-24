@@ -77,7 +77,7 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 	if decisionCtx == nil {
 		decisionCtx = make(map[string]symbolDecisionContext)
 	}
-	results, snap, comp, err := p.Runner.RunOnceWithOptions(ctx, symbols, intervals, limit, acct, risk, RunOptions{BuildPlan: true, ModeBySymbol: modeBySymbol})
+	results, snap, comp, err := p.Runner.RunOnceWithOptions(ctx, symbols, intervals, limit, acct, risk, p.enrichRunOptions(RunOptions{BuildPlan: true}, symbols, modeBySymbol))
 	if err != nil {
 		logger.Error("pipeline runner failed", zap.Error(err))
 		p.notifyError(ctx, err)
@@ -169,7 +169,7 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 	ctx = llm.WithSessionRoundID(ctx, roundID)
 	logger = logger.With(zap.String("round_id", roundID.String()))
 	defer p.cleanupRound(ctx, logger, roundID)
-	opts := RunOptions{BuildPlan: true, ModeBySymbol: map[string]decisionmode.Mode{symbol: decisionmode.ModeInPosition}}
+	opts := p.enrichRunOptions(RunOptions{BuildPlan: true}, []string{symbol}, map[string]decisionmode.Mode{symbol: decisionmode.ModeInPosition})
 	results, _, comp, err := p.Runner.RunOnceWithOptions(ctx, []string{symbol}, intervals, limit, acct, risk, opts)
 	if err != nil {
 		logger.Error("pipeline runner failed", zap.Error(err))
