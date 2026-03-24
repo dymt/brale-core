@@ -62,6 +62,7 @@ func (s *PositionService) OpenFromPlan(ctx context.Context, plan execution.Execu
 		ExecutorName: s.Executor.Name(),
 		Version:      1,
 		Source:       "entry_fill",
+		StopReason:   strings.TrimSpace(plan.RiskAnnotations.StopReason),
 		Qty:          plan.PositionSize,
 		AvgEntry:     plan.Entry,
 		RiskPct:      plan.RiskPct,

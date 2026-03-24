@@ -6,30 +6,54 @@ import (
 	"math"
 	"strings"
 
+	"brale-core/internal/decision/fsm"
+	"brale-core/internal/decision/fund"
 	"brale-core/internal/execution"
 	riskcalc "brale-core/internal/risk"
 	"brale-core/internal/risk/initexit"
 	"brale-core/internal/strategy"
 )
 
-func (r *Runner) applyFlatLLMRiskInit(ctx context.Context, symbol string, res *SymbolResult, bind strategy.StrategyBinding, acct execution.AccountState) error {
-	if r == nil || res == nil || res.Plan == nil {
-		return nil
+func (r *Runner) completeFlatExecutionPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, actions []fsm.Action, bind strategy.StrategyBinding, acct execution.AccountState, llmRiskMode bool) (*execution.ExecutionPlan, error) {
+	if plan == nil {
+		return nil, nil
+	}
+	if !llmRiskMode || !shouldCompleteExecutableFlatPlan(gate, plan, actions) {
+		return plan, nil
+	}
+	return r.buildFlatLLMPlan(ctx, symbol, gate, plan, bind, acct)
+}
+
+func shouldCompleteExecutableFlatPlan(gate fund.GateDecision, plan *execution.ExecutionPlan, actions []fsm.Action) bool {
+	if !gate.GlobalTradeable || plan == nil || !plan.Valid {
+		return false
+	}
+	return hasFSMAction(actions, fsm.ActionOpen)
+}
+
+func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, bind strategy.StrategyBinding, acct execution.AccountState) (*execution.ExecutionPlan, error) {
+	if plan == nil {
+		return nil, nil
 	}
 	if r.FlatRiskInitLLM == nil {
-		return wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, fmt.Errorf("flat risk init llm callback is required"))
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, fmt.Errorf("flat risk init llm callback is required"))
 	}
-	patch, err := r.FlatRiskInitLLM(ctx, FlatRiskInitInput{Symbol: symbol, Gate: res.Gate, Plan: *res.Plan})
+	resolved := *plan
+	patch, err := r.FlatRiskInitLLM(ctx, FlatRiskInitInput{Symbol: symbol, Gate: gate, Plan: resolved})
 	if err != nil {
-		return wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, err)
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, err)
 	}
-	if err := applyFlatRiskInitPatch(res.Plan, patch); err != nil {
-		return wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, classifyFlatRiskInitPatchError(err), err)
+	if err := applyFlatRiskInitPatch(&resolved, patch); err != nil {
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, classifyFlatRiskInitPatchError(err), err)
 	}
-	if err := rescaleFlatPlan(res.Plan, bind, acct); err != nil {
-		return wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonSchemaFailure, err)
+	stopReason := "llm-generated"
+	if patch != nil && patch.Reason != nil && strings.TrimSpace(*patch.Reason) != "" {
+		stopReason = strings.TrimSpace(*patch.Reason)
 	}
-	return nil
+	if err := rescaleFlatPlan(&resolved, bind, acct, stopReason); err != nil {
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonSchemaFailure, err)
+	}
+	return &resolved, nil
 }
 
 func applyFlatRiskInitPatch(plan *execution.ExecutionPlan, patch *initexit.BuildPatch) error {
@@ -103,7 +127,7 @@ func applyFlatRiskInitPatch(plan *execution.ExecutionPlan, patch *initexit.Build
 	return nil
 }
 
-func rescaleFlatPlan(plan *execution.ExecutionPlan, bind strategy.StrategyBinding, acct execution.AccountState) error {
+func rescaleFlatPlan(plan *execution.ExecutionPlan, bind strategy.StrategyBinding, acct execution.AccountState, stopReason string) error {
 	if plan == nil {
 		return fmt.Errorf("plan is nil")
 	}
@@ -154,7 +178,10 @@ func rescaleFlatPlan(plan *execution.ExecutionPlan, bind strategy.StrategyBindin
 	plan.Leverage = leverageResult.Leverage
 	plan.RiskAnnotations.RiskDistance = stopDist
 	plan.RiskAnnotations.StopSource = "llm-flat"
-	plan.RiskAnnotations.StopReason = "llm-generated"
+	if strings.TrimSpace(stopReason) == "" {
+		stopReason = "llm-generated"
+	}
+	plan.RiskAnnotations.StopReason = stopReason
 	plan.RiskAnnotations.MaxInvestPct = maxInvestPct
 	plan.RiskAnnotations.MaxInvestAmt = maxInvestAmt
 	plan.RiskAnnotations.MaxLeverage = bind.RiskManagement.MaxLeverage

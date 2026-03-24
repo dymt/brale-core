@@ -43,6 +43,7 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 	symbol := "BTCUSDT"
 	entry := 100.6
 	stop := 99.0
+	reason := "基于entry、direction与structure设置止损止盈"
 	runner := newRunnerForFlatRiskTests(symbol, func(_ context.Context, input FlatRiskInitInput) (*initexit.BuildPatch, error) {
 		if input.Symbol != symbol {
 			t.Fatalf("symbol=%q, want %q", input.Symbol, symbol)
@@ -61,6 +62,7 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 			StopLoss:         &stop,
 			TakeProfits:      []float64{101, 102},
 			TakeProfitRatios: []float64{0.5, 0.5},
+			Reason:           &reason,
 		}, nil
 	})
 
@@ -90,6 +92,9 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 	if len(result.Plan.TakeProfits) != 2 || len(result.Plan.TakeProfitRatios) != 2 {
 		t.Fatalf("expected patched tp/tp ratios, got tps=%v ratios=%v", result.Plan.TakeProfits, result.Plan.TakeProfitRatios)
 	}
+	if result.Plan.RiskAnnotations.StopReason != reason {
+		t.Fatalf("stop_reason=%q, want %q", result.Plan.RiskAnnotations.StopReason, reason)
+	}
 	planDerived, ok := result.Gate.Derived["plan"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected gate.derived.plan map")
@@ -99,6 +104,70 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 	}
 	if got := planDerived["entry"]; got != entry {
 		t.Fatalf("gate derived entry=%v, want %v", got, entry)
+	}
+}
+
+func TestRunnerFlatRiskInitFailsWhenLLMModeMissing(t *testing.T) {
+	symbol := "BTCUSDT"
+	runner := newRunnerForFlatRiskTests(symbol, func(_ context.Context, input FlatRiskInitInput) (*initexit.BuildPatch, error) {
+		t.Fatalf("flat risk init callback should not be called when llm mode is missing")
+		return nil, nil
+	})
+	runner.Bindings[symbol] = strategy.StrategyBinding{
+		Symbol: symbol,
+		RiskManagement: config.RiskManagementConfig{
+			RiskStrategy:    config.RiskStrategyConfig{Mode: execution.PlanSourceLLM},
+			RiskPerTradePct: 0.01,
+			MaxInvestPct:    1.0,
+			MaxLeverage:     20,
+			Grade1Factor:    1.0,
+			Grade2Factor:    1.0,
+			Grade3Factor:    1.0,
+		},
+	}
+
+	result := runner.runSymbol(
+		context.Background(),
+		symbol,
+		features.CompressionResult{},
+		execution.AccountState{Equity: 10000, Available: 10000},
+		execution.RiskParams{},
+		RunOptions{BuildPlan: true},
+	)
+	if result.Err == nil {
+		t.Fatalf("expected llm risk mode missing failure")
+	}
+	if result.Gate.GateReason != llmRiskReasonModeMissing {
+		t.Fatalf("gate reason=%q, want %q", result.Gate.GateReason, llmRiskReasonModeMissing)
+	}
+}
+
+func TestRunnerFlatRiskInitFailsWhenModeMismatchesBinding(t *testing.T) {
+	symbol := "BTCUSDT"
+	runner := newRunnerForFlatRiskTests(symbol, func(_ context.Context, _ FlatRiskInitInput) (*initexit.BuildPatch, error) {
+		t.Fatalf("flat risk init callback should not be called when mode mismatches binding")
+		return nil, nil
+	})
+	runner.Bindings[symbol] = strategy.StrategyBinding{
+		Symbol: symbol,
+		RiskManagement: config.RiskManagementConfig{
+			RiskStrategy: config.RiskStrategyConfig{Mode: execution.PlanSourceLLM},
+		},
+	}
+
+	result := runner.runSymbol(
+		context.Background(),
+		symbol,
+		features.CompressionResult{},
+		execution.AccountState{Equity: 10000, Available: 10000},
+		execution.RiskParams{},
+		RunOptions{BuildPlan: true, RiskStrategyModeBySymbol: map[string]string{symbol: execution.PlanSourceGo}},
+	)
+	if result.Err == nil {
+		t.Fatalf("expected llm risk mode mismatch failure")
+	}
+	if result.Gate.GateReason != llmRiskReasonModeMismatch {
+		t.Fatalf("gate reason=%q, want %q", result.Gate.GateReason, llmRiskReasonModeMismatch)
 	}
 }
 
@@ -191,6 +260,7 @@ func newRunnerForFlatRiskTests(symbol string, cb FlatRiskInitLLM) *Runner {
 			symbol: {
 				Symbol: symbol,
 				RiskManagement: config.RiskManagementConfig{
+					RiskStrategy:    config.RiskStrategyConfig{Mode: execution.PlanSourceLLM},
 					RiskPerTradePct: 0.01,
 					MaxInvestPct:    1.0,
 					MaxLeverage:     20,

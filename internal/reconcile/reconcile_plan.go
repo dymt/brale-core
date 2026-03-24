@@ -138,6 +138,7 @@ func (s *ReconcileService) openPositionFromPlan(ctx context.Context, plan execut
 		ExecutorPositionID: ext.PositionID,
 		Version:            1,
 		Source:             "entry_fill",
+		StopReason:         strings.TrimSpace(plan.RiskAnnotations.StopReason),
 		Qty:                ext.Quantity,
 		AvgEntry:           ext.AvgEntry,
 		InitialStake:       ext.InitialStake,
@@ -190,6 +191,7 @@ func (s *ReconcileService) openPositionFromPlan(ctx context.Context, plan execut
 		if symbol == "" {
 			symbol = strings.TrimSpace(ext.Symbol)
 		}
+		stopReason := strings.TrimSpace(plan.RiskAnnotations.StopReason)
 		logger.Info("position open detail",
 			zap.String("symbol", symbol),
 			zap.String("direction", strings.TrimSpace(plan.Direction)),
@@ -197,6 +199,7 @@ func (s *ReconcileService) openPositionFromPlan(ctx context.Context, plan execut
 			zap.Float64("entry", ext.AvgEntry),
 			zap.Float64("stop", stopPrice),
 			zap.Float64s("take_profits", tpPrices),
+			zap.String("stop_reason", stopReason),
 			zap.Float64("risk_pct", plan.RiskPct),
 			zap.Float64("leverage", plan.Leverage),
 		)
@@ -208,6 +211,7 @@ func (s *ReconcileService) openPositionFromPlan(ctx context.Context, plan execut
 				EntryPrice:  ext.AvgEntry,
 				StopPrice:   stopPrice,
 				TakeProfits: tpPrices,
+				StopReason:  stopReason,
 				RiskPct:     plan.RiskPct,
 				Leverage:    plan.Leverage,
 				PositionID:  plan.PositionID,

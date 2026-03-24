@@ -49,6 +49,7 @@ func (s LLMRiskService) FlatRiskInitLLM() decision.FlatRiskInitLLM {
 			StopLoss:         parsed.StopLoss,
 			TakeProfits:      append([]float64(nil), parsed.TakeProfits...),
 			TakeProfitRatios: append([]float64(nil), parsed.TakeProfitRatios...),
+			Reason:           parsed.Reason,
 		}, nil
 	}
 }
@@ -97,12 +98,6 @@ func buildFlatRiskPromptInput(input decision.FlatRiskInitInput) (FlatRiskPromptI
 		Consensus:            consensus,
 		Structure:            structureSummary,
 		OtherProviderSummary: otherProviderSummary,
-		RiskContext: FlatRiskContext{
-			ATR:          input.Plan.RiskAnnotations.ATR,
-			MaxInvestPct: input.Plan.RiskAnnotations.MaxInvestPct,
-			MaxInvestAmt: input.Plan.RiskAnnotations.MaxInvestAmt,
-			MaxLeverage:  input.Plan.RiskAnnotations.MaxLeverage,
-		},
 	}, nil
 }
 
@@ -196,6 +191,7 @@ type flatRiskPatchPayload struct {
 	StopLoss         *float64  `json:"stop_loss"`
 	TakeProfits      []float64 `json:"take_profits"`
 	TakeProfitRatios []float64 `json:"take_profit_ratios"`
+	Reason           *string   `json:"reason"`
 }
 
 type tightenRiskPatchPayload struct {
@@ -226,6 +222,9 @@ func decodeFlatRiskPatch(raw string) (flatRiskPatchPayload, error) {
 	}
 	if len(payload.TakeProfitRatios) == 0 {
 		return flatRiskPatchPayload{}, fmt.Errorf("take_profit_ratios is required")
+	}
+	if payload.Reason == nil || strings.TrimSpace(*payload.Reason) == "" {
+		return flatRiskPatchPayload{}, fmt.Errorf("reason is required")
 	}
 	return payload, nil
 }

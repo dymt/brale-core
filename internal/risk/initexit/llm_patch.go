@@ -6,6 +6,7 @@ type BuildPatch struct {
 	StopLoss         *float64
 	TakeProfits      []float64
 	TakeProfitRatios []float64
+	Reason           *string
 }
 
 func ApplyPatch(base BuildOutput, patch *BuildPatch) BuildOutput {

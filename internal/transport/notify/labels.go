@@ -16,6 +16,7 @@ var labelMap = map[string]string{
 	"enter_tag":             "入场标签",
 	"open_ts":               "开仓时间戳",
 	"stop":                  "止损价",
+	"stop_reason":           "止损原因",
 	"stop_prev":             "原止损",
 	"stop_new":              "新止损",
 	"take_profits":          "止盈价",

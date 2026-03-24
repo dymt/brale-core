@@ -154,7 +154,7 @@ const defaultInPosMechanicsPrompt = "" +
 	"monitor_tag：adverse_liquidation=true -> exit；否则 crowding_reversal=true -> tighten；否则 keep"
 
 const defaultRiskFlatInitPrompt = "" +
-	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、风控约束、共识摘要、结构摘要与其他 Provider 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
+	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、共识摘要、结构摘要与其他 Provider 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -163,18 +163,20 @@ const defaultRiskFlatInitPrompt = "" +
 	"\n" +
 	"输出 JSON Schema（必须完全一致）：\n" +
 	"{\n" +
+	"  \"entry\": 0.0,\n" +
 	"  \"stop_loss\": 0.0,\n" +
 	"  \"take_profits\": [0.0],\n" +
-	"  \"take_profit_ratios\": [0.0]\n" +
+	"  \"take_profit_ratios\": [0.0],\n" +
+	"  \"reason\": \"使用中文简要说明止盈止损设定依据，并点名引用了哪些输入字段\"\n" +
 	"}\n" +
 	"\n" +
 	"约束（必须满足）：\n" +
 	"- direction=long：stop_loss 必须 < entry，take_profits 必须严格递增且全部 > entry。\n" +
 	"- direction=short：stop_loss 必须 > entry，take_profits 必须严格递减且全部 < entry。\n" +
-	"- 必须从输入上下文独立生成完整 stop_loss/take_profits/take_profit_ratios；禁止依赖或引用任何既有 TP/SL 基线。\n" +
+	"- 必须从输入上下文独立生成完整 entry/stop_loss/take_profits/take_profit_ratios；禁止依赖或引用任何既有 TP/SL 基线。\n" +
 	"- take_profit_ratios 长度必须与 take_profits 完全一致。\n" +
 	"- take_profit_ratios 每项必须 > 0，且总和必须精确等于 1.0。\n" +
-	"- 禁止输出任何交易动作建议；仅输出风险参数。"
+	"- reason 必须是中文、简短（建议 1-2 句），并明确引用输入字段名\n"
 
 type PromptDefaults struct {
 	AgentIndicator              string

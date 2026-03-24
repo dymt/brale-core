@@ -222,6 +222,10 @@ func (m Manager) SendPositionOpen(ctx context.Context, notice PositionOpenNotice
 	if notice.StopPrice > 0 {
 		stopText = formatFloat(notice.StopPrice)
 	}
+	stopReasonText := strings.TrimSpace(notice.StopReason)
+	if stopReasonText == "" {
+		stopReasonText = "-"
+	}
 	tpText := "-"
 	if len(notice.TakeProfits) > 0 {
 		tpText = formatFloatSlice(notice.TakeProfits)
@@ -244,6 +248,7 @@ func (m Manager) SendPositionOpen(ctx context.Context, notice PositionOpenNotice
 		fmt.Sprintf("- %s: %s", Label("qty"), qtyText),
 		fmt.Sprintf("- %s: %s", Label("entry"), entryText),
 		fmt.Sprintf("- %s: %s", Label("stop"), stopText),
+		fmt.Sprintf("- %s: %s", Label("stop_reason"), stopReasonText),
 		fmt.Sprintf("- %s: %s", Label("take_profits"), tpText),
 		fmt.Sprintf("- %s: %s", Label("risk_pct"), riskText),
 		fmt.Sprintf("- %s: %s", Label("leverage"), leverageText),
@@ -458,6 +463,20 @@ func (m Manager) SendRiskPlanUpdate(ctx context.Context, notice RiskPlanUpdateNo
 	if notice.Volatility != 0 {
 		volatilityText = formatFloat(notice.Volatility)
 	}
+	stopReasonText := strings.TrimSpace(notice.StopReason)
+	if stopReasonText == "" {
+		stopReasonText = strings.TrimSpace(notice.Reason)
+	}
+	reasonText := strings.TrimSpace(notice.Reason)
+	if reasonText == "" {
+		reasonText = stopReasonText
+	}
+	if stopReasonText == "" {
+		stopReasonText = "-"
+	}
+	if reasonText == "" {
+		reasonText = "-"
+	}
 	riskText := "-"
 	if notice.RiskPct > 0 {
 		riskText = formatPercent(notice.RiskPct)
@@ -499,6 +518,8 @@ func (m Manager) SendRiskPlanUpdate(ctx context.Context, notice RiskPlanUpdateNo
 		fmt.Sprintf("- %s: %s", Label("entry"), entryText),
 		fmt.Sprintf("- %s: %s", Label("stop_prev"), oldStopText),
 		fmt.Sprintf("- %s: %s", Label("stop_new"), newStopText),
+		fmt.Sprintf("- %s: %s", Label("stop_reason"), stopReasonText),
+		fmt.Sprintf("- %s: %s", Label("reason"), reasonText),
 		fmt.Sprintf("- %s: %s", Label("take_profits"), tpText),
 		fmt.Sprintf("- %s: %s", Label("source"), sourceText),
 		fmt.Sprintf("- %s: %s", Label("mark_price"), markText),

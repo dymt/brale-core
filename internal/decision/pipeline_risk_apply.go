@@ -151,6 +151,14 @@ func (p *Pipeline) applyWatermarkUpdate(ctx context.Context, pos store.PositionR
 
 func (p *Pipeline) logRiskPlanUpdate(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, oldStop float64, source string, markPrice float64, atr float64, volatility float64, gateSatisfied bool, scoreTotal float64, scoreThreshold float64, scoreBreakdown []RiskPlanUpdateScoreItem, parseOK bool, tightenReason string, tpTightened bool) {
 	logger := logging.FromContext(ctx).Named("risk")
+	stopReason := strings.TrimSpace(tightenReason)
+	if stopReason == "" {
+		stopReason = strings.TrimSpace(source)
+	}
+	planStopReason := strings.TrimSpace(pos.StopReason)
+	if planStopReason == "" {
+		planStopReason = stopReason
+	}
 	tpPrices := make([]float64, 0, len(plan.TPLevels))
 	for _, level := range plan.TPLevels {
 		if level.Price > 0 {
@@ -168,6 +176,8 @@ func (p *Pipeline) logRiskPlanUpdate(ctx context.Context, pos store.PositionReco
 		zap.String("source", source),
 		zap.Float64("mark_price", markPrice),
 		zap.Float64("atr", atr),
+		zap.String("stop_reason", stopReason),
+		zap.String("plan_stop_reason", planStopReason),
 		zap.Float64("risk_pct", pos.RiskPct),
 		zap.Float64("leverage", pos.Leverage),
 	)
@@ -182,6 +192,8 @@ func (p *Pipeline) logRiskPlanUpdate(ctx context.Context, pos store.PositionReco
 		NewStop:        plan.StopPrice,
 		TakeProfits:    tpPrices,
 		Source:         source,
+		StopReason:     stopReason,
+		Reason:         planStopReason,
 		MarkPrice:      markPrice,
 		ATR:            atr,
 		Volatility:     volatility,

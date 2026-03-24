@@ -7,6 +7,7 @@ type PositionOpenNotice struct {
 	EntryPrice  float64
 	StopPrice   float64
 	TakeProfits []float64
+	StopReason  string
 	RiskPct     float64
 	Leverage    float64
 	PositionID  string
@@ -58,6 +59,8 @@ type RiskPlanUpdateNotice struct {
 	NewStop        float64
 	TakeProfits    []float64
 	Source         string
+	StopReason     string
+	Reason         string
 	MarkPrice      float64
 	ATR            float64
 	Volatility     float64

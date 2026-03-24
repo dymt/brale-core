@@ -86,6 +86,7 @@ type PositionRecord struct {
 	CloseIntentID      string `gorm:"index:idx_position_close_intent"`
 	AbortReason        string
 	Source             string
+	StopReason         string
 	AbortStartedAt     int64
 	AbortFinalizedAt   int64
 	CloseSubmittedAt   int64

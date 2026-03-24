@@ -169,5 +169,22 @@ func validatePlan(plan execution.ExecutionPlan) error {
 	if plan.CreatedAt.IsZero() {
 		return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan created_at is required")
 	}
+	if plan.Valid {
+		if plan.Entry <= 0 {
+			return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan entry must be > 0")
+		}
+		if plan.StopLoss <= 0 {
+			return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan stop_loss must be > 0")
+		}
+		if len(plan.TakeProfits) == 0 {
+			return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan take_profits is required")
+		}
+		if len(plan.TakeProfitRatios) == 0 {
+			return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan take_profit_ratios is required")
+		}
+		if len(plan.TakeProfits) != len(plan.TakeProfitRatios) {
+			return errclass.ValidationErrorf(planValidationScope, planValidationReason, "plan take_profits and take_profit_ratios length mismatch")
+		}
+	}
 	return nil
 }

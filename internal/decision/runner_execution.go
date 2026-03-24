@@ -2,6 +2,7 @@ package decision
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -98,6 +99,16 @@ func (r *Runner) loadRunnerSymbolInputs(ctx context.Context, symbol string, opts
 	if isInPositionMode(opts, symbol) {
 		state = fsm.StateInPosition
 	}
+	llmRiskMode, modeErr := resolveRunnerLLMRiskMode(bind, opts, symbol)
+	if modeErr != nil {
+		logger.Error("llm risk mode resolution failed", zap.Error(modeErr))
+		code, ok := llmRiskFailureReasonCode(modeErr)
+		if !ok {
+			code = llmRiskReasonModeMismatch
+		}
+		result := symbolError(symbol, modeErr, code)
+		return nil, &result
+	}
 	return &runnerSymbolInputs{
 		Binding:           bind,
 		Enabled:           enabled,
@@ -106,7 +117,7 @@ func (r *Runner) loadRunnerSymbolInputs(ctx context.Context, symbol string, opts
 		ConfThreshold:     confThreshold,
 		State:             state,
 		ExitConfirmCount:  0,
-		LLMRiskMode:       isLLMRiskMode(opts, symbol),
+		LLMRiskMode:       llmRiskMode,
 		SkipProviderStage: shouldSkipProvider(opts, symbol),
 		Logger:            logger,
 	}, nil
@@ -140,10 +151,10 @@ func (r *Runner) evaluateRuleflowAndFinalize(ctx context.Context, symbol string,
 		return res
 	}
 	inputs.Logger.Debug("ruleflow complete", zap.Duration("latency", time.Since(rfStart)))
-	applyRuleflowResult(&res, rfResult, comp, symbol, inputs.Enabled, inputs.ScoreThreshold, inputs.ConfThreshold, inputs.LLMRiskMode)
-	if inputs.State == fsm.StateFlat && shouldRunFlatLLMRiskInit(res, inputs.LLMRiskMode) {
-		if err := r.applyFlatLLMRiskInit(ctx, symbol, &res, inputs.Binding, acct); err != nil {
-			inputs.Logger.Error("flat llm risk-init failed", zap.Error(err))
+	if inputs.State == fsm.StateFlat {
+		plan, err := r.completeFlatExecutionPlan(ctx, symbol, rfResult.Gate, rfResult.Plan, rfResult.FSMActions, inputs.Binding, acct, inputs.LLMRiskMode)
+		if err != nil {
+			inputs.Logger.Error("flat plan completion failed", zap.Error(err))
 			res.Err = err
 			if reasonCode, ok := llmRiskFailureReasonCode(err); ok {
 				res.Gate = gateError(reasonCode)
@@ -152,7 +163,9 @@ func (r *Runner) evaluateRuleflowAndFinalize(ctx context.Context, symbol string,
 			}
 			return res
 		}
+		rfResult.Plan = plan
 	}
+	applyRuleflowResult(&res, rfResult, comp, symbol, inputs.Enabled, inputs.ScoreThreshold, inputs.ConfThreshold, inputs.LLMRiskMode)
 	appendPlanDerived(&res.Gate, res.Plan)
 	if !res.Gate.GlobalTradeable {
 		inputs.Logger.Info("gate blocked trade", zap.String("gate_reason", res.Gate.GateReason))
@@ -175,16 +188,6 @@ func shouldSkipProvider(opts RunOptions, symbol string) bool {
 	return isInPositionMode(opts, symbol)
 }
 
-func shouldRunFlatLLMRiskInit(res SymbolResult, llmRiskMode bool) bool {
-	if !llmRiskMode {
-		return false
-	}
-	if !res.Gate.GlobalTradeable || res.Plan == nil || !res.Plan.Valid {
-		return false
-	}
-	return hasFSMAction(res.FSMActions, fsm.ActionOpen)
-}
-
 func isInPositionMode(opts RunOptions, symbol string) bool {
 	if opts.ModeBySymbol == nil {
 		return false
@@ -197,6 +200,28 @@ func isLLMRiskMode(opts RunOptions, symbol string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(opts.RiskStrategyModeBySymbol[symbol]), execution.PlanSourceLLM)
+}
+
+func resolveRunnerLLMRiskMode(bind strategy.StrategyBinding, opts RunOptions, symbol string) (bool, error) {
+	bindingLLMMode := strings.EqualFold(strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), execution.PlanSourceLLM)
+	if opts.RiskStrategyModeBySymbol == nil {
+		if bindingLLMMode {
+			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMissing, fmt.Errorf("llm risk mode is required for symbol %s", strings.TrimSpace(symbol)))
+		}
+		return false, nil
+	}
+	mode, ok := opts.RiskStrategyModeBySymbol[symbol]
+	if !ok {
+		if bindingLLMMode {
+			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMissing, fmt.Errorf("llm risk mode is missing for symbol %s", strings.TrimSpace(symbol)))
+		}
+		return false, nil
+	}
+	explicitLLMMode := strings.EqualFold(strings.TrimSpace(mode), execution.PlanSourceLLM)
+	if explicitLLMMode != bindingLLMMode {
+		return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMismatch, fmt.Errorf("risk mode mismatch for symbol %s: binding=%q runner=%q", strings.TrimSpace(symbol), strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), strings.TrimSpace(mode)))
+	}
+	return explicitLLMMode, nil
 }
 
 func applyDirectionConsensus(res *SymbolResult, enabled AgentEnabled, scoreThreshold, confThreshold float64) {

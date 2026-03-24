@@ -41,14 +41,6 @@ type FlatRiskPromptInput struct {
 	Consensus            map[string]any
 	Structure            map[string]any
 	OtherProviderSummary map[string]any
-	RiskContext          FlatRiskContext
-}
-
-type FlatRiskContext struct {
-	ATR          float64 `json:"atr"`
-	MaxInvestPct float64 `json:"max_invest_pct"`
-	MaxInvestAmt float64 `json:"max_invest_amt"`
-	MaxLeverage  float64 `json:"max_leverage"`
 }
 
 type TightenRiskPromptInput struct {
@@ -82,15 +74,12 @@ func (b LLMPromptBuilder) FlatRiskInitPrompt(input FlatRiskPromptInput) (string,
 	consensusRaw, _ := json.Marshal(input.Consensus)
 	structureRaw, _ := json.Marshal(input.Structure)
 	providerRaw, _ := json.Marshal(input.OtherProviderSummary)
-	riskContextRaw, _ := json.Marshal(input.RiskContext)
 	user := formatPayloads(
 		b.UserFormat,
 		payloadBlock{label: "交易上下文(必填):", payload: string(contextRaw)},
 		payloadBlock{label: "共识摘要(必填):", payload: string(consensusRaw)},
 		payloadBlock{label: "结构摘要(必填):", payload: string(structureRaw)},
 		payloadBlock{label: "其他 Provider 摘要(必填):", payload: string(providerRaw)},
-		payloadBlock{label: "风控约束上下文(必填):", payload: string(riskContextRaw)},
-		payloadBlock{label: "输出要求:", payload: `{"entry":0.0,"stop_loss":0.0,"take_profits":[0.0],"take_profit_ratios":[0.0]}。必须输出完整开仓入场价与止损止盈结构，不允许省略任一字段。`},
 	)
 	return system, user, nil
 }

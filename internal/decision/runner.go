@@ -110,6 +110,8 @@ func appendPlanDerived(gate *fund.GateDecision, plan *execution.ExecutionPlan) {
 
 const (
 	llmRiskStageFlatInit          = "flat_init"
+	llmRiskReasonModeMissing      = "LLM_RISK_INIT_MODE_MISSING"
+	llmRiskReasonModeMismatch     = "LLM_RISK_INIT_MODE_MISMATCH"
 	llmRiskReasonTransportFailure = "LLM_RISK_INIT_TRANSPORT_FAILURE"
 	llmRiskReasonSchemaFailure    = "LLM_RISK_INIT_SCHEMA_FAILURE"
 	llmRiskReasonRatioFailure     = "LLM_RISK_INIT_RATIO_FAILURE"
