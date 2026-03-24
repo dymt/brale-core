@@ -8,7 +8,7 @@ import (
 )
 
 type Notifier interface {
-	SendGate(ctx context.Context, report decisionfmt.DecisionReport) error
+	SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error
 	SendRiskPlanUpdate(ctx context.Context, notice RiskPlanUpdateNotice) error
 	SendError(ctx context.Context, message string) error
 }
@@ -19,7 +19,7 @@ type RiskPlanUpdateScoreItem = notifyport.RiskPlanUpdateScoreItem
 
 type NopNotifier struct{}
 
-func (NopNotifier) SendGate(ctx context.Context, report decisionfmt.DecisionReport) error {
+func (NopNotifier) SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error {
 	return nil
 }
 

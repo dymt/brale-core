@@ -1,0 +1,13 @@
+{
+  "name": "og-card-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "react": "^19.1.1",
+    "satori": "^0.18.3"
+  }
+}

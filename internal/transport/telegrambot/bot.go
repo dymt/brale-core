@@ -1,18 +1,22 @@
 package telegrambot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"brale-core/internal/cardimage"
 	"brale-core/internal/pkg/httpclient"
 	symbolpkg "brale-core/internal/pkg/symbol"
 	"brale-core/internal/transport/botruntime"
@@ -332,6 +336,56 @@ func (b *Bot) sendHTML(ctx context.Context, chatID int64, text string) {
 	}
 }
 
+func (b *Bot) sendImage(ctx context.Context, chatID int64, asset *cardimage.ImageAsset) error {
+	if asset == nil || len(asset.Data) == 0 {
+		return errors.New("telegram bot image payload is empty")
+	}
+	endpoint := fmt.Sprintf("%s/bot%s/sendDocument", b.apiBase, b.token)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", strconv.FormatInt(chatID, 10)); err != nil {
+		return err
+	}
+	if caption := strings.TrimSpace(asset.Caption); caption != "" {
+		if err := writer.WriteField("caption", caption); err != nil {
+			return err
+		}
+	}
+	name := strings.TrimSpace(asset.Filename)
+	if name == "" {
+		name = "decision.png"
+	}
+	part, err := writer.CreateFormFile("document", filepath.Base(name))
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(asset.Data); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := httpclient.ReadLimitedBody(resp.Body, 2048)
+		return fmt.Errorf("telegram image send failed: %s", strings.TrimSpace(string(bodyBytes)))
+	}
+	return nil
+}
+
 func (b *Bot) sendMainMenu(ctx context.Context, chatID int64) {
 	keyboard := inlineKeyboard{Buttons: [][]inlineButton{
 		{
@@ -450,23 +504,21 @@ func (b *Bot) handleDecisionLatest(ctx context.Context, chatID int64, symbol str
 		b.sendText(ctx, chatID, fmt.Sprintf("最近决策获取失败：%s", err.Error()))
 		return
 	}
-	if strings.TrimSpace(resp.ReportHTML) != "" {
-		b.sendHTML(ctx, chatID, formatTelegramHTML(resp.ReportHTML))
+	if strings.TrimSpace(resp.Summary) == "查询不存在" && len(resp.Agent) == 0 && len(resp.Gate) == 0 {
+		b.sendText(ctx, chatID, "查询不存在")
 		return
 	}
-	if strings.TrimSpace(resp.ReportMarkdown) != "" {
-		b.sendMarkdown(ctx, chatID, resp.ReportMarkdown)
+	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, resp.SnapshotID, resp.Gate, resp.Agent, "Decision Snapshot")
+	if err != nil {
+		b.logger.Warn("telegram latest image render failed", zap.String("symbol", symbol), zap.Error(err))
+		b.sendText(ctx, chatID, fmt.Sprintf("最近决策图片生成失败：%s", err.Error()))
 		return
 	}
-	if strings.TrimSpace(resp.Report) == "" {
-		if strings.TrimSpace(resp.Summary) == "" {
-			b.sendText(ctx, chatID, "查询不存在")
-			return
-		}
-		b.sendText(ctx, chatID, resp.Summary)
+	if err := b.sendImage(ctx, chatID, asset); err != nil {
+		b.logger.Warn("telegram latest image send failed", zap.String("symbol", symbol), zap.Error(err))
+		b.sendText(ctx, chatID, fmt.Sprintf("最近决策图片发送失败：%s", err.Error()))
 		return
 	}
-	b.sendText(ctx, chatID, resp.Report)
 }
 
 func (b *Bot) toggleSchedule(ctx context.Context, chatID int64, enable bool) {
@@ -494,26 +546,25 @@ func (b *Bot) executeObserveFlat(parent context.Context, chatID int64, symbol st
 }
 
 func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp ObserveResponse) {
-	if strings.TrimSpace(resp.ReportHTML) != "" {
-		b.sendHTML(ctx, chatID, formatTelegramHTML(resp.ReportHTML))
+	if len(resp.Agent) == 0 || len(resp.Gate) == 0 {
+		text := strings.TrimSpace(resp.Summary)
+		if text == "" {
+			text = "观察结果缺少渲染数据"
+		}
+		b.sendText(ctx, chatID, text)
 		return
 	}
-	if strings.TrimSpace(resp.ReportMarkdown) != "" {
-		b.sendMarkdown(ctx, chatID, resp.ReportMarkdown)
+	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
+	if err != nil {
+		b.logger.Warn("telegram observe image render failed", zap.String("symbol", resp.Symbol), zap.Error(err))
+		b.sendText(ctx, chatID, fmt.Sprintf("观察图片生成失败：%s", err.Error()))
 		return
 	}
-	if strings.TrimSpace(resp.Report) != "" {
-		b.sendText(ctx, chatID, resp.Report)
+	if err := b.sendImage(ctx, chatID, asset); err != nil {
+		b.logger.Warn("telegram observe image send failed", zap.String("symbol", resp.Symbol), zap.Error(err))
+		b.sendText(ctx, chatID, fmt.Sprintf("观察图片发送失败：%s", err.Error()))
 		return
 	}
-	text := strings.TrimSpace(resp.Summary)
-	if resp.Symbol != "" {
-		text = strings.TrimSpace(fmt.Sprintf("%s\n%s", resp.Symbol, text))
-	}
-	if text == "" {
-		text = "观察完成"
-	}
-	b.sendText(ctx, chatID, text)
 }
 
 func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (ObserveResponse, bool) {
@@ -551,7 +602,7 @@ func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (
 }
 
 func hasObserveReport(resp ObserveResponse) bool {
-	return strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
+	return len(resp.Agent) > 0 || len(resp.Gate) > 0 || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
 }
 
 func (b *Bot) answerCallback(ctx context.Context, id string) {

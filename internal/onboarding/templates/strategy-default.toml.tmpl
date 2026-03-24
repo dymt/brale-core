@@ -3,12 +3,12 @@ id = "default-observe"
 rule_chain = "configs/rules/default.json"
 
 [risk_management]
-risk_per_trade_pct = 0.0
-max_invest_pct = 0.0
-max_leverage = 1.0
-grade_3_factor = 0.0
-grade_2_factor = 0.0
-grade_1_factor = 0.0
+risk_per_trade_pct = 0.1
+max_invest_pct = 1
+max_leverage = 10
+grade_3_factor = 1.0
+grade_2_factor = 0.70
+grade_1_factor = 0.40
 entry_mode = "orderbook"
 orderbook_depth = 5
 entry_offset_atr = 0.1

@@ -101,14 +101,16 @@ type TradeHistoryItem struct {
 }
 
 type DecisionLatestResponse struct {
-	Status         string `json:"status"`
-	Symbol         string `json:"symbol"`
-	SnapshotID     uint   `json:"snapshot_id,omitempty"`
-	Report         string `json:"report"`
-	ReportMarkdown string `json:"report_markdown"`
-	ReportHTML     string `json:"report_html"`
-	Summary        string `json:"summary"`
-	RequestID      string `json:"request_id"`
+	Status         string         `json:"status"`
+	Symbol         string         `json:"symbol"`
+	SnapshotID     uint           `json:"snapshot_id,omitempty"`
+	Agent          map[string]any `json:"agent,omitempty"`
+	Gate           map[string]any `json:"gate,omitempty"`
+	Report         string         `json:"report"`
+	ReportMarkdown string         `json:"report_markdown"`
+	ReportHTML     string         `json:"report_html"`
+	Summary        string         `json:"summary"`
+	RequestID      string         `json:"request_id"`
 }
 
 type ScheduleResponse struct {

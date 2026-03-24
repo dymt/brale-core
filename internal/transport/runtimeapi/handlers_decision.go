@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"brale-core/internal/decision/decisionfmt"
+	"brale-core/internal/decision/fund"
 )
 
 func (s *Server) handleDecisionLatest(w http.ResponseWriter, r *http.Request) {
@@ -91,10 +92,26 @@ func (s *Server) handleDecisionLatest(w http.ResponseWriter, r *http.Request) {
 		Status:         "ok",
 		Symbol:         symbol,
 		SnapshotID:     gate.SnapshotID,
+		Agent:          map[string]any{"indicator": decodeAgentStageMap(input.Agents, "indicator"), "structure": decodeAgentStageMap(input.Agents, "structure"), "mechanics": decodeAgentStageMap(input.Agents, "mechanics")},
+		Gate:           buildGatePayload(fund.GateDecision{GlobalTradeable: gate.GlobalTradeable, DecisionAction: gate.DecisionAction, Grade: gate.Grade, GateReason: gate.GateReason, Direction: gate.Direction}),
 		Report:         markdown,
 		ReportMarkdown: markdown,
 		ReportHTML:     html,
 		Summary:        "",
 		RequestID:      requestIDFromContext(ctx),
 	})
+}
+
+func decodeAgentStageMap(events []decisionfmt.AgentEvent, stage string) map[string]any {
+	for _, rec := range events {
+		if !strings.EqualFold(strings.TrimSpace(rec.Stage), stage) {
+			continue
+		}
+		var out map[string]any
+		if err := json.Unmarshal(rec.OutputJSON, &out); err != nil {
+			return nil
+		}
+		return out
+	}
+	return nil
 }

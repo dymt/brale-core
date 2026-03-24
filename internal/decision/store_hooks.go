@@ -286,17 +286,18 @@ func (h StoreHooks) notifyGate(ctx context.Context, rec *store.GateEventRecord) 
 		return err
 	}
 	formatter := decisionfmt.New()
-	report, err := formatter.BuildDecisionReport(decisionfmt.DecisionInput{
+	input := decisionfmt.DecisionInput{
 		Symbol:     rec.Symbol,
 		SnapshotID: rec.SnapshotID,
 		Gate:       toDecisionGateEvent(*rec),
 		Providers:  toDecisionProviderEvents(providers),
 		Agents:     toDecisionAgentEvents(agents),
-	})
+	}
+	report, err := formatter.BuildDecisionReport(input)
 	if err != nil {
 		return err
 	}
-	return h.Notifier.SendGate(ctx, report)
+	return h.Notifier.SendGate(ctx, input, report)
 }
 
 func toDecisionGateEvent(rec store.GateEventRecord) decisionfmt.GateEvent {

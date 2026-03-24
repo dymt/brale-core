@@ -22,8 +22,8 @@ const defaultAgentIndicatorPrompt = "" +
 	"\n" +
 	"字段含义与约束：\n" +
 	"- expansion/alignment/noise：只允许取枚举值。\n" +
-	"- momentum_detail：用简短文字列出你依赖的关键事实（尽量引用输入中的字段名与数值/状态），不需要长文。\n" +
-	"- conflict_detail：如果存在相互矛盾的迹象（例如不同子信号方向不一致、噪声很大导致结论不稳），写清楚；否则说明“未观察到明显冲突”。\n" +
+	"- momentum_detail：用简短文字列出你依赖的关键事实（尽量引用输入中的字段名与数值/状态），不需要长文。使用中文输出结果\n" +
+	"- conflict_detail：如果存在相互矛盾的迹象（例如不同子信号方向不一致、噪声很大导致结论不稳），写清楚；否则说明“未观察到明显冲突”。使用中文输出结果\n" +
 	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“价格上行倾向 vs 下行倾向”的相对偏向：+1 强烈偏向上行，0 无方向性/不确定，-1 强烈偏向下行。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示你对 movement_score 的证据充分度/可靠度。\n" +
 	"- 当证据不足、噪声大、或冲突明显时：movement_score 应靠近 0，movement_confidence 应偏低。\n" +
@@ -53,8 +53,8 @@ const defaultAgentStructurePrompt = "" +
 	"\n" +
 	"字段含义与约束：\n" +
 	"- regime/last_break/quality/pattern：只允许取枚举值。\n" +
-	"- volume_action：描述你观察到的量能/突破配合情况，尽量引用输入中已有字段名/摘要，不要编造。\n" +
-	"- candle_reaction：描述价格对关键位/突破后的反应（例如回踩/拒绝/延续），同样只引用输入信息。\n" +
+	"- volume_action：描述你观察到的量能/突破配合情况，尽量引用输入中已有字段名/摘要，不要编造。使用中文输出结果\n" +
+	"- candle_reaction：描述价格对关键位/突破后的反应（例如回踩/拒绝/延续），同样只引用输入信息。使用中文输出结果\n" +
 	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“结构层面偏上行 vs 偏下行”的相对倾向。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示该倾向的可靠度（结构是否清晰、事件是否明确、质量是否稳定）。\n" +
 	"- 当 regime 为 range/mixed/unclear，或 last_break 为 none/unknown，或 quality 为 messy/unclear 时：movement_score 靠近 0，movement_confidence 偏低。\n" +
@@ -83,8 +83,8 @@ const defaultAgentMechanicsPrompt = "" +
 	"\n" +
 	"字段含义与约束：\n" +
 	"- leverage_state/crowding/risk_level：只允许取枚举值。\n" +
-	"- open_interest_context：概述你依赖的 OI/资金费率/拥挤等事实依据（引用输入字段）。\n" +
-	"- anomaly_detail：概述异常/压力/拥挤反转等迹象（引用输入字段）。\n" +
+	"- open_interest_context：概述你依赖的 OI/资金费率/拥挤等事实依据（引用输入字段）。使用中文输出结果\n" +
+	"- anomaly_detail：概述异常/压力/拥挤反转等迹象（引用输入字段）。使用中文输出结果\n" +
 	"- 若输入包含 liquidations_by_window，可作为异常或压力证据；在有意义时请在 anomaly_detail 或 open_interest_context 中引用该字段。\n" +
 	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“机制层面对上行/下行的偏向”。证据不足时分数应靠近 0。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示你对该偏向的可靠度；当风险高、信息弱或矛盾时应偏低。\n" +

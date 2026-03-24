@@ -10,7 +10,7 @@ import (
 )
 
 type Notifier interface {
-	SendGate(ctx context.Context, report decisionfmt.DecisionReport) error
+	SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error
 	SendStartup(ctx context.Context) error
 	SendPositionOpen(ctx context.Context, notice PositionOpenNotice) error
 	SendPositionClose(ctx context.Context, notice PositionCloseNotice) error
@@ -81,11 +81,20 @@ type Sender interface {
 	Send(ctx context.Context, msg Message) error
 }
 
+type ImageAsset struct {
+	Data        []byte
+	Filename    string
+	ContentType string
+	Caption     string
+	AltText     string
+}
+
 type Message struct {
 	Title    string
 	Markdown string
 	HTML     string
 	Plain    string
+	Image    *ImageAsset
 }
 
 type NotificationConfig struct {

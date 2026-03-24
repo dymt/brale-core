@@ -2,11 +2,14 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +39,13 @@ func NewTelegramSender(cfg TelegramConfig) (Sender, error) {
 }
 
 func (s *TelegramSender) Send(ctx context.Context, msg Message) error {
+	if msg.Image != nil && len(msg.Image.Data) > 0 {
+		return s.sendImage(ctx, msg)
+	}
+	return s.sendText(ctx, msg)
+}
+
+func (s *TelegramSender) sendText(ctx context.Context, msg Message) error {
 	text, parseMode := formatTelegramMessage(msg)
 	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", s.apiBase, s.token)
 	form := url.Values{}
@@ -61,6 +71,61 @@ func (s *TelegramSender) Send(ctx context.Context, msg Message) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("telegram send failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (s *TelegramSender) sendImage(ctx context.Context, msg Message) error {
+	asset := msg.Image
+	if asset == nil || len(asset.Data) == 0 {
+		return fmt.Errorf("telegram image payload is empty")
+	}
+	endpoint := fmt.Sprintf("%s/bot%s/sendDocument", s.apiBase, s.token)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", strconv.FormatInt(s.chatID, 10)); err != nil {
+		return err
+	}
+	caption := strings.TrimSpace(asset.Caption)
+	if caption == "" {
+		caption = strings.TrimSpace(msg.Title)
+	}
+	if caption != "" {
+		if err := writer.WriteField("caption", caption); err != nil {
+			return err
+		}
+	}
+	name := strings.TrimSpace(asset.Filename)
+	if name == "" {
+		name = "decision.png"
+	}
+	part, err := writer.CreateFormFile("document", filepath.Base(name))
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(asset.Data); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			return
+		}
+	}()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram image send failed: %s", strings.TrimSpace(string(body)))
 	}
 	return nil
 }

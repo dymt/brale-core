@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"brale-core/internal/cardimage"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/pkg/logging"
 
@@ -16,8 +17,13 @@ import (
 
 type Manager struct {
 	formatter decisionfmt.Formatter
+	renderer  DecisionImageRenderer
 	senders   []Sender
 	dedupe    *dedupeGuard
+}
+
+type DecisionImageRenderer interface {
+	RenderDecision(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) (*cardimage.ImageAsset, error)
 }
 
 type dedupeGuard struct {
@@ -85,7 +91,7 @@ type NopNotifier struct{}
 
 const startupMessage = "Brale已启动，Break A Leg"
 
-func (NopNotifier) SendGate(ctx context.Context, report decisionfmt.DecisionReport) error {
+func (NopNotifier) SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error {
 	return nil
 }
 
@@ -157,12 +163,12 @@ func NewManager(cfg NotificationConfig, formatter decisionfmt.Formatter) (Notifi
 	if len(senders) == 0 && !cfg.Feishu.BotEnabled {
 		return nil, fmt.Errorf("notification enabled but no channel configured")
 	}
-	return Manager{formatter: formatter, senders: senders, dedupe: newDedupeGuard(defaultNotifyDedupeTTL)}, nil
+	return Manager{formatter: formatter, renderer: cardimage.NewOGRenderer(), senders: senders, dedupe: newDedupeGuard(defaultNotifyDedupeTTL)}, nil
 }
 
-func (m Manager) SendGate(ctx context.Context, report decisionfmt.DecisionReport) error {
-	if m.formatter == nil {
-		return fmt.Errorf("formatter is required")
+func (m Manager) SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error {
+	if m.renderer == nil {
+		return fmt.Errorf("decision image renderer is required")
 	}
 	gateText := strings.TrimSpace(report.Gate.Overall.TradeableText)
 	if gateText == "" {
@@ -173,15 +179,24 @@ func (m Manager) SendGate(ctx context.Context, report decisionfmt.DecisionReport
 		execTitle = fmt.Sprintf("Gate: %s", gateText)
 	}
 	title := fmt.Sprintf("[%s][snapshot:%d] %s", report.Symbol, report.SnapshotID, execTitle)
-	header := "🚦 决策报告"
-	markdown := prependNoticeHeader(header, m.formatter.RenderDecisionMarkdown(report))
-	html := prependNoticeHeader(header, m.formatter.RenderDecisionHTML(report))
-	plain := prependNoticeHeader(header, title)
+	rendered, err := m.renderer.RenderDecision(ctx, input, report)
+	if err != nil {
+		logging.FromContext(ctx).Named("notify").Error("render decision image failed",
+			zap.String("symbol", strings.TrimSpace(report.Symbol)),
+			zap.Uint("snapshot_id", report.SnapshotID),
+			zap.Error(err),
+		)
+		return err
+	}
 	msg := Message{
-		Title:    title,
-		Markdown: markdown,
-		HTML:     html,
-		Plain:    plain,
+		Title: title,
+		Image: &ImageAsset{
+			Data:        append([]byte(nil), rendered.Data...),
+			Filename:    rendered.Filename,
+			ContentType: rendered.ContentType,
+			Caption:     rendered.Caption,
+			AltText:     rendered.AltText,
+		},
 	}
 	key := fmt.Sprintf("gate:%s:%d:%s:%s", strings.TrimSpace(report.Symbol), report.SnapshotID, strings.TrimSpace(report.Gate.Overall.DecisionAction), strings.TrimSpace(report.Gate.Overall.ReasonCode))
 	return m.sendWithKey(ctx, msg, key)

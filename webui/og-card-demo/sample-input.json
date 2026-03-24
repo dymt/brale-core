@@ -1,0 +1,53 @@
+{
+  "symbol": "ETHUSDT",
+  "raw_blocks": {
+    "gate": {
+      "decision_action": "VETO",
+      "decision_text": "否决",
+      "direction": "none",
+      "grade": 0,
+      "reason": "三路共识未通过",
+      "reason_code": "CONSENSUS_NOT_PASSED",
+      "tradeable": false,
+      "direction_consensus": {
+        "score": -0.276,
+        "confidence": 0.116,
+        "score_threshold": 0.2,
+        "confidence_threshold": 0.3,
+        "score_passed": true,
+        "confidence_passed": false,
+        "passed": false
+      }
+    },
+    "agent": {
+      "indicator": {
+        "expansion": "contracting",
+        "alignment": "mixed",
+        "noise": "low",
+        "momentum_detail": "ema_fast delta_pct 0.1931 positive, ema_mid delta_pct 0.0302 positive, ema_slow delta_pct -1.5941 negative",
+        "conflict_detail": "未观察到明显冲突",
+        "movement_score": 0.12,
+        "movement_confidence": 0.33
+      },
+      "mechanics": {
+        "leverage_state": "stable",
+        "crowding": "long_crowded",
+        "risk_level": "medium",
+        "open_interest_context": "OI increased slightly in 15m and 1h, but declined over 4h; funding rate negative",
+        "anomaly_detail": "fear_greed=8 versus long crowding",
+        "movement_score": 0.25,
+        "movement_confidence": 0.44
+      },
+      "structure": {
+        "regime": "mixed",
+        "last_break": "",
+        "quality": "",
+        "pattern": "",
+        "volume_action": "",
+        "candle_reaction": "",
+        "movement_score": 0,
+        "movement_confidence": 0
+      }
+    }
+  }
+}

@@ -1,4 +1,6 @@
-FROM golang:1.24-bookworm AS builder
+FROM node:22-bookworm-slim AS node-runtime
+
+FROM golang:1.25-bookworm AS builder
 
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
@@ -19,6 +21,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=node-runtime /usr/local/ /usr/local/
+RUN npm ci --prefix /src/webui/og-card-demo
 RUN CGO_ENABLED=0 go build -o /out/onboarding ./cmd/onboarding
 RUN go build -o /out/brale-core ./cmd/brale-core
 
@@ -34,6 +38,7 @@ ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 ENV no_proxy=${NO_PROXY}
 ENV TZ=Asia/Shanghai
+ENV BRALE_NOTIFY_OG_SCRIPT=/app/webui/og-card-demo/render.mjs
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
@@ -42,7 +47,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY --from=node-runtime /usr/local/ /usr/local/
 COPY --from=builder /out/brale-core /usr/local/bin/brale-core
+COPY --from=builder /src/webui/og-card-demo /app/webui/og-card-demo
 
 ENTRYPOINT ["brale-core"]
 CMD ["-system", "configs/system.toml", "-symbols", "configs/symbols-index.toml"]

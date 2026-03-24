@@ -1,6 +1,7 @@
 package feishubot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"brale-core/internal/cardimage"
 	"brale-core/internal/pkg/symbol"
 	"brale-core/internal/transport/botruntime"
 
@@ -48,6 +50,7 @@ type RuntimeClient interface {
 
 type Messenger interface {
 	SendText(ctx context.Context, chatID string, text string) error
+	SendImage(ctx context.Context, chatID string, asset *cardimage.ImageAsset) error
 }
 
 type Bot struct {
@@ -298,17 +301,61 @@ func (b *Bot) handleObserve(ctx context.Context, chatID, symbol string) {
 		b.sendReply(ctx, chatID, "observe failed: "+err.Error())
 		return
 	}
-	text := strings.TrimSpace(resp.ReportMarkdown)
-	if text == "" {
-		text = strings.TrimSpace(resp.Report)
+	if (len(resp.Agent) == 0 || len(resp.Gate) == 0) && strings.EqualFold(strings.TrimSpace(resp.Status), "ok") {
+		if fallback, ok := b.waitObserveReport(ctx, symbol, resp.RequestID); ok {
+			resp = fallback
+		}
 	}
-	if text == "" {
-		text = strings.TrimSpace(resp.Summary)
+	if len(resp.Agent) == 0 || len(resp.Gate) == 0 {
+		text := strings.TrimSpace(resp.Summary)
+		if text == "" {
+			text = "observe completed"
+		}
+		b.sendReply(ctx, chatID, text)
+		return
 	}
-	if text == "" {
-		text = "observe completed"
+	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
+	if err != nil {
+		b.logger.Warn("feishu observe image render failed", zap.String("chat_id", chatID), zap.String("symbol", resp.Symbol), zap.Error(err))
+		b.sendReply(ctx, chatID, "observe image render failed: "+err.Error())
+		return
 	}
-	b.sendChunked(ctx, chatID, text)
+	if err := b.messenger.SendImage(ctx, chatID, asset); err != nil {
+		b.logger.Warn("feishu observe image send failed", zap.String("chat_id", chatID), zap.String("symbol", resp.Symbol), zap.Error(err))
+		b.sendReply(ctx, chatID, "observe image send failed: "+err.Error())
+	}
+}
+
+func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (botruntime.ObserveResponse, bool) {
+	if strings.TrimSpace(symbol) == "" || ctx == nil {
+		return botruntime.ObserveResponse{}, false
+	}
+	deadline, hasDeadline := ctx.Deadline()
+	interval := 2 * time.Second
+	for {
+		if hasDeadline && time.Now().After(deadline) {
+			return botruntime.ObserveResponse{}, false
+		}
+		select {
+		case <-ctx.Done():
+			return botruntime.ObserveResponse{}, false
+		case <-time.After(interval):
+		}
+		resp, err := b.runtime.FetchObserveReport(ctx, symbol)
+		if err != nil {
+			continue
+		}
+		if requestID != "" && resp.RequestID != "" && resp.RequestID != requestID {
+			continue
+		}
+		if hasObserveReport(resp) || strings.EqualFold(strings.TrimSpace(resp.Status), "ok") {
+			return resp, true
+		}
+	}
+}
+
+func hasObserveReport(resp botruntime.ObserveResponse) bool {
+	return len(resp.Agent) > 0 || len(resp.Gate) > 0 || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
 }
 
 func (b *Bot) handleSchedule(ctx context.Context, chatID string, enable bool) {
@@ -326,20 +373,20 @@ func (b *Bot) handleLatest(ctx context.Context, chatID, symbol string) {
 		b.sendReply(ctx, chatID, "latest decision failed: "+err.Error())
 		return
 	}
-	text := strings.TrimSpace(resp.ReportMarkdown)
-	if text == "" {
-		text = strings.TrimSpace(resp.Report)
-	}
-	if text == "" {
-		text = strings.TrimSpace(resp.Summary)
-	}
-	if text == "" {
-		text = "no decision found"
-	}
-	if b.sendDecisionCard(ctx, chatID, "🚦 决策报告", text) {
+	if strings.TrimSpace(resp.Summary) == "查询不存在" && len(resp.Agent) == 0 && len(resp.Gate) == 0 {
+		b.sendReply(ctx, chatID, "no decision found")
 		return
 	}
-	b.sendChunked(ctx, chatID, text)
+	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, resp.SnapshotID, resp.Gate, resp.Agent, "Decision Snapshot")
+	if err != nil {
+		b.logger.Warn("feishu latest image render failed", zap.String("chat_id", chatID), zap.String("symbol", symbol), zap.Error(err))
+		b.sendReply(ctx, chatID, "latest decision image render failed: "+err.Error())
+		return
+	}
+	if err := b.messenger.SendImage(ctx, chatID, asset); err != nil {
+		b.logger.Warn("feishu latest image send failed", zap.String("chat_id", chatID), zap.String("symbol", symbol), zap.Error(err))
+		b.sendReply(ctx, chatID, "latest decision image send failed: "+err.Error())
+	}
 }
 func (b *Bot) sendChunked(ctx context.Context, chatID, text string) {
 	text = strings.TrimSpace(text)
@@ -731,6 +778,55 @@ func resolveMode(mode string) string {
 
 type feishuMessenger struct {
 	client *lark.Client
+}
+
+func (m *feishuMessenger) SendImage(ctx context.Context, chatID string, asset *cardimage.ImageAsset) error {
+	if asset == nil || len(asset.Data) == 0 {
+		return errors.New("feishu image payload is empty")
+	}
+	resp, err := m.client.Im.Image.Create(
+		ctx,
+		larkim.NewCreateImageReqBuilder().
+			Body(larkim.NewCreateImageReqBodyBuilder().
+				ImageType(larkim.ImageTypeMessage).
+				Image(bytes.NewReader(asset.Data)).
+				Build()).
+			Build(),
+	)
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.Success() || resp.Data == nil || resp.Data.ImageKey == nil || strings.TrimSpace(*resp.Data.ImageKey) == "" {
+		if resp != nil && !resp.Success() {
+			return fmt.Errorf("feishu image upload failed: code=%d msg=%s", resp.Code, strings.TrimSpace(resp.Msg))
+		}
+		return errors.New("feishu image upload failed: missing image_key")
+	}
+	content, err := json.Marshal(map[string]string{"image_key": strings.TrimSpace(*resp.Data.ImageKey)})
+	if err != nil {
+		return err
+	}
+	msgResp, err := m.client.Im.Message.Create(
+		ctx,
+		larkim.NewCreateMessageReqBuilder().
+			ReceiveIdType(larkim.ReceiveIdTypeChatId).
+			Body(larkim.NewCreateMessageReqBodyBuilder().
+				ReceiveId(chatID).
+				MsgType("image").
+				Content(string(content)).
+				Build()).
+			Build(),
+	)
+	if err != nil {
+		return err
+	}
+	if msgResp == nil {
+		return errors.New("feishu image send empty response")
+	}
+	if !msgResp.Success() {
+		return fmt.Errorf("feishu image send failed: code=%d msg=%s", msgResp.Code, strings.TrimSpace(msgResp.Msg))
+	}
+	return nil
 }
 
 func (m *feishuMessenger) SendText(ctx context.Context, chatID string, text string) error {

@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -67,6 +68,13 @@ func newFeishuSender(cfg FeishuConfig, httpClient *http.Client, openBaseURL stri
 }
 
 func (s *FeishuSender) Send(ctx context.Context, msg Message) error {
+	if msg.Image != nil && len(msg.Image.Data) > 0 {
+		return s.sendImage(ctx, msg)
+	}
+	return s.sendText(ctx, msg)
+}
+
+func (s *FeishuSender) sendText(ctx context.Context, msg Message) error {
 	text := formatFeishuMessage(msg)
 	if strings.TrimSpace(text) == "" {
 		text = strings.TrimSpace(msg.Title)
@@ -107,6 +115,66 @@ func (s *FeishuSender) Send(ctx context.Context, msg Message) error {
 		return fmt.Errorf("feishu send failed: code=%d msg=%s request_id=%s", resp.Code, strings.TrimSpace(resp.Msg), strings.TrimSpace(resp.RequestId()))
 	}
 	return nil
+}
+
+func (s *FeishuSender) sendImage(ctx context.Context, msg Message) error {
+	asset := msg.Image
+	if asset == nil || len(asset.Data) == 0 {
+		return fmt.Errorf("feishu image payload is empty")
+	}
+	imageKey, err := s.uploadImage(ctx, asset)
+	if err != nil {
+		return err
+	}
+	content, err := buildFeishuImageContent(imageKey)
+	if err != nil {
+		return err
+	}
+	resp, err := s.client.Im.Message.Create(
+		ctx,
+		larkim.NewCreateMessageReqBuilder().
+			ReceiveIdType(s.receiveIDType).
+			Body(larkim.NewCreateMessageReqBodyBuilder().
+				ReceiveId(s.receiveID).
+				MsgType("image").
+				Content(content).
+				Build()).
+			Build(),
+		larkcore.WithRequestId(uuid.NewString()),
+	)
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return fmt.Errorf("feishu send image failed: empty response")
+	}
+	if !resp.Success() {
+		return fmt.Errorf("feishu send image failed: code=%d msg=%s request_id=%s", resp.Code, strings.TrimSpace(resp.Msg), strings.TrimSpace(resp.RequestId()))
+	}
+	return nil
+}
+
+func (s *FeishuSender) uploadImage(ctx context.Context, asset *ImageAsset) (string, error) {
+	resp, err := s.client.Im.Image.Create(
+		ctx,
+		larkim.NewCreateImageReqBuilder().
+			Body(larkim.NewCreateImageReqBodyBuilder().
+				ImageType(larkim.ImageTypeMessage).
+				Image(bytes.NewReader(asset.Data)).
+				Build()).
+			Build(),
+		larkcore.WithRequestId(uuid.NewString()),
+	)
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu upload image failed: code=%d msg=%s request_id=%s", resp.Code, strings.TrimSpace(resp.Msg), strings.TrimSpace(resp.RequestId()))
+	}
+	if resp == nil || resp.Data == nil || resp.Data.ImageKey == nil || strings.TrimSpace(*resp.Data.ImageKey) == "" {
+		return "", fmt.Errorf("feishu upload image failed: missing image_key")
+	}
+	return strings.TrimSpace(*resp.Data.ImageKey), nil
 }
 
 func formatFeishuMessage(msg Message) string {
@@ -208,6 +276,18 @@ func buildFeishuCardContent(msg Message, fallbackText string) (string, error) {
 	}
 
 	raw, err := json.Marshal(card)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+type feishuImageContent struct {
+	ImageKey string `json:"image_key"`
+}
+
+func buildFeishuImageContent(imageKey string) (string, error) {
+	raw, err := json.Marshal(feishuImageContent{ImageKey: imageKey})
 	if err != nil {
 		return "", err
 	}
