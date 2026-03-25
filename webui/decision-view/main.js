@@ -10,6 +10,7 @@ const STAGE_COLORS = {
   structure: "#30e6c2",
   mechanics: "#ffd666",
   gate: "#ff5c8d",
+  llm_risk: "#c792ff",
   execution: "#cccccc",
   missing: "#8a90a5",
 };
@@ -1545,6 +1546,7 @@ function renderStageHTML(stage) {
   }
   const ts = stage.meta?.timestamp ? new Date(stage.meta.timestamp * 1000).toLocaleString() : "—";
   const stageType = normalizeStage(stage.stage);
+  if (stageType === "llm_risk") return renderLLMRiskHTML(stage, ts);
   if (stageType === "gate") return renderGateHTML(stage, ts);
 
   const [sysPrompt, userPrompt] = extractPrompts(stage.input);
@@ -1567,6 +1569,50 @@ function renderStageHTML(stage) {
     <div class="block"><strong>指纹</strong> ${escapeHTML(
       stage.meta?.fingerprint || "—"
     )} | 源 ${escapeHTML(stage.meta?.source || stage.meta?.strategy_config || "—")}</div>
+  `;
+}
+
+function renderLLMRiskHTML(stage, ts) {
+  const payload = stage.output && typeof stage.output === "object" ? stage.output : {};
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  const positionId = payload.position_id || "—";
+  const positionStatus = payload.position_status || "—";
+  const snapshotId = payload.snapshot_id ?? "—";
+
+  const recordsHTML = records.length
+    ? records
+        .map((rec, idx) => {
+          const role = rec?.role || `trace_${idx + 1}`;
+          const recordTs = rec?.timestamp
+            ? new Date(Number(rec.timestamp) * 1000).toLocaleString()
+            : "—";
+          return `
+            <div class="block">
+              <strong>${escapeHTML(gateRoleLabel(role))}</strong>
+              <div class="note-meta"><span class="tag">${escapeHTML(String(role))}</span><span class="tag">时间 ${escapeHTML(recordTs)}</span></div>
+              <div class="code-block"><strong>System</strong>\n${escapeHTML(formatRawData(rec?.system_prompt))}</div>
+              <div class="code-block"><strong>User</strong>\n${escapeHTML(formatRawData(rec?.user_prompt))}</div>
+              <div class="code-block"><strong>Output</strong>\n${escapeHTML(formatRawData(rec?.output))}</div>
+            </div>
+          `;
+        })
+        .join("")
+    : '<div class="placeholder">暂无 in-position LLM 记录</div>';
+
+  return `
+    <div class="note-title">${escapeHTML(stage.title || "LLM 止盈止损")}</div>
+    <div class="note-meta">
+      <span class="tag">llm_risk</span>
+      <span class="tag">时间 ${escapeHTML(ts)}</span>
+      <span class="tag">snapshot ${escapeHTML(String(snapshotId))}</span>
+    </div>
+    <div class="block"><strong>持仓</strong> id=${escapeHTML(String(positionId))} / status=${escapeHTML(
+    String(positionStatus)
+  )}</div>
+    ${recordsHTML}
+    <div class="block"><strong>指纹</strong> ${escapeHTML(
+      stage.meta?.fingerprint || "—"
+    )} | 源 ${escapeHTML(stage.meta?.source || "—")}</div>
   `;
 }
 
@@ -1730,6 +1776,7 @@ function normalizeBase(input) {
 
 function normalizeStage(stage = "") {
   const s = String(stage || "").toLowerCase();
+  if (s.includes("llm_risk") || s.includes("llm-risk")) return "llm_risk";
   if (s.includes("provider")) return "provider";
   if (s.includes("indicator")) return "indicator";
   if (s.includes("structure")) return "structure";
@@ -1827,6 +1874,9 @@ function nodeShortLabel(node) {
   }
   if (type === "indicator" || type === "structure" || type === "mechanics") {
     return `A-${capitalize(type)}`;
+  }
+  if (type === "llm_risk") {
+    return "LLM-R";
   }
   const fallback = normalizeToken(String(node.name || node.id || ""), 10);
   return fallback || "NODE";
@@ -1955,7 +2005,7 @@ function findLatestRound(rounds) {
 }
 
 function stageOrder(stage) {
-  const order = ["provider", "indicator", "structure", "mechanics", "gate", "execution"];
+  const order = ["provider", "indicator", "structure", "mechanics", "gate", "llm_risk", "execution"];
   const idx = order.indexOf(stage);
   return idx >= 0 ? idx : order.length + 1;
 }

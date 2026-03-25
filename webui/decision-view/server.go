@@ -16,6 +16,7 @@ import (
 	"brale-core/internal/config"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/pkg/logging"
+	"brale-core/internal/position"
 	"brale-core/internal/store"
 
 	"go.uber.org/zap"
@@ -39,6 +40,7 @@ type Server struct {
 type decisionViewStore interface {
 	store.SymbolCatalogQueryStore
 	store.TimelineQueryStore
+	store.PositionQueryStore
 }
 
 func (s Server) Handler() (http.Handler, error) {
@@ -139,7 +141,16 @@ type Node struct {
 type gateDisplay struct {
 	Overall   gateOverall          `json:"overall"`
 	Providers []gateProviderStatus `json:"providers,omitempty"`
+	Derived   map[string]any       `json:"derived,omitempty"`
 	Report    string               `json:"report"`
+}
+
+type llmRiskTraceRecord struct {
+	Role         string `json:"role"`
+	Timestamp    int64  `json:"timestamp"`
+	SystemPrompt string `json:"system_prompt"`
+	UserPrompt   string `json:"user_prompt"`
+	Output       any    `json:"output"`
 }
 
 type gateOverall struct {
@@ -214,10 +225,15 @@ func buildSymbolChain(ctx context.Context, st decisionViewStore, symbol string, 
 	if err != nil {
 		return SymbolChain{}, err
 	}
+	openPos, hasOpenPos, err := st.FindPositionBySymbol(ctx, symbol, position.OpenPositionStatuses)
+	if err != nil {
+		return SymbolChain{}, err
+	}
 	acc := newRoundAccumulator(symbol)
 	addProviderNodes(acc, df, logger, symbol, events.providers)
 	addAgentNodes(acc, df, logger, symbol, events.agents)
 	addGateNodes(acc, df, logger, symbol, events.gates)
+	addLLMRiskTraceNodes(acc, logger, symbol, events.providers, openPos, hasOpenPos)
 	roundList := acc.sorted(limit)
 	return buildSymbolChainFromRounds(df, symbol, roundList), nil
 }
@@ -364,6 +380,9 @@ func addGateNodes(acc *roundAccumulator, df decisionfmt.Formatter, logger *zap.L
 			continue
 		}
 		gateOut := mapGateReportToDisplay(df, rpt)
+		if derived := decodeMapJSON(rec.DerivedJSON); len(derived) > 0 {
+			gateOut.Derived = derived
+		}
 		acc.add(rec.SnapshotID, rec.Timestamp, nodeWithOrder{
 			Node: Node{
 				ID:       fmt.Sprintf("%s-%d-gate-%d", symbol, rec.SnapshotID, rec.ID),
@@ -383,6 +402,84 @@ func addGateNodes(acc *roundAccumulator, df decisionfmt.Formatter, logger *zap.L
 			Order:     stageOrder("gate"),
 			Timestamp: rec.Timestamp,
 		})
+	}
+}
+
+func addLLMRiskTraceNodes(acc *roundAccumulator, logger *zap.Logger, symbol string, providers []store.ProviderEventRecord, openPos store.PositionRecord, hasOpenPos bool) {
+	if acc == nil {
+		return
+	}
+	if !hasOpenPos || strings.TrimSpace(openPos.PositionID) == "" || len(openPos.RiskJSON) == 0 {
+		return
+	}
+	traceBySnapshot := make(map[uint][]llmRiskTraceRecord)
+	positionOpenTS := openPos.CreatedAt.Unix()
+	hasPositionOpenTS := !openPos.CreatedAt.IsZero() && positionOpenTS > 0
+	for _, rec := range providers {
+		if !isInPositionProviderRole(rec.Role) {
+			continue
+		}
+		if hasPositionOpenTS && rec.Timestamp < positionOpenTS {
+			continue
+		}
+		if strings.TrimSpace(rec.SystemPrompt) == "" && strings.TrimSpace(rec.UserPrompt) == "" && len(rec.OutputJSON) == 0 {
+			continue
+		}
+		traceBySnapshot[rec.SnapshotID] = append(traceBySnapshot[rec.SnapshotID], llmRiskTraceRecord{
+			Role:         strings.TrimSpace(rec.Role),
+			Timestamp:    rec.Timestamp,
+			SystemPrompt: rec.SystemPrompt,
+			UserPrompt:   rec.UserPrompt,
+			Output:       decodeAnyJSON(rec.OutputJSON),
+		})
+	}
+	if len(traceBySnapshot) == 0 {
+		return
+	}
+	for snapshotID, traces := range traceBySnapshot {
+		rb := acc.rounds[snapshotID]
+		if rb == nil {
+			continue
+		}
+		if hasNodeStage(rb.Nodes, "llm_risk") {
+			continue
+		}
+		if !roundHasGateNode(rb.Nodes) {
+			continue
+		}
+		sort.Slice(traces, func(i, j int) bool {
+			return traces[i].Timestamp < traces[j].Timestamp
+		})
+		latestTs := traces[len(traces)-1].Timestamp
+		summary := fmt.Sprintf("%d 条止盈止损 LLM 记录", len(traces))
+		rb.Nodes = append(rb.Nodes, nodeWithOrder{
+			Node: Node{
+				ID:       fmt.Sprintf("%s-%d-llm-risk", symbol, snapshotID),
+				Title:    "LLM 止盈止损",
+				Summary:  summary,
+				Stage:    "llm_risk",
+				Type:     "llm_risk",
+				AgentKey: "llm_risk",
+				Output: map[string]any{
+					"position_id":     openPos.PositionID,
+					"position_status": openPos.Status,
+					"snapshot_id":     snapshotID,
+					"records":         traces,
+				},
+				Meta: map[string]any{
+					"timestamp": latestTs,
+					"source":    "provider_in_position",
+				},
+			},
+			Order:     stageOrder("llm_risk"),
+			Timestamp: latestTs,
+		})
+		if logger != nil {
+			logger.Debug("attached llm risk trace node",
+				zap.Uint("snapshot_id", snapshotID),
+				zap.Int("records", len(traces)),
+			)
+		}
 	}
 }
 
@@ -538,6 +635,8 @@ func stageOrder(stage string) int {
 		return 26
 	case strings.Contains(s, "gate"):
 		return 30
+	case strings.Contains(s, "llm_risk"):
+		return 35
 	case strings.Contains(s, "exec"):
 		return 40
 	default:
@@ -558,7 +657,8 @@ func isGateNode(t string) bool {
 }
 
 func isExecutionNode(t string) bool {
-	return strings.Contains(strings.ToLower(t), "exec")
+	kind := strings.ToLower(t)
+	return strings.Contains(kind, "exec") || strings.Contains(kind, "llm_risk")
 }
 
 func normalizeStageKey(stage string) string {
@@ -629,8 +729,58 @@ func mapGateReportToDisplay(df decisionfmt.Formatter, rpt decisionfmt.GateReport
 			ExpectedSnapID: rpt.Overall.ExpectedSnapID,
 		},
 		Providers: provs,
+		Derived:   nil,
 		Report:    df.RenderGateText(rpt),
 	}
+}
+
+func decodeMapJSON(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil || len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func decodeAnyJSON(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return string(raw)
+	}
+	return out
+}
+
+func isInPositionProviderRole(role string) bool {
+	r := strings.ToLower(strings.TrimSpace(role))
+	return strings.HasSuffix(r, "_in_position")
+}
+
+func roundHasGateNode(nodes []nodeWithOrder) bool {
+	for _, n := range nodes {
+		if isGateNode(n.Node.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNodeStage(nodes []nodeWithOrder, stage string) bool {
+	want := strings.ToLower(strings.TrimSpace(stage))
+	if want == "" {
+		return false
+	}
+	for _, n := range nodes {
+		if strings.ToLower(strings.TrimSpace(n.Node.Stage)) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func spaHandler(fs http.Handler) http.Handler {
