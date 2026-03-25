@@ -82,45 +82,16 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function gateStatus(tradeable, action) {
-  if (tradeable === true) return 'allow';
-  const normalized = String(action ?? '').trim().toLowerCase();
-  if (normalized.includes('veto')) return 'veto';
-  if (normalized.includes('wait') || normalized.includes('hold') || normalized.includes('tighten')) return 'wait';
-  return 'veto';
-}
-
-function decisionProgress(status) {
-  if (status === 'allow') return 1;
-  if (status === 'wait') return 0.52;
-  return 0.16;
-}
-
-function mapStatusTag(status) {
-  if (status === 'allow') return 'ALLOW';
-  if (status === 'wait') return 'WAIT';
-  return 'VETO';
-}
-
-function inferBlockStep(reasonCode) {
-  const code = String(reasonCode ?? '').trim().toUpperCase();
-  if (!code) return 'GATE';
-  if (code.includes('STRUCT')) return '结构完整性';
-  if (code.includes('CONSENSUS')) return '共识校验';
-  if (code.includes('CONFIDENCE')) return '置信度阈值';
-  if (code.includes('SCORE')) return '方向得分';
-  if (code.includes('MECHANIC')) return '机制风险';
-  if (code.includes('INDICATOR')) return '指标一致性';
-  if (code.includes('GATE')) return 'GATE';
-  return '规则筛选';
-}
-
 function lerp(min, max, ratio) {
   return min + (max - min) * ratio;
 }
 
 function metricCardCount(model) {
-  return model.decisionCards.length + model.summaryCards.length + model.evidenceCards.length;
+  return model.summaryCards.length + model.evidenceCards.length;
+}
+
+function resolveBottomRailHeight(scale) {
+  return clamp(Math.round(scale.gap * 1.55), 28, 46);
 }
 
 function chooseScale(model) {
@@ -221,11 +192,11 @@ function estimateFillRatio(model, scale) {
     0,
   );
 
-  const metricRows = 3;
+  const metricRows = 2;
   const thresholdBlock =
     metricRows * scale.cardMinHeight +
     Math.max(0, metricRows - 1) * scale.cardGridGap;
-  const bottomRail = clamp(Math.round(scale.gap * 0.88), 12, 24);
+  const bottomRail = resolveBottomRailHeight(scale);
 
   const middleSection =
     Math.max(16, scale.gap - 2) +
@@ -329,26 +300,6 @@ function buildModel(raw) {
     },
   ];
 
-  const status = gateStatus(gate.tradeable, gate.decision_action);
-  const decisionCards = [
-    {
-      title: '阻断步骤',
-      main: mapValue(inferBlockStep(gate.reason_code)),
-      sub: `Action ${action} · Direction ${direction}`,
-      progress: decisionProgress(status),
-      targetText: mapStatusTag(status),
-      status,
-    },
-    {
-      title: '阻断原因',
-      main: emptyDash(mapValue(gate.reason_code || reason)),
-      sub: emptyDash(mapSentence(gate.reason || '—')),
-      progress: decisionProgress(status),
-      targetText: mapStatusTag(status),
-      status,
-    },
-  ];
-
   const evidenceCards = [
     {
       title: '结构状态',
@@ -376,7 +327,6 @@ function buildModel(raw) {
     action,
     reason,
     direction,
-    decisionCards,
     summaryCards,
     analysisLines: [
       `Indicator | 扩张状态=${mapValue(agent.indicator.expansion)}  一致性=${mapValue(agent.indicator.alignment)}  噪音=${mapValue(agent.indicator.noise)}`,
@@ -573,125 +523,6 @@ function consensusSummaryCard(item, scale) {
   );
 }
 
-function decisionTone(status) {
-  if (status === 'allow') {
-    return {
-      border: '#86efac',
-      softBg: '#f0fdf4',
-      badgeBg: '#dcfce7',
-      badgeColor: '#166534',
-      progress: '#22c55e',
-      marker: '#14532d',
-      title: '#14532d',
-    };
-  }
-  if (status === 'wait') {
-    return {
-      border: '#fcd34d',
-      softBg: '#fffbeb',
-      badgeBg: '#fef3c7',
-      badgeColor: '#92400e',
-      progress: '#f59e0b',
-      marker: '#78350f',
-      title: '#78350f',
-    };
-  }
-  return {
-    border: '#fda4af',
-    softBg: '#fff1f2',
-    badgeBg: '#ffe4e6',
-    badgeColor: '#9f1239',
-    progress: '#ef4444',
-    marker: '#7f1d1d',
-    title: '#7f1d1d',
-  };
-}
-
-function decisionCard(item, scale) {
-  const tone = decisionTone(item.status);
-  const ratio = clamp(item.progress, 0, 1);
-  return h(
-    'div',
-    {
-      style: {
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        gap: scale.cardGap,
-        padding: `${scale.cardPadY + 2}px ${scale.cardPadX + 2}px`,
-        background: tone.softBg,
-        border: `1.5px solid ${tone.border}`,
-        borderRadius: 18,
-        width: '100%',
-        height: '100%',
-        flex: 1,
-        boxSizing: 'border-box',
-        boxShadow: '0 3px 10px rgba(15,23,42,0.05)',
-        minWidth: 0,
-      },
-    },
-    h(
-      'div',
-      { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } },
-      h('div', { style: { display: 'flex', fontSize: scale.metric + 4, color: tone.title, fontWeight: 800 } }, item.title),
-      h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            fontSize: scale.metric - 3,
-            color: tone.badgeColor,
-            background: tone.badgeBg,
-            border: `1px solid ${tone.border}`,
-            borderRadius: 999,
-            padding: '4px 8px',
-            fontWeight: 800,
-            letterSpacing: '0.03em',
-          },
-        },
-        item.targetText,
-      ),
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          fontSize: scale.metric + 2,
-          lineHeight: 1.22,
-          color: '#0f172a',
-          fontWeight: 700,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        },
-      },
-      item.main,
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          fontSize: scale.metric - 3,
-          lineHeight: 1.24,
-          color: '#475569',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        },
-      },
-      item.sub,
-    ),
-    h(
-      'div',
-      { style: { display: 'flex', position: 'relative', height: scale.progressTrackHeight + 1, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' } },
-      h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(ratio * 100).toFixed(2)}%`, background: tone.progress, borderRadius: 999 } }),
-      h('div', { style: { display: 'flex', position: 'absolute', left: '65%', top: -1, bottom: -1, width: 2, background: tone.marker } }),
-    ),
-  );
-}
-
 function thresholdCard(item, scale) {
   const ratio = clamp(item.progress, 0, 1);
   const percent = Math.round(ratio * 100);
@@ -749,6 +580,9 @@ function thresholdCard(item, scale) {
           color: '#64748b',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
           fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          lineHeight: 1.28,
         },
       },
       item.detail,
@@ -775,7 +609,6 @@ function thresholdCard(item, scale) {
 
 function thresholdSection(model, scale) {
   const rows = [
-    { key: 'decision', title: '决策卡', kind: 'decision', items: model.decisionCards },
     { key: 'hard-threshold', title: '硬阈值卡', kind: 'summary', items: model.summaryCards },
     { key: 'evidence', title: '证据卡', kind: 'evidence', items: model.evidenceCards },
   ];
@@ -818,9 +651,7 @@ function thresholdSection(model, scale) {
             h(
               'div',
               { style: { display: 'flex', flex: 1, minWidth: 0, height: '100%' } },
-              row.kind === 'decision'
-                ? decisionCard(item, scale)
-                : row.kind === 'summary'
+              row.kind === 'summary'
                   ? consensusSummaryCard(item, scale)
                   : thresholdCard(item, scale),
             ),
@@ -839,13 +670,13 @@ function buildTree(model, meta) {
   const baseScale = chooseScale(enrichedModel);
   const scale = fitScaleToPage(enrichedModel, baseScale);
   const analysisScale = resolveAnalysisScale(enrichedModel, scale);
-  const metricRows = 3;
+  const metricRows = 2;
   const metricDockHeight =
     metricRows * scale.cardMinHeight +
     Math.max(0, metricRows - 1) * scale.cardGridGap +
     metricRows * Math.max(6, scale.cardGridGap - 2) +
     12;
-  const bottomRailHeight = clamp(Math.round(scale.gap * 0.88), 12, 24);
+  const bottomRailHeight = resolveBottomRailHeight(scale);
   return h(
     'div',
     {
