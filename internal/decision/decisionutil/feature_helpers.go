@@ -135,8 +135,9 @@ func PickIndicatorJSONByInterval(data features.CompressionResult, symbol, interv
 
 func PickTrendJSON(data features.CompressionResult, symbol string) (features.TrendJSON, bool) {
 	if byInterval, ok := data.Trends[symbol]; ok {
-		for _, iv := range SortedTrendKeys(byInterval) {
-			return byInterval[iv], true
+		keys := SortedTrendKeys(byInterval)
+		if len(keys) > 0 {
+			return byInterval[keys[len(keys)-1]], true
 		}
 	}
 	return features.TrendJSON{}, false

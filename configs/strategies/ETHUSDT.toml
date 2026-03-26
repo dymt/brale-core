@@ -85,7 +85,7 @@ policy = "atr_structure_v1"
 # - auto: 自动使用 symbols.<symbol>.intervals 中的最小周期
 # - 或指定具体周期（如 "1h"/"4h"），且必须存在于该币种 intervals
 # - 当 policy=fixed_rr_v1 时，该字段可忽略
-structure_interval = "15m"
+structure_interval = "auto"
 
 [risk_management.initial_exit.params]
 # [必配] 所有 policy 均需：
