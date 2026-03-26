@@ -17,10 +17,10 @@ type dashboardFlowStageSet struct {
 	agentStageByName    map[string]dashboardFlowStageData
 }
 
-func assembleDashboardFlowStageSet(providers []store.ProviderEventRecord, agents []store.AgentEventRecord, preferInPosition bool) dashboardFlowStageSet {
+func assembleDashboardFlowStageSet(providers []store.ProviderEventRecord, agents []store.AgentEventRecord, preferInPosition bool, agentModels map[string]string) dashboardFlowStageSet {
 	providerByRole, providerInPosition := mapByProviderRoleWithMode(providers, preferInPosition)
 	providerStages := buildProviderStageData(providerByRole, providerInPosition)
-	agentStages := buildAgentStageData(agents)
+	agentStages := buildAgentStageData(agents, agentModels)
 	return dashboardFlowStageSet{
 		ProviderByRole:      providerByRole,
 		ProviderInPosition:  providerInPosition,
@@ -81,7 +81,7 @@ func buildProviderStageData(providerByRole map[string]store.ProviderEventRecord,
 	return out
 }
 
-func buildAgentStageData(records []store.AgentEventRecord) []dashboardFlowStageData {
+func buildAgentStageData(records []store.AgentEventRecord, stageModels map[string]string) []dashboardFlowStageData {
 	latest := mapByAgentStage(records)
 	out := make([]dashboardFlowStageData, 0, len(dashboardFlowOrderedRoles))
 	for _, stage := range dashboardFlowOrderedRoles {
@@ -93,6 +93,7 @@ func buildAgentStageData(records []store.AgentEventRecord) []dashboardFlowStageD
 		out = append(out, dashboardFlowStageData{
 			Stage:   stage,
 			Source:  strings.TrimSpace(rec.Stage),
+			Model:   strings.TrimSpace(stageModels[stage]),
 			Status:  "ok",
 			Reason:  meta.Reason,
 			Summary: summarizeAgentOutcomeFromMeta(meta),

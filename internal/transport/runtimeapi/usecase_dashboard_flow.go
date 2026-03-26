@@ -22,6 +22,7 @@ type dashboardFlowUsecase struct {
 	resolver    SymbolResolver
 	store       dashboardFlowStore
 	allowSymbol func(string) bool
+	symbolCfgs  map[string]ConfigBundle
 }
 
 type dashboardFlowStore interface {
@@ -34,6 +35,7 @@ type dashboardFlowStageData struct {
 	Stage   string
 	Mode    string
 	Source  string
+	Model   string
 	Status  string
 	Reason  string
 	Summary string
@@ -44,7 +46,12 @@ func newDashboardFlowUsecase(s *Server) dashboardFlowUsecase {
 	if s == nil {
 		return dashboardFlowUsecase{}
 	}
-	return dashboardFlowUsecase{resolver: s.Resolver, store: s.Store, allowSymbol: s.AllowSymbol}
+	return dashboardFlowUsecase{
+		resolver:    s.Resolver,
+		store:       s.Store,
+		allowSymbol: s.AllowSymbol,
+		symbolCfgs:  s.SymbolConfigs,
+	}
 }
 
 func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snapshotQuery string) (DashboardDecisionFlowResponse, *usecaseError) {
@@ -121,7 +128,8 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snaps
 	}
 
 	preferInPositionProvider := shouldPreferInPositionProvider(isOpen, gateway)
-	stages := assembleDashboardFlowStageSet(providers, agents, preferInPositionProvider)
+	agentModels := u.resolveAgentStageModels(normalizedSymbol)
+	stages := assembleDashboardFlowStageSet(providers, agents, preferInPositionProvider, agentModels)
 	nodes := buildDashboardFlowNodes(stages, gateway, tighten)
 	intervals := u.resolveSymbolIntervals(normalizedSymbol)
 	trace := buildDashboardFlowTrace(stages, gateway, pos, isOpen)
@@ -138,6 +146,30 @@ func (u dashboardFlowUsecase) build(ctx context.Context, rawSymbol string, snaps
 		},
 		Summary: dashboardContractSummary,
 	}, nil
+}
+
+func (u dashboardFlowUsecase) resolveAgentStageModels(symbol string) map[string]string {
+	if len(u.symbolCfgs) == 0 {
+		return nil
+	}
+	bundle, ok := u.symbolCfgs[symbol]
+	if !ok {
+		return nil
+	}
+	models := map[string]string{
+		"indicator": strings.TrimSpace(bundle.Symbol.LLM.Agent.Indicator.Model),
+		"structure": strings.TrimSpace(bundle.Symbol.LLM.Agent.Structure.Model),
+		"mechanics": strings.TrimSpace(bundle.Symbol.LLM.Agent.Mechanics.Model),
+	}
+	for stage, model := range models {
+		if model == "" {
+			delete(models, stage)
+		}
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	return models
 }
 
 func dashboardStatusFromTradeable(tradeable bool) string {

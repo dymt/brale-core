@@ -402,6 +402,7 @@ function buildFlowRenderKey(flow) {
     hash = hashAppend(hash, list.length);
     list.forEach((item) => {
       hash = hashAppend(hash, item && item.stage);
+      hash = hashAppend(hash, item && item.model);
       hash = hashAppend(hash, item && item.status);
       hash = hashAppend(hash, item && item.reason);
       hash = hashAppend(hash, item && item.summary);
@@ -1087,10 +1088,18 @@ function renderFlow(flow) {
     return String(fallbackSummary || "--");
   }
 
+  function agentTitle(label, stageData) {
+    const model = String(stageData && stageData.model || "").trim();
+    if (!model) {
+      return `Agent / ${label}`;
+    }
+    return `Agent / ${label} (${model})`;
+  }
+
   const graphNodes = [
-    node("agent-indicator", "flow-pos-agent-indicator", stageStatus(agentIndicator, "ok"), "Agent / 指标", stageSummary(agentIndicator, summarizeStageValues(agentIndicator && agentIndicator.values)), agentIndicator && agentIndicator.values, stageReason(agentIndicator, ""), "agent"),
-    node("agent-structure", "flow-pos-agent-structure", stageStatus(agentStructure, "ok"), "Agent / 结构", stageSummary(agentStructure, summarizeStageValues(agentStructure && agentStructure.values)), agentStructure && agentStructure.values, stageReason(agentStructure, ""), "agent"),
-    node("agent-mechanics", "flow-pos-agent-mechanics", stageStatus(agentMechanics, "ok"), "Agent / 力学", stageSummary(agentMechanics, summarizeStageValues(agentMechanics && agentMechanics.values)), agentMechanics && agentMechanics.values, stageReason(agentMechanics, ""), "agent"),
+    node("agent-indicator", "flow-pos-agent-indicator", stageStatus(agentIndicator, "ok"), agentTitle("指标", agentIndicator), stageSummary(agentIndicator, summarizeStageValues(agentIndicator && agentIndicator.values)), agentIndicator && agentIndicator.values, stageReason(agentIndicator, ""), "agent"),
+    node("agent-structure", "flow-pos-agent-structure", stageStatus(agentStructure, "ok"), agentTitle("结构", agentStructure), stageSummary(agentStructure, summarizeStageValues(agentStructure && agentStructure.values)), agentStructure && agentStructure.values, stageReason(agentStructure, ""), "agent"),
+    node("agent-mechanics", "flow-pos-agent-mechanics", stageStatus(agentMechanics, "ok"), agentTitle("力学", agentMechanics), stageSummary(agentMechanics, summarizeStageValues(agentMechanics && agentMechanics.values)), agentMechanics && agentMechanics.values, stageReason(agentMechanics, ""), "agent"),
     node("provider-indicator", "flow-pos-provider-indicator", stageStatus(providerIndicator, "ok"), `${providerTitlePrefix} / 指标`, stageSummary(providerIndicator, summarizeStageValues(providerIndicator && providerIndicator.values)), providerIndicator && providerIndicator.values, stageReason(providerIndicator, ""), "provider"),
     node("provider-structure", "flow-pos-provider-structure", stageStatus(providerStructure, "ok"), `${providerTitlePrefix} / 结构`, stageSummary(providerStructure, summarizeStageValues(providerStructure && providerStructure.values)), providerStructure && providerStructure.values, stageReason(providerStructure, ""), "provider"),
     node("provider-mechanics", "flow-pos-provider-mechanics", stageStatus(providerMechanics, "ok"), `${providerTitlePrefix} / 力学`, stageSummary(providerMechanics, summarizeStageValues(providerMechanics && providerMechanics.values)), providerMechanics && providerMechanics.values, stageReason(providerMechanics, ""), "provider")

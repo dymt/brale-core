@@ -136,6 +136,7 @@ type DashboardFlowStageValues struct {
 	Stage   string                    `json:"stage"`
 	Mode    string                    `json:"mode,omitempty"`
 	Source  string                    `json:"source"`
+	Model   string                    `json:"model,omitempty"`
 	Status  string                    `json:"status,omitempty"`
 	Reason  string                    `json:"reason,omitempty"`
 	Summary string                    `json:"summary,omitempty"`
