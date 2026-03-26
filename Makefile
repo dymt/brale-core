@@ -5,7 +5,6 @@ COMPOSE_PROJECT_NAME ?= brale-core
 
 BRALE_CONFIG_ROOT ?= $(CURDIR)/configs
 BRALE_DATA_ROOT ?= $(CURDIR)/data/brale
-BRALE_SYSTEM_FILE ?= $(BRALE_DATA_ROOT)/system.toml
 FREQTRADE_CONFIG_ROOT ?= $(CURDIR)/configs/freqtrade
 FREQTRADE_RUNTIME_ROOT ?= $(CURDIR)/data/freqtrade/user_data
 FREQTRADE_CONFIG_FILE ?= $(FREQTRADE_RUNTIME_ROOT)/config.json
@@ -21,7 +20,7 @@ ONBOARDING_BIN ?= $(BRALE_DATA_ROOT)/bin/onboarding
 
 COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
 INIT_COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
-STACK_ENV = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" HOST_REPO_ROOT="$(HOST_REPO_ROOT)" BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" BRALE_SYSTEM_FILE="$(BRALE_SYSTEM_FILE)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
+STACK_ENV = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" HOST_REPO_ROOT="$(HOST_REPO_ROOT)" BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
 ONBOARDING_PREPARE = $(STACK_ENV) $(COMPOSE) run --rm --no-deps onboarding prepare-stack
 
 .PHONY: init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale stop-freqtrade stop-brale stop restart rebuild down status logs
@@ -118,7 +117,7 @@ check:
 		echo "[ERR] strategy file not found: $(FREQTRADE_CONFIG_ROOT)/brale_shared_strategy.py"; \
 		exit 1; \
 	fi
-	@$(ONBOARDING_PREPARE) --env-file .env --config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" --config-out "$(FREQTRADE_CONFIG_FILE)" --proxy-env-out "$(STACK_PROXY_ENV_FILE)" --system-in "$(BRALE_CONFIG_ROOT)/system.toml" --system-out "$(BRALE_SYSTEM_FILE)" --check-only
+	@$(ONBOARDING_PREPARE) --env-file .env --config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" --config-out "$(FREQTRADE_CONFIG_FILE)" --proxy-env-out "$(STACK_PROXY_ENV_FILE)" --system-in "$(BRALE_CONFIG_ROOT)/system.toml" --check-only
 
 prepare:
 	@mkdir -p "$(BRALE_DATA_ROOT)" \
@@ -134,7 +133,7 @@ prepare:
 		"$(FREQTRADE_RUNTIME_ROOT)/strategies" \
 		"$(dir $(FREQTRADE_CONFIG_FILE))" \
 		"$(dir $(STACK_PROXY_ENV_FILE))"
-	@$(ONBOARDING_PREPARE) --env-file .env --config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" --config-out "$(FREQTRADE_CONFIG_FILE)" --proxy-env-out "$(STACK_PROXY_ENV_FILE)" --system-in "$(BRALE_CONFIG_ROOT)/system.toml" --system-out "$(BRALE_SYSTEM_FILE)"
+	@$(ONBOARDING_PREPARE) --env-file .env --config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" --config-out "$(FREQTRADE_CONFIG_FILE)" --proxy-env-out "$(STACK_PROXY_ENV_FILE)" --system-in "$(BRALE_CONFIG_ROOT)/system.toml"
 	@cp -f "$(FREQTRADE_CONFIG_ROOT)/brale_shared_strategy.py" "$(FREQTRADE_RUNTIME_ROOT)/strategies/BraleSharedStrategy.py"
 	@if [ "$$(id -u)" = "0" ] && [ -n "$(HOST_UID)" ] && [ -n "$(HOST_GID)" ]; then \
 		chown -R "$(HOST_UID):$(HOST_GID)" "$(BRALE_DATA_ROOT)" "$(FREQTRADE_RUNTIME_ROOT)" "$(dir $(STACK_PROXY_ENV_FILE))"; \

@@ -122,7 +122,7 @@ func (g *Generator) buildFiles(req Request) (GenerateResult, error) {
 	}
 	files = append(files, GeneratedFile{Path: ".env", Content: envText})
 
-	configSystem, err := executeTemplate(mustTemplate("system.toml.tmpl", nil), systemContext{ExecEndpoint: "http://127.0.0.1:8080/api/v1"})
+	configSystem, err := executeTemplate(mustTemplate("system.toml.tmpl", nil), systemContext{ExecEndpoint: "http://freqtrade:8080/api/v1"})
 	if err != nil {
 		return GenerateResult{}, err
 	}

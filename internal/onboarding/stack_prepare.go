@@ -71,9 +71,12 @@ func RunPrepareStack(args []string, repoRoot string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolve system input: %w", err)
 	}
-	systemOut, err := resolvePathUnderRoot(repoAbs, opts.systemOut)
-	if err != nil {
-		return fmt.Errorf("resolve system output: %w", err)
+	var systemOut string
+	if strings.TrimSpace(opts.systemOut) != "" {
+		systemOut, err = resolvePathUnderRoot(repoAbs, opts.systemOut)
+		if err != nil {
+			return fmt.Errorf("resolve system output: %w", err)
+		}
 	}
 
 	env, err := parseEnvFile(envFile)
@@ -116,9 +119,12 @@ func RunPrepareStack(args []string, repoRoot string, out io.Writer) error {
 		return err
 	}
 	proxyEnvContent := renderProxyEnvForPrepare(proxyEnabled, proxyURL, noProxy)
-	renderedSystem, err := renderSystemConfigForPrepare(systemRaw, opts.execEndpoint)
-	if err != nil {
-		return err
+	var renderedSystem string
+	if systemOut != "" {
+		renderedSystem, err = renderSystemConfigForPrepare(systemRaw, opts.execEndpoint)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := writeAtomic(repoAbs, configOut, mutatedConfig); err != nil {
@@ -127,8 +133,10 @@ func RunPrepareStack(args []string, repoRoot string, out io.Writer) error {
 	if err := writeAtomic(repoAbs, proxyEnvOut, proxyEnvContent); err != nil {
 		return fmt.Errorf("write proxy env output: %w", err)
 	}
-	if err := writeAtomic(repoAbs, systemOut, renderedSystem); err != nil {
-		return fmt.Errorf("write system output: %w", err)
+	if systemOut != "" {
+		if err := writeAtomic(repoAbs, systemOut, renderedSystem); err != nil {
+			return fmt.Errorf("write system output: %w", err)
+		}
 	}
 
 	state := "disabled"
@@ -137,7 +145,9 @@ func RunPrepareStack(args []string, repoRoot string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "[OK] generated %s (proxy=%s)\n", opts.configOut, state)
 	fmt.Fprintf(out, "[OK] generated %s\n", opts.proxyEnvOut)
-	fmt.Fprintf(out, "[OK] generated %s\n", opts.systemOut)
+	if systemOut != "" {
+		fmt.Fprintf(out, "[OK] generated %s\n", opts.systemOut)
+	}
 	return nil
 }
 
@@ -150,7 +160,7 @@ func parseStackPrepareFlags(args []string) (stackPrepareOptions, error) {
 	fs.StringVar(&opts.configOut, "config-out", "data/freqtrade/user_data/config.json", "freqtrade runtime config")
 	fs.StringVar(&opts.proxyEnvOut, "proxy-env-out", "data/freqtrade/proxy.env", "stack proxy env output")
 	fs.StringVar(&opts.systemIn, "system-in", "configs/system.toml", "system config input")
-	fs.StringVar(&opts.systemOut, "system-out", "data/brale/system.toml", "system config output")
+	fs.StringVar(&opts.systemOut, "system-out", "", "optional system config output")
 	fs.StringVar(&opts.execEndpoint, "exec-endpoint", "http://freqtrade:8080/api/v1", "execution endpoint in output system config")
 	fs.BoolVar(&opts.checkOnly, "check-only", false, "validate config only")
 	if err := fs.Parse(args); err != nil {

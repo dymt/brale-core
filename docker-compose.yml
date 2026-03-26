@@ -94,7 +94,7 @@ services:
       TZ: Asia/Shanghai
     command:
       - "-system"
-      - "/app/data/system.toml"
+      - "/app/configs/system.toml"
       - "-symbols"
       - "/app/configs/symbols-index.toml"
     depends_on:
