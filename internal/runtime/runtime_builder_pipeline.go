@@ -50,7 +50,7 @@ func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *recon
 		Binding:     bind,
 		BarInterval: barInterval,
 	}
-	deps := SymbolRuntimeBuildDeps{Store: st, StateProvider: stateProvider, Positioner: positioner, RiskPlanSvc: riskPlanSvc, PriceSource: priceSource}
+	deps := NewSymbolRuntimeBuildDeps(st, stateProvider, positioner, riskPlanSvc, priceSource)
 	return buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, runner, exitConfirmCache, sessionManager, sessionMode)
 }
 
@@ -72,16 +72,18 @@ func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeB
 		TraceRedacted: false,
 	}
 	return &decision.Pipeline{
-		Runner:                  runner,
-		Store:                   deps.Store,
-		Positioner:              deps.Positioner,
-		RiskPlans:               deps.RiskPlanSvc,
-		PriceSource:             deps.PriceSource,
+		Runner: runner,
+		Core: decision.PipelineCoreDeps{
+			Store:       deps.Store,
+			Positioner:  deps.Positioner,
+			RiskPlans:   deps.RiskPlanSvc,
+			PriceSource: deps.PriceSource,
+			States:      deps.StateProvider,
+			PlanCache:   deps.Positioner.PlanCache,
+		},
 		BarInterval:             runtimeCfg.BarInterval,
 		ExecutionSystem:         sys.ExecutionSystem,
-		States:                  deps.StateProvider,
 		Bindings:                map[string]strategy.StrategyBinding{runtimeCfg.Symbol.Symbol: runtimeCfg.Binding},
-		PlanCache:               deps.Positioner.PlanCache,
 		ExitConfirmCache:        exitConfirmCache,
 		EntryCooldownCache:      decision.NewEntryCooldownCache(),
 		EntryCooldownRounds:     2,

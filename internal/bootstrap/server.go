@@ -43,14 +43,14 @@ func buildTopMux(viewerHandler http.Handler, dashboardHandler http.Handler, runt
 }
 
 func attachWebhookRoutes(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, deps coreDeps, scheduler *runtime.RuntimeScheduler, topMux *http.ServeMux) {
-	if !deps.scheduled || !sys.Webhook.Enabled {
+	if !deps.execution.scheduled || !sys.Webhook.Enabled {
 		return
 	}
 	webhookSvc := runtime.NewWebhookSyncService(sys.Webhook, scheduler)
-	webhookSvc.AllowSymbol = deps.allowSymbol
-	webhookSvc.ExecClient = deps.executor.Client
-	webhookSvc.Notifier = deps.notifier
-	webhookSvc.PosCache = deps.positionCache
+	webhookSvc.AllowSymbol = deps.execution.allowSymbol
+	webhookSvc.ExecClient = deps.execution.executor.Client
+	webhookSvc.Notifier = deps.execution.notifier
+	webhookSvc.PosCache = deps.position.positionCache
 	webhookSvc.Start(ctx)
 	server := &webhook.Server{
 		Addr:        sys.Webhook.Addr,
@@ -122,7 +122,7 @@ func startFeishuBot(ctx context.Context, logger *zap.Logger, sys config.SystemCo
 }
 
 func resolveFeishuBotMode(value string) string {
-	mode := strings.TrimSpace(strings.ToLower(value))
+	mode := config.NormalizeFeishuBotMode(value)
 	if mode == "" {
 		return feishubot.ModeLongConnection
 	}

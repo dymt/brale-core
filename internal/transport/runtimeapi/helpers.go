@@ -206,7 +206,7 @@ func buildInPositionSummary(ind provider.InPositionIndicatorOut, st provider.InP
 		parts = append(parts, fmt.Sprintf("结构:\n%s", summary))
 	}
 	if summary := formatStageSummary(formatter, mech); summary != "" {
-		parts = append(parts, fmt.Sprintf("力学/风险:\n%s", summary))
+		parts = append(parts, fmt.Sprintf("市场机制:\n%s", summary))
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }

@@ -225,7 +225,7 @@ func translateGateStep(step string) string {
 		"direction":       "方向",
 		"data":            "数据完整性",
 		"structure":       "结构完整性",
-		"mech_risk":       "力学风险",
+		"mech_risk":       "清算风险检查",
 		"indicator_noise": "指标噪音",
 		"structure_clear": "结构清晰度",
 		"tag_consistency": "标签一致性",
@@ -233,7 +233,7 @@ func translateGateStep(step string) string {
 		"script_allowed":  "脚本条件",
 		"gate_allow":      "Gate 放行",
 		"indicator":       "指标",
-		"mechanics":       "力学",
+		"mechanics":       "市场机制",
 	}
 	if label, ok := labels[step]; ok {
 		return label
@@ -250,8 +250,8 @@ func translateGateReasonCode(code string) string {
 		"DIRECTION_MISSING":    "方向缺失",
 		"CONSENSUS_NOT_PASSED": "三路共识未通过",
 		"DATA_MISSING":         "数据不足",
-		"STRUCT_BREAK":         "结构破坏",
-		"MECH_RISK":            "力学风险",
+		"STRUCT_BREAK":         "结构失效",
+		"MECH_RISK":            "清算风险过高",
 		"INDICATOR_NOISE":      "指标噪音",
 		"INDICATOR_MIXED":      "指标混乱",
 		"PASS_STRONG":          "强通过",

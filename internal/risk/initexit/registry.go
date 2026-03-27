@@ -6,44 +6,75 @@ import (
 	"sync"
 )
 
-var (
-	registryMu sync.RWMutex
-	registry   = map[string]Policy{}
-)
+type Registry struct {
+	mu       sync.RWMutex
+	policies map[string]Policy
+}
 
-func Register(policy Policy) {
+var defaultRegistry = NewDefaultRegistry()
+
+func NewRegistry() *Registry {
+	return &Registry{policies: map[string]Policy{}}
+}
+
+func NewDefaultRegistry() *Registry {
+	reg := NewRegistry()
+	for _, policy := range []Policy{
+		atrStructureV1Policy{},
+		fixedRRV1Policy{},
+		structureTPV1Policy{},
+	} {
+		_ = reg.Register(policy)
+	}
+	return reg
+}
+
+func (r *Registry) Register(policy Policy) error {
 	if policy == nil {
-		panic("initexit: nil policy")
+		return fmt.Errorf("initexit: nil policy")
 	}
 	name := normalizePolicyName(policy.Name())
 	if name == "" {
-		panic("initexit: empty policy name")
+		return fmt.Errorf("initexit: empty policy name")
 	}
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	if _, exists := registry[name]; exists {
-		panic("initexit: duplicate policy: " + name)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.policies[name]; exists {
+		return fmt.Errorf("initexit: duplicate policy: %s", name)
 	}
-	registry[name] = policy
+	r.policies[name] = policy
+	return nil
 }
 
-func Get(name string) (Policy, bool) {
+func Register(policy Policy) error {
+	return defaultRegistry.Register(policy)
+}
+
+func (r *Registry) Get(name string) (Policy, bool) {
 	key := normalizePolicyName(name)
 	if key == "" {
 		return nil, false
 	}
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	p, ok := registry[key]
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	p, ok := r.policies[key]
 	return p, ok
 }
 
-func MustGet(name string) (Policy, error) {
-	p, ok := Get(name)
+func Get(name string) (Policy, bool) {
+	return defaultRegistry.Get(name)
+}
+
+func (r *Registry) MustGet(name string) (Policy, error) {
+	p, ok := r.Get(name)
 	if ok {
 		return p, nil
 	}
 	return nil, fmt.Errorf("initial exit policy not found: %s", strings.TrimSpace(name))
+}
+
+func MustGet(name string) (Policy, error) {
+	return defaultRegistry.MustGet(name)
 }
 
 func normalizePolicyName(name string) string {

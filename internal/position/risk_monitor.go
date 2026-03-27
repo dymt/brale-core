@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"brale-core/internal/execution"
@@ -26,6 +27,21 @@ type RiskMonitor struct {
 	Positions      *PositionService
 	PlanCache      *PlanCache
 	AccountFetcher func(ctx context.Context, symbol string) (execution.AccountState, error)
+
+	mu              sync.RWMutex
+	accountBySymbol map[string]cachedAccountState
+	statusByTradeID map[string]cachedStatusAmount
+}
+
+type cachedAccountState struct {
+	state     execution.AccountState
+	fetchedAt time.Time
+}
+
+type cachedStatusAmount struct {
+	qty       float64
+	ok        bool
+	fetchedAt time.Time
 }
 
 func (m *RiskMonitor) RunOnce(ctx context.Context, symbol string) error {
@@ -108,12 +124,14 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 }
 
 func (m *RiskMonitor) loadActiveRiskContext(ctx context.Context, pos store.PositionRecord) (store.PositionRecord, risk.RiskPlan, market.PriceQuote, bool, error) {
-	quote, err := m.PriceSource.MarkPrice(ctx, pos.Symbol)
+	priceCtx, cancel := riskMonitorChildTimeout(ctx, riskMonitorPriceFetchTimeout)
+	quote, err := m.PriceSource.MarkPrice(priceCtx, pos.Symbol)
+	cancel()
 	if err != nil {
 		if errors.Is(err, market.ErrPriceUnavailable) {
 			return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, true, nil
 		}
-		return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, false, err
+		return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, false, fmt.Errorf("mark price for %s: %w", pos.Symbol, err)
 	}
 	if quote.Price == 0 {
 		return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, true, nil
@@ -220,9 +238,9 @@ func shouldMoveStopToBreakeven(side string, currentStop float64, breakevenStop f
 func (m *RiskMonitor) resolveCloseIntent(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, logger *zap.Logger) (float64, string) {
 	statusQty := float64(0)
 	if trigger.Type == "TAKE_PROFIT" && trigger.QtyPct > 0 && trigger.QtyPct < 1 {
-		qty, ok, err := fetchFreqtradeStatusAmount(ctx, m.Positions.Executor, pos.ExecutorPositionID)
+		qty, ok, err := m.fetchStatusAmount(ctx, pos.ExecutorPositionID)
 		if err != nil {
-			logger.Warn("freqtrade status amount fetch failed", zap.Error(err))
+			logger.Warn("freqtrade status amount fetch failed", zap.Error(err), zap.Duration("timeout", riskMonitorStatusFetchTimeout))
 		} else if ok {
 			statusQty = qty
 		}
@@ -271,7 +289,7 @@ func fetchFreqtradeStatusAmount(ctx context.Context, executor execution.Executor
 	}
 	trades, err := lister.ListOpenTrades(ctx)
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("list open trades for trade_id %d: %w", parsedID, err)
 	}
 	for _, tr := range trades {
 		if tr.ID == parsedID {
@@ -286,44 +304,18 @@ func fetchFreqtradeStatusAmount(ctx context.Context, executor execution.Executor
 }
 
 func resolveCloseQty(pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, statusQty float64) (float64, string) {
-	closeQty := pos.Qty
-	reason := "stop_loss_hit"
-	if closeQty <= 0 && pos.InitialStake > 0 {
-		closeQty = pos.InitialStake
-	}
-	switch trigger.Type {
-	case "FORCE_EXIT":
-		reason = strings.TrimSpace(trigger.Reason)
-		if reason == "" {
-			reason = "force_exit"
-		}
-	case "TAKE_PROFIT":
-		reason = risk.FormatTPReason(trigger.LevelID)
-		if trigger.QtyPct > 0 && trigger.QtyPct < 1 {
-			baseQty := plan.InitialQty
-			if statusQty > 0 {
-				baseQty = statusQty
-			}
-			if baseQty <= 0 {
-				baseQty = pos.InitialStake
-			}
-			if baseQty <= 0 {
-				baseQty = pos.Qty
-			}
-			if baseQty > 0 {
-				closeQty = baseQty * trigger.QtyPct
-			}
+	closeQty := resolveBaseCloseQty(pos)
+	reason := resolveCloseReason(trigger)
+	if isPartialTakeProfit(trigger) {
+		baseQty := resolvePartialTPBaseQty(pos, plan, statusQty)
+		if baseQty > 0 {
+			closeQty = baseQty * trigger.QtyPct
 		}
 	}
 	closeQty = floorCloseQty(closeQty)
-	limitQty := pos.Qty
-	if statusQty > 0 {
-		limitQty = statusQty
-	}
-	if limitQty > 0 && closeQty > limitQty {
-		closeQty = limitQty
-	}
-	if trigger.Type == "TAKE_PROFIT" && trigger.QtyPct == 1.0 && limitQty > 0 {
+	limitQty := resolveCloseLimitQty(pos, statusQty)
+	closeQty = clipCloseQty(closeQty, limitQty)
+	if isFinalTakeProfit(trigger) && limitQty > 0 {
 		dust := math.Max(limitQty*0.001, closeQtyPrecision)
 		if limitQty-closeQty <= dust {
 			closeQty = limitQty
@@ -332,7 +324,83 @@ func resolveCloseQty(pos store.PositionRecord, plan risk.RiskPlan, trigger risk.
 	return closeQty, reason
 }
 
-const closeQtyPrecision = 1e-8
+const (
+	closeQtyPrecision             = 1e-8
+	riskMonitorPriceFetchTimeout  = 1200 * time.Millisecond
+	riskMonitorStatusFetchTimeout = 1200 * time.Millisecond
+	riskMonitorAccountTimeout     = 1200 * time.Millisecond
+	riskMonitorAccountFreshTTL    = 3 * time.Second
+	riskMonitorAccountStaleTTL    = 15 * time.Second
+	riskMonitorStatusFreshTTL     = 3 * time.Second
+	riskMonitorStatusStaleTTL     = 15 * time.Second
+)
+
+func riskMonitorChildTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func resolveBaseCloseQty(pos store.PositionRecord) float64 {
+	if pos.Qty > 0 {
+		return pos.Qty
+	}
+	if pos.InitialStake > 0 {
+		return pos.InitialStake
+	}
+	return 0
+}
+
+func resolveCloseReason(trigger risk.RiskTrigger) string {
+	switch trigger.Type {
+	case "FORCE_EXIT":
+		reason := strings.TrimSpace(trigger.Reason)
+		if reason == "" {
+			return "force_exit"
+		}
+		return reason
+	case "TAKE_PROFIT":
+		return risk.FormatTPReason(trigger.LevelID)
+	default:
+		return "stop_loss_hit"
+	}
+}
+
+func isPartialTakeProfit(trigger risk.RiskTrigger) bool {
+	return trigger.Type == "TAKE_PROFIT" && trigger.QtyPct > 0 && trigger.QtyPct < 1
+}
+
+func isFinalTakeProfit(trigger risk.RiskTrigger) bool {
+	return trigger.Type == "TAKE_PROFIT" && trigger.QtyPct == 1.0
+}
+
+func resolvePartialTPBaseQty(pos store.PositionRecord, plan risk.RiskPlan, statusQty float64) float64 {
+	candidates := []float64{statusQty, plan.InitialQty, pos.InitialStake, pos.Qty}
+	for _, candidate := range candidates {
+		if candidate > 0 {
+			return candidate
+		}
+	}
+	return 0
+}
+
+func resolveCloseLimitQty(pos store.PositionRecord, statusQty float64) float64 {
+	if statusQty > 0 {
+		return statusQty
+	}
+	return pos.Qty
+}
+
+func clipCloseQty(closeQty, limitQty float64) float64 {
+	if limitQty > 0 && closeQty > limitQty {
+		return limitQty
+	}
+	return closeQty
+}
 
 func floorCloseQty(value float64) float64 {
 	if value <= 0 || closeQtyPrecision <= 0 {
@@ -442,12 +510,14 @@ func (m *RiskMonitor) entryAlreadySubmitted(entry *PlanEntry, logger *zap.Logger
 }
 
 func (m *RiskMonitor) fetchTriggeredEntryQuote(ctx context.Context, plan execution.ExecutionPlan, planSymbol string, logger *zap.Logger) (market.PriceQuote, bool, error) {
-	quote, err := m.PriceSource.MarkPrice(ctx, planSymbol)
+	priceCtx, cancel := riskMonitorChildTimeout(ctx, riskMonitorPriceFetchTimeout)
+	quote, err := m.PriceSource.MarkPrice(priceCtx, planSymbol)
+	cancel()
 	if err != nil {
 		if errors.Is(err, market.ErrPriceUnavailable) {
 			return market.PriceQuote{}, false, nil
 		}
-		return market.PriceQuote{}, false, err
+		return market.PriceQuote{}, false, fmt.Errorf("mark price for entry trigger %s: %w", planSymbol, err)
 	}
 	if quote.Price == 0 {
 		return market.PriceQuote{}, false, nil
@@ -476,16 +546,125 @@ func (m *RiskMonitor) fetchAccountState(ctx context.Context, planSymbol string, 
 	if m.AccountFetcher == nil {
 		return execution.AccountState{}, riskValidationErrorf("account_fetcher is required")
 	}
-	acct, err := m.AccountFetcher(ctx, planSymbol)
+	now := time.Now()
+	if acct, ok := m.cachedFreshAccount(planSymbol, now); ok {
+		return acct, nil
+	}
+	accountCtx, cancel := riskMonitorChildTimeout(ctx, riskMonitorAccountTimeout)
+	acct, err := m.AccountFetcher(accountCtx, planSymbol)
+	cancel()
 	if err != nil {
+		if stale, ok := m.cachedStaleAccount(planSymbol, now); ok {
+			logger.Warn("account balance degraded, using stale cache", zap.Error(err), zap.String("symbol", planSymbol))
+			return stale, nil
+		}
 		logger.Warn("account balance unavailable", zap.Error(err))
-		return execution.AccountState{}, err
+		return execution.AccountState{}, fmt.Errorf("fetch account state for %s: %w", planSymbol, err)
 	}
 	if acct.Available <= 0 {
+		if stale, ok := m.cachedStaleAccount(planSymbol, now); ok {
+			logger.Warn("account available invalid, using stale cache", zap.Float64("available", acct.Available), zap.String("currency", strings.TrimSpace(acct.Currency)))
+			return stale, nil
+		}
 		logger.Warn("account available balance invalid", zap.Float64("available", acct.Available), zap.String("currency", strings.TrimSpace(acct.Currency)))
 		return execution.AccountState{}, riskValidationErrorf("account available balance unavailable")
 	}
+	m.cacheAccount(planSymbol, acct, now)
 	return acct, nil
+}
+
+func (m *RiskMonitor) fetchStatusAmount(ctx context.Context, tradeID string) (float64, bool, error) {
+	now := time.Now()
+	if qty, ok := m.cachedFreshStatusAmount(tradeID, now); ok {
+		return qty, true, nil
+	}
+	statusCtx, cancel := riskMonitorChildTimeout(ctx, riskMonitorStatusFetchTimeout)
+	qty, ok, err := fetchFreqtradeStatusAmount(statusCtx, m.Positions.Executor, tradeID)
+	cancel()
+	if err != nil {
+		if staleQty, staleOK := m.cachedStaleStatusAmount(tradeID, now); staleOK {
+			return staleQty, true, nil
+		}
+		return 0, false, err
+	}
+	m.cacheStatusAmount(tradeID, qty, ok, now)
+	return qty, ok, nil
+}
+
+func (m *RiskMonitor) cachedFreshAccount(symbol string, now time.Time) (execution.AccountState, bool) {
+	return m.cachedAccount(symbol, now, riskMonitorAccountFreshTTL)
+}
+
+func (m *RiskMonitor) cachedStaleAccount(symbol string, now time.Time) (execution.AccountState, bool) {
+	return m.cachedAccount(symbol, now, riskMonitorAccountStaleTTL)
+}
+
+func (m *RiskMonitor) cachedAccount(symbol string, now time.Time, ttl time.Duration) (execution.AccountState, bool) {
+	if m == nil || ttl <= 0 {
+		return execution.AccountState{}, false
+	}
+	key := strings.TrimSpace(symbol)
+	if key == "" {
+		return execution.AccountState{}, false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	entry, ok := m.accountBySymbol[key]
+	if !ok || entry.fetchedAt.IsZero() || now.Sub(entry.fetchedAt) > ttl {
+		return execution.AccountState{}, false
+	}
+	return entry.state, true
+}
+
+func (m *RiskMonitor) cacheAccount(symbol string, acct execution.AccountState, now time.Time) {
+	key := strings.TrimSpace(symbol)
+	if m == nil || key == "" || now.IsZero() {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.accountBySymbol == nil {
+		m.accountBySymbol = make(map[string]cachedAccountState)
+	}
+	m.accountBySymbol[key] = cachedAccountState{state: acct, fetchedAt: now}
+}
+
+func (m *RiskMonitor) cachedFreshStatusAmount(tradeID string, now time.Time) (float64, bool) {
+	return m.cachedStatusAmount(tradeID, now, riskMonitorStatusFreshTTL)
+}
+
+func (m *RiskMonitor) cachedStaleStatusAmount(tradeID string, now time.Time) (float64, bool) {
+	return m.cachedStatusAmount(tradeID, now, riskMonitorStatusStaleTTL)
+}
+
+func (m *RiskMonitor) cachedStatusAmount(tradeID string, now time.Time, ttl time.Duration) (float64, bool) {
+	if m == nil || ttl <= 0 {
+		return 0, false
+	}
+	key := strings.TrimSpace(tradeID)
+	if key == "" {
+		return 0, false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	entry, ok := m.statusByTradeID[key]
+	if !ok || entry.fetchedAt.IsZero() || now.Sub(entry.fetchedAt) > ttl || !entry.ok {
+		return 0, false
+	}
+	return entry.qty, true
+}
+
+func (m *RiskMonitor) cacheStatusAmount(tradeID string, qty float64, ok bool, now time.Time) {
+	key := strings.TrimSpace(tradeID)
+	if m == nil || key == "" || now.IsZero() {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.statusByTradeID == nil {
+		m.statusByTradeID = make(map[string]cachedStatusAmount)
+	}
+	m.statusByTradeID[key] = cachedStatusAmount{qty: qty, ok: ok, fetchedAt: now}
 }
 
 func (m *RiskMonitor) refreshPlanSizing(plan execution.ExecutionPlan, acct execution.AccountState, logger *zap.Logger) (execution.ExecutionPlan, error) {

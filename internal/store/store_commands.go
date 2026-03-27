@@ -26,6 +26,15 @@ func (s *GormStore) SavePosition(ctx context.Context, rec *PositionRecord) error
 	return s.create(ctx, rec)
 }
 
+func (s *GormStore) UpdatePositionPatch(ctx context.Context, patch PositionPatch) (bool, error) {
+	if err := patch.Validate(); err != nil {
+		return false, err
+	}
+	updates := patch.Updates()
+	updates["version"] = patch.NextVersion
+	return s.updatePosition(ctx, patch.PositionID, patch.ExpectedVersion, updates)
+}
+
 func (s *GormStore) UpdatePosition(ctx context.Context, positionID string, expectedVersion int, updates map[string]any) (bool, error) {
 	if strings.TrimSpace(positionID) == "" {
 		return false, fmt.Errorf("position_id is required")
@@ -33,6 +42,10 @@ func (s *GormStore) UpdatePosition(ctx context.Context, positionID string, expec
 	if updates == nil {
 		return false, fmt.Errorf("updates is required")
 	}
+	return s.updatePosition(ctx, positionID, expectedVersion, updates)
+}
+
+func (s *GormStore) updatePosition(ctx context.Context, positionID string, expectedVersion int, updates map[string]any) (bool, error) {
 	result := s.db.WithContext(ctx).Model(&PositionRecord{}).
 		Where("position_id = ? AND version = ?", positionID, expectedVersion).
 		Updates(updates)

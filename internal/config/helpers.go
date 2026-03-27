@@ -20,7 +20,11 @@ func ResolveLogPath(sys SystemConfig) string {
 func SymbolsFromIndex(index SymbolIndexConfig) []string {
 	symbols := make([]string, 0, len(index.Symbols))
 	for _, item := range index.Symbols {
-		symbols = append(symbols, item.Symbol)
+		normalized := NormalizeSymbol(item.Symbol)
+		if normalized == "" {
+			continue
+		}
+		symbols = append(symbols, normalized)
 	}
 	return symbols
 }

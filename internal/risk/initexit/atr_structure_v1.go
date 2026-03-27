@@ -12,10 +12,6 @@ const atrStructureV1Name = "atr_structure_v1"
 
 type atrStructureV1Policy struct{}
 
-func init() {
-	Register(atrStructureV1Policy{})
-}
-
 func (atrStructureV1Policy) Name() string {
 	return atrStructureV1Name
 }

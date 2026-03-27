@@ -74,6 +74,7 @@ func (s *RuntimeScheduler) Start(ctx context.Context) error {
 	s.ensureSymbolModesLocked()
 	s.mu.Unlock()
 	for symbol := range s.Symbols {
+		s.Symbols[symbol].StartServices(runCtx)
 		worker := NewWorkerPool(1, 256, func(task RuntimeTask) {
 			s.handleTask(runCtx, task)
 		})
@@ -102,6 +103,9 @@ func (s *RuntimeScheduler) Stop() {
 	}
 	if cancel != nil {
 		cancel()
+	}
+	for _, rt := range s.Symbols {
+		rt.StopServices()
 	}
 	s.stopPriceStream()
 	for _, worker := range s.barWorkers {

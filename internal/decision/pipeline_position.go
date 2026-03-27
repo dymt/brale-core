@@ -164,7 +164,7 @@ func (p *Pipeline) buildHoldGate(ctx context.Context, symbol string, res SymbolR
 	if p == nil {
 		return ruleflow.Result{}, provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, fmt.Errorf("pipeline is required")
 	}
-	if p.PriceSource == nil {
+	if p.priceSource() == nil {
 		return ruleflow.Result{}, provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, fmt.Errorf("price_source is required")
 	}
 	if p.BarInterval <= 0 {
@@ -177,8 +177,8 @@ func (p *Pipeline) buildHoldGate(ctx context.Context, symbol string, res SymbolR
 	if err != nil {
 		return ruleflow.Result{}, provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, err
 	}
-	if p.Positioner != nil && p.Positioner.Cache != nil {
-		pos = p.Positioner.Cache.HydratePosition(pos)
+	if posSvc := p.positioner(); posSvc != nil && posSvc.Cache != nil {
+		pos = posSvc.Cache.HydratePosition(pos)
 	}
 	promptSummary, err := p.buildInPositionPromptSummary(ctx, pos)
 	if err != nil {
@@ -241,8 +241,8 @@ func (p *Pipeline) buildHardGuardPosition(ctx context.Context, symbol string, po
 			out.StopLossOK = true
 		}
 	}
-	if p.PriceSource != nil {
-		if quote, quoteErr := p.PriceSource.MarkPrice(ctx, symbol); quoteErr == nil && quote.Price > 0 {
+	if p.priceSource() != nil {
+		if quote, quoteErr := p.priceSource().MarkPrice(ctx, symbol); quoteErr == nil && quote.Price > 0 {
 			out.MarkPrice = quote.Price
 			out.MarkPriceOK = true
 		}
@@ -287,14 +287,14 @@ func (p *Pipeline) buildInPositionPromptSummary(ctx context.Context, pos store.P
 	if err != nil {
 		return positionprompt.Summary{}, err
 	}
-	if len(pos.RiskJSON) == 0 || p == nil || p.PriceSource == nil || p.BarInterval <= 0 {
+	if len(pos.RiskJSON) == 0 || p == nil || p.priceSource() == nil || p.BarInterval <= 0 {
 		return base, nil
 	}
 	plan, err := position.DecodeRiskPlan(pos.RiskJSON)
 	if err != nil {
 		return base, nil
 	}
-	quote, err := p.PriceSource.MarkPrice(ctx, pos.Symbol)
+	quote, err := p.priceSource().MarkPrice(ctx, pos.Symbol)
 	if err != nil || quote.Price <= 0 {
 		return base, nil
 	}
@@ -310,11 +310,11 @@ func (p *Pipeline) buildInPositionPromptSummary(ctx context.Context, pos store.P
 }
 
 func (p *Pipeline) loadPositionRecord(ctx context.Context, symbol, posID string) (store.PositionRecord, error) {
-	if p.Store == nil {
+	if p.store() == nil {
 		return store.PositionRecord{}, fmt.Errorf("store is required")
 	}
 	if strings.TrimSpace(posID) != "" {
-		pos, ok, err := p.Store.FindPositionByID(ctx, posID)
+		pos, ok, err := p.store().FindPositionByID(ctx, posID)
 		if err != nil {
 			return store.PositionRecord{}, err
 		}
@@ -322,7 +322,7 @@ func (p *Pipeline) loadPositionRecord(ctx context.Context, symbol, posID string)
 			return pos, nil
 		}
 	}
-	pos, ok, err := p.Store.FindPositionBySymbol(ctx, symbol, position.OpenPositionStatuses)
+	pos, ok, err := p.store().FindPositionBySymbol(ctx, symbol, position.OpenPositionStatuses)
 	if err != nil {
 		return store.PositionRecord{}, err
 	}

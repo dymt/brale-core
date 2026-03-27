@@ -15,28 +15,50 @@ import (
 	"go.uber.org/zap"
 )
 
+type symbolRuntimeBuilder struct {
+	ctx             context.Context
+	sys             config.SystemConfig
+	symbolIndexPath string
+	deps            runtime.SymbolRuntimeBuildDeps
+}
+
+func newSymbolRuntimeBuilder(ctx context.Context, sys config.SystemConfig, symbolIndexPath string, deps coreDeps) symbolRuntimeBuilder {
+	return symbolRuntimeBuilder{
+		ctx:             ctx,
+		sys:             sys,
+		symbolIndexPath: symbolIndexPath,
+		deps:            runtime.NewSymbolRuntimeBuildDeps(deps.persistence.store, deps.persistence.stateProvider, deps.position.positioner, deps.position.riskPlanSvc, deps.position.priceSource),
+	}
+}
+
+func (b symbolRuntimeBuilder) Build(index config.SymbolIndexConfig, symbol string) (runtime.SymbolRuntime, error) {
+	return runtime.BuildSymbolRuntime(b.ctx, b.sys, b.symbolIndexPath, index, symbol, b.deps)
+}
+
+func newSymbolRuntimeBuildFunc(builder symbolRuntimeBuilder, index config.SymbolIndexConfig, logger *zap.Logger, warnMsg string) func(string) (runtime.SymbolRuntime, error) {
+	return func(sym string) (runtime.SymbolRuntime, error) {
+		rt, err := builder.Build(index, sym)
+		if err != nil {
+			logger.Warn(warnMsg, zap.Error(err), zap.String("symbol", sym))
+		}
+		return rt, err
+	}
+}
+
 func buildRuntimeMap(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig, deps coreDeps) map[string]runtime.SymbolRuntime {
+	builder := newSymbolRuntimeBuilder(ctx, sys, symbolIndexPath, deps)
 	runtimes := make(map[string]runtime.SymbolRuntime, len(index.Symbols))
 	for _, item := range index.Symbols {
-		rt, err := runtime.BuildSymbolRuntime(
-			ctx,
-			sys,
-			symbolIndexPath,
-			index,
-			item.Symbol,
-			runtime.SymbolRuntimeBuildDeps{
-				Store:         deps.store,
-				StateProvider: deps.stateProvider,
-				Positioner:    deps.positioner,
-				RiskPlanSvc:   deps.riskPlanSvc,
-				PriceSource:   deps.priceSource,
-			},
-		)
-		if err != nil {
-			logger.Error("symbol runtime error", zap.Error(err), zap.String("symbol", item.Symbol))
+		symbolKey := canonicalSymbolFromIndexEntry(item)
+		if symbolKey == "" {
 			continue
 		}
-		runtimes[item.Symbol] = rt
+		rt, err := builder.Build(index, symbolKey)
+		if err != nil {
+			logger.Error("symbol runtime error", zap.Error(err), zap.String("symbol", symbolKey))
+			continue
+		}
+		runtimes[symbolKey] = rt
 	}
 	return runtimes
 }
@@ -44,16 +66,16 @@ func buildRuntimeMap(ctx context.Context, logger *zap.Logger, sys config.SystemC
 func startScheduler(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, deps coreDeps, runtimes map[string]runtime.SymbolRuntime) (*runtime.RuntimeScheduler, error) {
 	scheduler := &runtime.RuntimeScheduler{
 		Symbols:           runtimes,
-		Reconciler:        deps.reconciler,
-		RiskMonitor:       deps.riskMonitor,
-		AccountFetcher:    deps.freqtradeAcct,
+		Reconciler:        deps.reconcile.reconciler,
+		RiskMonitor:       deps.position.riskMonitor,
+		AccountFetcher:    deps.execution.freqtradeAcct,
 		SyncOrderInterval: time.Duration(sys.Webhook.FallbackOrderPollSec) * time.Second,
 		ReconcileInterval: time.Duration(sys.Webhook.FallbackReconcileSec) * time.Second,
 		PriceTickInterval: time.Second,
 		Logger:            logger.Named("scheduler"),
-		PriceStream:       deps.priceSource,
+		PriceStream:       deps.position.priceSource,
 	}
-	scheduler.SetScheduledDecision(deps.scheduled)
+	scheduler.SetScheduledDecision(deps.execution.scheduled)
 	if err := scheduler.Start(ctx); err != nil {
 		return nil, fmt.Errorf("scheduler start failed: %w", err)
 	}
@@ -61,46 +83,9 @@ func startScheduler(ctx context.Context, logger *zap.Logger, sys config.SystemCo
 }
 
 func buildRuntimeResolver(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig, deps coreDeps, runtimes map[string]runtime.SymbolRuntime) *runtimeapi.RuntimeSymbolResolver {
-	defaultBuilder := func(sym string) (runtime.SymbolRuntime, error) {
-		rt, err := runtime.BuildSymbolRuntime(
-			ctx,
-			sys,
-			symbolIndexPath,
-			index,
-			sym,
-			runtime.SymbolRuntimeBuildDeps{
-				Store:         deps.store,
-				StateProvider: deps.stateProvider,
-				Positioner:    deps.positioner,
-				RiskPlanSvc:   deps.riskPlanSvc,
-				PriceSource:   deps.priceSource,
-			},
-		)
-		if err != nil {
-			logger.Warn("default runtime build failed", zap.Error(err), zap.String("symbol", sym))
-		}
-		return rt, err
-	}
-	defaultOnlyBuilder := func(sym string) (runtime.SymbolRuntime, error) {
-		rt, err := runtime.BuildSymbolRuntime(
-			ctx,
-			sys,
-			symbolIndexPath,
-			config.SymbolIndexConfig{},
-			sym,
-			runtime.SymbolRuntimeBuildDeps{
-				Store:         deps.store,
-				StateProvider: deps.stateProvider,
-				Positioner:    deps.positioner,
-				RiskPlanSvc:   deps.riskPlanSvc,
-				PriceSource:   deps.priceSource,
-			},
-		)
-		if err != nil {
-			logger.Warn("default-only runtime build failed", zap.Error(err), zap.String("symbol", sym))
-		}
-		return rt, err
-	}
+	builder := newSymbolRuntimeBuilder(ctx, sys, symbolIndexPath, deps)
+	defaultBuilder := newSymbolRuntimeBuildFunc(builder, index, logger, "default runtime build failed")
+	defaultOnlyBuilder := newSymbolRuntimeBuildFunc(builder, config.SymbolIndexConfig{}, logger, "default-only runtime build failed")
 	const maxDynamicRuntimes = 16
 	return runtimeapi.NewRuntimeSymbolResolver(runtimes, defaultBuilder, defaultOnlyBuilder, maxDynamicRuntimes)
 }
@@ -108,12 +93,16 @@ func buildRuntimeResolver(ctx context.Context, logger *zap.Logger, sys config.Sy
 func loadSymbolConfigs(logger *zap.Logger, sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig) map[string]runtimeapi.ConfigBundle {
 	symbolConfigs := make(map[string]runtimeapi.ConfigBundle, len(index.Symbols))
 	for _, item := range index.Symbols {
-		symbolCfg, strategyCfg, _, err := runtime.LoadSymbolConfigs(sys, symbolIndexPath, item)
-		if err != nil {
-			logger.Warn("symbol config load failed", zap.Error(err), zap.String("symbol", item.Symbol))
+		symbolKey := canonicalSymbolFromIndexEntry(item)
+		if symbolKey == "" {
 			continue
 		}
-		symbolConfigs[item.Symbol] = runtimeapi.ConfigBundle{Symbol: symbolCfg, Strategy: strategyCfg}
+		symbolCfg, strategyCfg, _, err := runtime.LoadSymbolConfigs(sys, symbolIndexPath, item)
+		if err != nil {
+			logger.Warn("symbol config load failed", zap.Error(err), zap.String("symbol", symbolKey))
+			continue
+		}
+		symbolConfigs[symbolKey] = runtimeapi.ConfigBundle{Symbol: symbolCfg, Strategy: strategyCfg}
 	}
 	return symbolConfigs
 }
@@ -122,13 +111,13 @@ func buildRuntimeHandler(sys config.SystemConfig, deps coreDeps, scheduler *runt
 	runtimeServer := runtimeapi.Server{
 		Scheduler:     scheduler,
 		Resolver:      resolver,
-		PlanCache:     deps.positioner.PlanCache,
-		PriceSource:   deps.priceSource,
+		PlanCache:     deps.position.positioner.PlanCache,
+		PriceSource:   deps.position.priceSource,
 		KlineProvider: binance.NewFuturesMarket(),
-		AllowSymbol:   deps.allowSymbol,
-		Store:         deps.store,
-		ExecClient:    deps.executor.Client,
-		PositionCache: deps.positionCache,
+		AllowSymbol:   deps.execution.allowSymbol,
+		Store:         deps.persistence.store,
+		ExecClient:    deps.execution.executor.Client,
+		PositionCache: deps.position.positionCache,
 		SymbolConfigs: symbolConfigs,
 	}
 	return runtimeServer.Handler()
@@ -139,8 +128,8 @@ func resolveDurationWithDefault(raw string, fallback time.Duration) time.Duratio
 }
 
 func runFreqtradeBalanceCheck(ctx context.Context, logger *zap.Logger, deps coreDeps) {
-	if !deps.scheduled {
+	if !deps.execution.scheduled {
 		return
 	}
-	execution.CheckFreqtradeBalance(ctx, logger, deps.executor)
+	execution.CheckFreqtradeBalance(ctx, logger, deps.execution.executor)
 }

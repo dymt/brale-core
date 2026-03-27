@@ -428,11 +428,13 @@ func (s *PositionService) logAndNotifyClose(ctx context.Context, pos store.Posit
 
 func (s *PositionService) latchClose(ctx context.Context, pos store.PositionRecord, intentID string, triggerPrice float64) (store.PositionRecord, error) {
 	now := time.Now().UnixMilli()
-	ok, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, map[string]any{
-		"close_intent_id":    intentID,
-		"close_submitted_at": int64(0),
-		"status":             PositionCloseArmed,
-		"version":            pos.Version + 1,
+	ok, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:       pos.PositionID,
+		ExpectedVersion:  pos.Version,
+		NextVersion:      pos.Version + 1,
+		CloseIntentID:    store.PtrString(intentID),
+		CloseSubmittedAt: store.PtrInt64(0),
+		Status:           store.PtrString(PositionCloseArmed),
 	})
 	if err != nil {
 		return store.PositionRecord{}, err
@@ -535,10 +537,12 @@ func resolveCloseQuantity(executor execution.Executor, kind execution.OrderKind,
 
 func (s *PositionService) markCloseSubmitting(ctx context.Context, pos store.PositionRecord) (store.PositionRecord, error) {
 	now := time.Now().UnixMilli()
-	ok, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, map[string]any{
-		"status":             PositionCloseSubmitting,
-		"close_submitted_at": now,
-		"version":            pos.Version + 1,
+	ok, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:       pos.PositionID,
+		ExpectedVersion:  pos.Version,
+		NextVersion:      pos.Version + 1,
+		Status:           store.PtrString(PositionCloseSubmitting),
+		CloseSubmittedAt: store.PtrInt64(now),
 	})
 	if err != nil {
 		return store.PositionRecord{}, err
@@ -553,9 +557,11 @@ func (s *PositionService) markCloseSubmitting(ctx context.Context, pos store.Pos
 }
 
 func (s *PositionService) markClosePending(ctx context.Context, pos store.PositionRecord) error {
-	ok, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, map[string]any{
-		"status":  PositionClosePending,
-		"version": pos.Version + 1,
+	ok, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:      pos.PositionID,
+		ExpectedVersion: pos.Version,
+		NextVersion:     pos.Version + 1,
+		Status:          store.PtrString(PositionClosePending),
 	})
 	if err != nil {
 		return err

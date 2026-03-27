@@ -13,7 +13,7 @@ import (
 
 func (p *Pipeline) applyRiskPlanUpdate(ctx context.Context, res SymbolResult, comp features.CompressionResult, posID string) (tightenExecution, error) {
 	exec := newTightenExecution(res, comp)
-	if p.RiskPlans == nil {
+	if p.riskPlans() == nil {
 		exec.addBlocked(tightenBlockRiskPlanDisabled)
 		return exec, nil
 	}

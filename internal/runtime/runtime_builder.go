@@ -31,6 +31,16 @@ type SymbolRuntimeBuildDeps struct {
 	PriceSource   market.PriceSource
 }
 
+func NewSymbolRuntimeBuildDeps(st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource) SymbolRuntimeBuildDeps {
+	return SymbolRuntimeBuildDeps{
+		Store:         st,
+		StateProvider: stateProvider,
+		Positioner:    positioner,
+		RiskPlanSvc:   riskPlanSvc,
+		PriceSource:   priceSource,
+	}
+}
+
 func BuildSymbolRuntime(metricsCtx context.Context, sys config.SystemConfig, indexPath string, index config.SymbolIndexConfig, symbol string, deps SymbolRuntimeBuildDeps) (SymbolRuntime, error) {
 	normalized := NormalizeSymbol(symbol)
 	if normalized == "" {
@@ -66,7 +76,7 @@ func buildSymbolRuntimeFromConfig(metricsCtx context.Context, sys config.SystemC
 		BarInterval:      barInterval,
 		RequireMechanics: requireMechanics,
 	}
-	deps := SymbolRuntimeBuildDeps{Store: st, StateProvider: stateProvider, Positioner: positioner, RiskPlanSvc: riskPlanSvc, PriceSource: priceSource}
+	deps := NewSymbolRuntimeBuildDeps(st, stateProvider, positioner, riskPlanSvc, priceSource)
 	return buildSymbolRuntimeFromRuntimeConfig(metricsCtx, sys, runtimeCfg, deps)
 }
 
@@ -78,7 +88,7 @@ func buildSymbolRuntimeFromRuntimeConfig(metricsCtx context.Context, sys config.
 	}
 	agentSvc, providerSvc, tracker := buildSymbolAgents(sys, runtimeCfg.Symbol, sessionManager, sessionMode)
 	fetcher := buildSnapshotFetcher(runtimeCfg.Symbol, runtimeCfg.RequireMechanics)
-	compressor := buildCompressor(metricsCtx, runtimeCfg.Symbol, runtimeCfg.EnabledConfig, runtimeCfg.EnabledMap)
+	compressor, services := buildCompressor(runtimeCfg.Symbol, runtimeCfg.EnabledConfig, runtimeCfg.EnabledMap)
 	exitConfirmCache := decision.NewExitConfirmCache()
 	runner := buildRunner(sys, fetcher, compressor, agentSvc, providerSvc, runtimeCfg, sessionManager, sessionMode)
 	pipeline, err := buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, &runner, exitConfirmCache, sessionManager, sessionMode)
@@ -96,6 +106,7 @@ func buildSymbolRuntimeFromRuntimeConfig(metricsCtx context.Context, sys config.
 		SessionManager:  sessionManager,
 		SessionMode:     sessionMode,
 		Pipeline:        pipeline,
+		Services:        services,
 	}, nil
 }
 

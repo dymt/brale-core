@@ -29,15 +29,10 @@ import (
 
 type Pipeline struct {
 	Runner                  *Runner
-	Store                   store.Store
-	Positioner              *position.PositionService
-	RiskPlans               *position.RiskPlanService
-	PriceSource             market.PriceSource
+	Core                    PipelineCoreDeps
 	BarInterval             time.Duration
 	ExecutionSystem         string
-	States                  StateProvider
 	Bindings                map[string]strategy.StrategyBinding
-	PlanCache               *position.PlanCache
 	ExitConfirmCache        *ExitConfirmCache
 	EntryCooldownCache      *EntryCooldownCache
 	EntryCooldownRounds     int
@@ -51,6 +46,15 @@ type Pipeline struct {
 	SessionCleanup          llm.SessionCleanup
 	RoundIDFactory          func() (llm.RoundID, error)
 	TightenRiskLLM          TightenRiskUpdateLLM
+}
+
+type PipelineCoreDeps struct {
+	Store       store.Store
+	Positioner  *position.PositionService
+	RiskPlans   *position.RiskPlanService
+	PriceSource market.PriceSource
+	States      StateProvider
+	PlanCache   *position.PlanCache
 }
 
 type PersistResult struct {
@@ -96,7 +100,7 @@ func formatErrorNotification(ctx context.Context, err error) string {
 }
 
 func (p *Pipeline) validate() error {
-	if p.Runner == nil || p.Store == nil || p.Positioner == nil || p.RiskPlans == nil || p.States == nil || p.PlanCache == nil {
+	if p.Runner == nil || p.store() == nil || p.positioner() == nil || p.riskPlans() == nil || p.stateProvider() == nil || p.planCache() == nil {
 		return fmt.Errorf("pipeline dependencies missing")
 	}
 	if p.ExitConfirmCache == nil {
@@ -123,7 +127,7 @@ func (p *Pipeline) getBinding(symbol string) (strategy.StrategyBinding, error) {
 }
 
 func (p *Pipeline) loadState(ctx context.Context, symbol string) (fsm.PositionState, string, error) {
-	state, posID, err := p.States.Load(ctx, symbol)
+	state, posID, err := p.stateProvider().Load(ctx, symbol)
 	if err != nil {
 		return "", "", err
 	}
@@ -134,10 +138,10 @@ func (p *Pipeline) loadState(ctx context.Context, symbol string) (fsm.PositionSt
 }
 
 func (p *Pipeline) applyReportMarkPrice(ctx context.Context, res *SymbolResult) {
-	if p == nil || res == nil || p.PriceSource == nil {
+	if p == nil || res == nil || p.priceSource() == nil {
 		return
 	}
-	quote, err := p.PriceSource.MarkPrice(ctx, res.Symbol)
+	quote, err := p.priceSource().MarkPrice(ctx, res.Symbol)
 	if err != nil || quote.Price <= 0 {
 		return
 	}
@@ -145,4 +149,52 @@ func (p *Pipeline) applyReportMarkPrice(ctx context.Context, res *SymbolResult) 
 		res.Gate.Derived = map[string]any{}
 	}
 	res.Gate.Derived["current_price"] = quote.Price
+}
+
+func (p *Pipeline) store() store.Store {
+	if p == nil {
+		return nil
+	}
+	return p.Core.Store
+}
+
+func (p *Pipeline) positioner() *position.PositionService {
+	if p == nil {
+		return nil
+	}
+	return p.Core.Positioner
+}
+
+func (p *Pipeline) riskPlans() *position.RiskPlanService {
+	if p == nil {
+		return nil
+	}
+	return p.Core.RiskPlans
+}
+
+func (p *Pipeline) priceSource() market.PriceSource {
+	if p == nil {
+		return nil
+	}
+	return p.Core.PriceSource
+}
+
+func (p *Pipeline) stateProvider() StateProvider {
+	if p == nil {
+		return nil
+	}
+	return p.Core.States
+}
+
+func (p *Pipeline) planCache() *position.PlanCache {
+	if p == nil {
+		return nil
+	}
+	if p.Core.PlanCache != nil {
+		return p.Core.PlanCache
+	}
+	if pos := p.positioner(); pos != nil {
+		return pos.PlanCache
+	}
+	return nil
 }

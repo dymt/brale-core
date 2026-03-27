@@ -1,0 +1,10 @@
+全局可交易: 🔴 不可交易 (NO)
+决策: 观望 (WAIT)
+Grade: 47
+逻辑解释: 三路共识未通过 (原因码: CONSENSUS_NOT_PASSED)
+方向: 多头
+命中规则: 三路共识未通过 (priority 12), action=观望, reason=指标噪音
+Gate 过程: 方向=通过 -> 脚本条件=停止(三路共识未通过) -> Sieve(action=观望, reason=Sieve 命中)
+Derived: indicator=否, structure=是, mechanics=是
+指标 Provider: 🔴 不可交易 (NO) | 动能扩张=否；指标一致性=是
+结构 Provider: 🟢 可交易 (YES) | 结构清晰=是

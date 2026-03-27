@@ -1,8 +1,6 @@
 package runtime
 
 import (
-	"context"
-
 	"brale-core/internal/config"
 	"brale-core/internal/decision"
 	"brale-core/internal/market"
@@ -34,7 +32,7 @@ func buildSnapshotFetcher(symbolCfg config.SymbolConfig, requireMechanics bool) 
 	return fetcher
 }
 
-func buildMetricsService(metricsCtx context.Context, symbolCfg config.SymbolConfig, enabled config.AgentEnabled) *market.MetricsService {
+func buildMetricsService(symbolCfg config.SymbolConfig, enabled config.AgentEnabled) *market.MetricsService {
 	if !enabled.Mechanics || len(symbolCfg.Intervals) == 0 {
 		return nil
 	}
@@ -42,16 +40,15 @@ func buildMetricsService(metricsCtx context.Context, symbolCfg config.SymbolConf
 	if err != nil || svc == nil {
 		return nil
 	}
-	if metricsCtx == nil {
-		metricsCtx = context.Background()
-	}
-	go svc.Start(metricsCtx)
-	svc.RefreshSymbol(metricsCtx, symbolCfg.Symbol)
 	return svc
 }
 
-func buildCompressor(metricsCtx context.Context, symbolCfg config.SymbolConfig, enabled config.AgentEnabled, enabledMap map[string]decision.AgentEnabled) *decision.FeatureCompressor {
-	metricsSvc := buildMetricsService(metricsCtx, symbolCfg, enabled)
+func buildCompressor(symbolCfg config.SymbolConfig, enabled config.AgentEnabled, enabledMap map[string]decision.AgentEnabled) (*decision.FeatureCompressor, []RuntimeService) {
+	metricsSvc := buildMetricsService(symbolCfg, enabled)
+	services := make([]RuntimeService, 0, 1)
+	if metricsSvc != nil {
+		services = append(services, newMetricsRuntimeService(metricsSvc, symbolCfg.Symbol))
+	}
 	trendPresets := config.TrendPresetForIntervals(symbolCfg.Intervals)
 	trendOptions := make(map[string]decision.TrendCompressOptions, len(trendPresets))
 	for iv, preset := range trendPresets {
@@ -70,7 +67,7 @@ func buildCompressor(metricsCtx context.Context, symbolCfg config.SymbolConfig, 
 				Metrics: metricsSvc,
 			}},
 		},
-	}
+	}, services
 }
 
 func toIndicatorOptions(cfg config.IndicatorConfig, indicatorEnabled bool) decision.IndicatorCompressOptions {

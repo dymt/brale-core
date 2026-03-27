@@ -28,7 +28,7 @@ func LoadSystemConfig(path string) (SystemConfig, error) {
 	}
 	applySystemDefaults(&cfg)
 	applyWebhookDefaults(&cfg.Webhook)
-	cfg.PersistMode = normalizePersistMode(cfg.PersistMode)
+	NormalizeSystemConfig(&cfg)
 	if err := ValidateSystemConfig(cfg); err != nil {
 		return SystemConfig{}, err
 	}
@@ -62,6 +62,7 @@ func LoadSymbolIndexConfig(path string) (SymbolIndexConfig, error) {
 	if err != nil {
 		return SymbolIndexConfig{}, err
 	}
+	NormalizeSymbolIndexConfig(&cfg)
 	if err := ValidateSymbolIndexConfig(cfg); err != nil {
 		return SymbolIndexConfig{}, err
 	}
@@ -73,6 +74,7 @@ func LoadSymbolConfig(path string) (SymbolConfig, error) {
 	if err != nil {
 		return SymbolConfig{}, err
 	}
+	NormalizeSymbolConfig(&cfg)
 	if err := ValidateSymbolConfig(cfg); err != nil {
 		return SymbolConfig{}, err
 	}
@@ -104,6 +106,7 @@ func LoadStrategyConfigWithSymbol(path, symbol string) (StrategyConfig, error) {
 }
 
 func finalizeStrategyConfig(cfg StrategyConfig) (StrategyConfig, error) {
+	NormalizeStrategyConfig(&cfg)
 	if err := ValidateStrategyConfig(cfg); err != nil {
 		return StrategyConfig{}, err
 	}

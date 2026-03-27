@@ -7,6 +7,7 @@ import (
 
 	"brale-core/internal/execution"
 	"brale-core/internal/pkg/logging"
+	symbolpkg "brale-core/internal/pkg/symbol"
 	"brale-core/internal/position"
 	"brale-core/internal/store"
 
@@ -104,11 +105,13 @@ func (s *ReconcileService) finalizeExternalMissing(ctx context.Context, pos stor
 	if s.Cache != nil {
 		s.Cache.DeleteByID(pos.PositionID)
 	}
-	if _, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, map[string]any{
-		"status":             position.PositionClosed,
-		"close_intent_id":    "",
-		"close_submitted_at": int64(0),
-		"version":            pos.Version + 1,
+	if _, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:       pos.PositionID,
+		ExpectedVersion:  pos.Version,
+		NextVersion:      pos.Version + 1,
+		Status:           store.PtrString(position.PositionClosed),
+		CloseIntentID:    store.PtrString(""),
+		CloseSubmittedAt: store.PtrInt64(0),
 	}); err != nil {
 		return pos, err
 	}
@@ -208,20 +211,29 @@ func logExternalMissingSummary(ctx context.Context, pos store.PositionRecord, su
 func (s *ReconcileService) handleExternalPresent(ctx context.Context, pos store.PositionRecord, extPos execution.ExternalPosition, logger *zap.Logger) error {
 	prevStatus := pos.Status
 	prevQty := pos.Qty
-	updates := map[string]any{}
+	patch := store.PositionPatch{
+		PositionID:      pos.PositionID,
+		ExpectedVersion: pos.Version,
+		NextVersion:     pos.Version + 1,
+	}
+	updates := patch.Updates()
 	if s.Cache != nil {
 		s.Cache.UpdateFromExternal(extPos)
 	}
 	if extPos.Quantity > 0 {
+		patch.Qty = store.PtrFloat64(extPos.Quantity)
 		updates["qty"] = extPos.Quantity
 	}
 	if extPos.AvgEntry > 0 {
+		patch.AvgEntry = store.PtrFloat64(extPos.AvgEntry)
 		updates["avg_entry"] = extPos.AvgEntry
 	}
 	if strings.TrimSpace(extPos.PositionID) != "" && extPos.PositionID != pos.ExecutorPositionID {
+		patch.ExecutorPositionID = store.PtrString(extPos.PositionID)
 		updates["executor_position_id"] = extPos.PositionID
 	}
 	if pos.InitialStake == 0 && extPos.InitialStake > 0 {
+		patch.InitialStake = store.PtrFloat64(extPos.InitialStake)
 		updates["initial_stake"] = extPos.InitialStake
 	}
 	status, reasons := s.applyStatusTransition(pos)
@@ -239,14 +251,16 @@ func (s *ReconcileService) handleExternalPresent(ctx context.Context, pos store.
 			reasons = append(reasons, "partial_close_confirmed")
 		}
 	}
+	patch.Status = store.PtrString(status)
 	updates["status"] = status
 	if status == position.PositionOpenActive && isCloseFlowStatus(prevStatus) {
+		patch.CloseIntentID = store.PtrString("")
+		patch.CloseSubmittedAt = store.PtrInt64(0)
 		updates["close_intent_id"] = ""
 		updates["close_submitted_at"] = int64(0)
 	}
 	if len(updates) > 1 || status != pos.Status {
-		updates["version"] = pos.Version + 1
-		if _, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, updates); err != nil {
+		if _, err := s.Store.UpdatePositionPatch(ctx, patch); err != nil {
 			return err
 		}
 	}
@@ -286,7 +300,7 @@ func resolveExternalPosition(pos store.PositionRecord, byID map[string]execution
 			return ext, true
 		}
 	}
-	candidates := bySymbol[strings.ToUpper(strings.TrimSpace(pos.Symbol))]
+	candidates := bySymbol[symbolpkg.Normalize(pos.Symbol)]
 	if len(candidates) == 1 {
 		return candidates[0], true
 	}

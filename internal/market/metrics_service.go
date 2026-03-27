@@ -9,6 +9,7 @@ import (
 
 	"brale-core/internal/interval"
 	"brale-core/internal/pkg/logging"
+	symbolpkg "brale-core/internal/pkg/symbol"
 
 	"go.uber.org/zap"
 )
@@ -53,7 +54,7 @@ func (s *MetricsService) OIHistoryLimit() int {
 func NewMetricsService(source Source, symbols []string, timeframes []string) (*MetricsService, error) {
 	validSymbols := make([]string, 0, len(symbols))
 	for _, s := range symbols {
-		s = strings.ToUpper(strings.TrimSpace(s))
+		s = symbolpkg.Normalize(s)
 		if s != "" {
 			validSymbols = append(validSymbols, s)
 		}
@@ -108,7 +109,7 @@ func NewMetricsService(source Source, symbols []string, timeframes []string) (*M
 func (s *MetricsService) Get(symbol string) (DerivativesData, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	data, ok := s.cache[strings.ToUpper(strings.TrimSpace(symbol))]
+	data, ok := s.cache[symbolpkg.Normalize(symbol)]
 	return data, ok
 }
 
@@ -138,7 +139,7 @@ func (s *MetricsService) RefreshSymbol(ctx context.Context, symbol string) {
 	if s == nil {
 		return
 	}
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	symbol = symbolpkg.Normalize(symbol)
 	if symbol == "" || s.source == nil {
 		return
 	}
@@ -147,6 +148,10 @@ func (s *MetricsService) RefreshSymbol(ctx context.Context, symbol string) {
 
 func (s *MetricsService) Start(ctx context.Context) {
 	logger := logging.FromContext(ctx).Named("market")
+	if ctx == nil {
+		logger.Warn("metrics service not started", zap.String("reason", "nil context"))
+		return
+	}
 	count := len(s.symbols)
 	if count == 0 {
 		logger.Warn("metrics service not started", zap.String("reason", "no symbols configured"))
@@ -192,11 +197,9 @@ func (s *MetricsService) Start(ctx context.Context) {
 			}
 			sym := symbolsCopy[cursor]
 			cursor = (cursor + 1) % len(symbolsCopy)
-			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			go func(sCtx context.Context, symbol string) {
-				defer cancel()
-				s.updateSymbol(sCtx, symbol)
-			}(updateCtx, sym)
+			updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			s.updateSymbol(updateCtx, sym)
+			cancel()
 		}
 	}
 }

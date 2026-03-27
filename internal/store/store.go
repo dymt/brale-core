@@ -16,6 +16,7 @@ type EventCommandStore interface {
 type PositionCommandStore interface {
 	SavePosition(ctx context.Context, rec *PositionRecord) error
 	UpdatePosition(ctx context.Context, positionID string, expectedVersion int, updates map[string]any) (bool, error)
+	UpdatePositionPatch(ctx context.Context, patch PositionPatch) (bool, error)
 }
 
 type PositionQueryStore interface {

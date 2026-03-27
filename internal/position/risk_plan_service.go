@@ -42,11 +42,12 @@ func (s *RiskPlanService) ApplyUpdate(ctx context.Context, positionID string, pa
 	if err != nil {
 		return store.RiskPlanHistoryRecord{}, err
 	}
-	updates := map[string]any{
-		"risk_json": raw,
-		"version":   pos.Version + 1,
-	}
-	if _, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, updates); err != nil {
+	if _, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:      pos.PositionID,
+		ExpectedVersion: pos.Version,
+		NextVersion:     pos.Version + 1,
+		RiskJSON:        store.PtrBytes(raw),
+	}); err != nil {
 		return store.RiskPlanHistoryRecord{}, err
 	}
 	return s.saveHistory(ctx, positionID, raw, source)

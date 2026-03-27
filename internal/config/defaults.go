@@ -9,6 +9,7 @@ import (
 )
 
 func DefaultSymbolConfig(sys SystemConfig, symbol string) (SymbolConfig, error) {
+	symbol = NormalizeSymbol(symbol)
 	indicatorTemp := 0.2
 	structureTemp := 0.1
 	mechanicsTemp := 0.2
@@ -131,6 +132,7 @@ func applyCooldownDefaults(cfg *CooldownConfig, defaults CooldownConfig) {
 }
 
 func DefaultStrategyConfig(symbol string) StrategyConfig {
+	symbol = NormalizeSymbol(symbol)
 	return StrategyConfig{
 		Symbol:        symbol,
 		ID:            "default-" + symbol,

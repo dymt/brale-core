@@ -18,7 +18,7 @@ var boolPhraseMap = map[string]boolPhrase{
 	"momentum_expansion":  {True: "动能扩张", False: "动能未扩张"},
 	"alignment":           {True: "指标一致", False: "指标不一致"},
 	"mean_rev_noise":      {True: "均值回归噪音偏高", False: "均值回归噪音不显著"},
-	"liquidation_stress":  {True: "强平压力上升", False: "强平压力不显著"},
+	"liquidation_stress":  {True: "清算压力偏高", False: "清算压力不显著"},
 	"adverse_liquidation": {True: "存在反向清算风险", False: "暂无反向清算风险"},
 	"crowding_reversal":   {True: "拥挤度触发反转", False: "拥挤度未触发反转"},
 	"momentum_sustaining": {True: "动能仍在维持", False: "动能未维持"},

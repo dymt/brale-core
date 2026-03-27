@@ -10,10 +10,6 @@ const structureTPV1Name = "structure_tp_v1"
 
 type structureTPV1Policy struct{}
 
-func init() {
-	Register(structureTPV1Policy{})
-}
-
 func (structureTPV1Policy) Name() string {
 	return structureTPV1Name
 }

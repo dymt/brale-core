@@ -22,7 +22,7 @@ func (p *Pipeline) handlePlan(ctx context.Context, out PersistResult, res Symbol
 		return out, err
 	}
 	valid := res.Plan != nil && res.Plan.Valid
-	result := p.PlanCache.UpsertIfAllow(res.Symbol, *res.Plan, res.Gate.DecisionAction, valid)
+	result := p.planCache().UpsertIfAllow(res.Symbol, *res.Plan, res.Gate.DecisionAction, valid)
 	if !result.Replaced {
 		planLogger.Info("plan not stored",
 			zap.String("reason", result.Reason),
@@ -35,7 +35,7 @@ func (p *Pipeline) handlePlan(ctx context.Context, out PersistResult, res Symbol
 	)
 	if result.PreviousEntry != nil {
 		reason := "plan_replaced"
-		if _, err := p.Positioner.CancelOpenByEntry(planCtx, *result.PreviousEntry, reason); err != nil {
+		if _, err := p.positioner().CancelOpenByEntry(planCtx, *result.PreviousEntry, reason); err != nil {
 			planLogger.Error("open cancel failed", zap.Error(err), zap.String("reason", reason))
 		} else {
 			planLogger.Info("open cancel submitted", zap.String("reason", reason))

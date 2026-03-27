@@ -74,9 +74,9 @@ func translateGateReason(reason string) string {
 	upper := strings.ToUpper(trimmed)
 	switch {
 	case upper == "PASS_STRONG":
-		return "通过(强)"
+		return "强通过"
 	case upper == "PASS_WEAK":
-		return "通过(弱)"
+		return "弱通过"
 	case upper == "CONSENSUS_NOT_PASSED":
 		return "三路共识未通过"
 	case upper == "STRUCT_INVALID":
@@ -84,9 +84,9 @@ func translateGateReason(reason string) string {
 	case upper == "STRUCT_NO_BIAS":
 		return "结构无方向"
 	case upper == "MECH_RISK":
-		return "力学风险"
+		return "清算风险过高"
 	case upper == "STRUCT_BREAK":
-		return "结构破坏"
+		return "结构失效"
 	case upper == "MOMENTUM_WEAK":
 		return "动能走弱"
 	case upper == "INDICATOR_NOISE":
@@ -94,7 +94,7 @@ func translateGateReason(reason string) string {
 	case upper == "INDICATOR_MIXED":
 		return "指标分歧"
 	case upper == "STRUCT_THREAT":
-		return "结构威胁"
+		return "结构受威胁"
 	case upper == "KEEP":
 		return "保持"
 	case upper == "TIGHTEN":
@@ -224,19 +224,19 @@ func translateTerm(raw string) string {
 		"bos_up":             "向上结构突破(BOS)",
 		"bos_down":           "向下结构突破(BOS)",
 		"breakout_confirmed": "突破确认",
-		"support_retest":     "支撑回踩确认",
+		"support_retest":     "回踩确认",
 		"fakeout_rejection":  "假突破回落",
 		"choch_up":           "向上结构转变(CHoCH)",
 		"choch_down":         "向下结构转变(CHoCH)",
-		"structure_broken":   "结构失效/破坏",
+		"structure_broken":   "结构失效",
 
 		// --- 拥挤/风险 ---
-		"long_crowded":        "多头拥挤(追高风险)",
-		"short_crowded":       "空头拥挤(轧空风险)",
-		"crowded_long":        "多头拥挤(追高风险)",
-		"crowded_short":       "空头拥挤(轧空风险)",
+		"long_crowded":        "多头拥挤",
+		"short_crowded":       "空头拥挤",
+		"crowded_long":        "多头拥挤",
+		"crowded_short":       "空头拥挤",
 		"balanced":            "多空均衡",
-		"liquidation_cascade": "清算级联风险",
+		"liquidation_cascade": "连环清算风险",
 		"critical":            "危急(极高风险)",
 		"stable":              "稳定",
 
@@ -247,10 +247,10 @@ func translateTerm(raw string) string {
 		"contracting":         "波动/动能收敛",
 		"aligned":             "指标一致",
 		"divergent":           "指标分歧/不一致",
-		"divergence_reversal": "指标背离(反转风险)",
+		"divergence_reversal": "背离反转风险",
 		"momentum":            "动能",
 		"momentum_weak":       "动能偏弱",
-		"pullback_entry":      "回踩信号(等待确认)",
+		"pullback_entry":      "回踩入场",
 
 		// --- 价格形态（尽量中性命名）---
 		"double_top":         "双顶形态",
@@ -272,7 +272,7 @@ func translateTerm(raw string) string {
 		"low":         "低",
 		"medium":      "中",
 		"high":        "高",
-		"increasing":  "上升",
+		"increasing":  "杠杆升温",
 		"overheated":  "过热",
 		"none":        "无",
 		"ok":          "正常",
@@ -281,8 +281,8 @@ func translateTerm(raw string) string {
 		"exit":        "退出/平仓",
 		"tighten":     "收紧(减仓/收紧止损)",
 		"risk_off":    "风险偏好下降(偏防守)",
-		"trend_surge": "趋势加速(动能增强)",
-		"fuel_ready":  "条件具备(可推进)",
+		"trend_surge": "趋势加速",
+		"fuel_ready":  "条件具备",
 
 		// --- monitor_tag（补齐 ruleflow 会用到的值）---
 		"reversal_confirmed":   "反转确认",
@@ -319,7 +319,7 @@ func translateLLMKey(key string) string {
 		"signal_tag":         "信号标签",
 		"monitor_tag":        "监控标签",
 		"threat_level":       "威胁等级",
-		"liquidation_stress": "强平压力",
+		"liquidation_stress": "清算压力",
 		"liq_stress":         "清算压力",
 
 		// agent: indicator
@@ -367,7 +367,7 @@ func providerRoleLabel(role string) string {
 	case "structure":
 		return "结构"
 	case "mechanics":
-		return "力学/风险"
+		return "市场机制"
 	default:
 		return strings.TrimSpace(role)
 	}

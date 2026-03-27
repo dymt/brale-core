@@ -43,7 +43,7 @@ func Run(baseCtx context.Context, opts Options) error {
 	sendStartupNotify(env.ctx, env.logger, env.sys, env.notifier)
 	runScheduledWarmup(env.ctx, env.logger, deps)
 
-	viewerHandler := decisionview.StartDecisionViewer(env.logger, env.sys, symbolIndexPath, env.index, deps.store)
+	viewerHandler := decisionview.StartDecisionViewer(env.logger, env.sys, symbolIndexPath, env.index, deps.persistence.store)
 	dashboardHandler := dashboard.Start()
 	runtimes := buildRuntimeMap(env.ctx, env.logger, env.sys, symbolIndexPath, env.index, deps)
 	runFreqtradeBalanceCheck(env.ctx, env.logger, deps)

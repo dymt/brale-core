@@ -107,6 +107,25 @@ type SymbolRuntime struct {
 	SessionManager  *llm.RoundSessionManager
 	SessionMode     llm.SessionMode
 	Pipeline        *decision.Pipeline
+	Services        []RuntimeService
+}
+
+func (rt SymbolRuntime) StartServices(ctx context.Context) {
+	for _, service := range rt.Services {
+		if service == nil {
+			continue
+		}
+		service.Start(ctx)
+	}
+}
+
+func (rt SymbolRuntime) StopServices() {
+	for _, service := range rt.Services {
+		if service == nil {
+			continue
+		}
+		service.Stop()
+	}
 }
 
 type SymbolMode string

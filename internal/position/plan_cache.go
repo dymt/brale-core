@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"brale-core/internal/execution"
+	symbolpkg "brale-core/internal/pkg/symbol"
 )
 
 type PlanCache struct {
@@ -65,7 +66,7 @@ func (c *PlanCache) GetEntry(symbol string) (*PlanEntry, bool) {
 }
 
 func normalizePlanSymbol(symbol string) string {
-	return strings.ToUpper(strings.TrimSpace(symbol))
+	return symbolpkg.Normalize(symbol)
 }
 
 func (c *PlanCache) updateOrderUnsafe(symbol string, externalID string, clientOrderID string, submittedAt int64) {

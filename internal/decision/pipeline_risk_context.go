@@ -31,8 +31,8 @@ func (p *Pipeline) loadRiskPlanForUpdate(ctx context.Context, symbol string, pos
 	if err != nil {
 		return store.PositionRecord{}, risk.RiskPlan{}, false, err
 	}
-	if p.Positioner != nil && p.Positioner.Cache != nil {
-		pos = p.Positioner.Cache.HydratePosition(pos)
+	if posSvc := p.positioner(); posSvc != nil && posSvc.Cache != nil {
+		pos = posSvc.Cache.HydratePosition(pos)
 	}
 	if len(pos.RiskJSON) == 0 {
 		p.notifyMissingRiskPlan(ctx, pos)
@@ -54,10 +54,10 @@ func (p *Pipeline) isTightenDebounced(ctx context.Context, symbol string, pos st
 		return false, 0, 0
 	}
 	minIntervalSec := bind.RiskManagement.TightenATR.MinUpdateIntervalSec
-	if minIntervalSec <= 0 || p.Store == nil || strings.TrimSpace(pos.PositionID) == "" {
+	if minIntervalSec <= 0 || p.store() == nil || strings.TrimSpace(pos.PositionID) == "" {
 		return false, minIntervalSec, 0
 	}
-	latest, ok, err := p.Store.FindLatestRiskPlanHistory(ctx, pos.PositionID)
+	latest, ok, err := p.store().FindLatestRiskPlanHistory(ctx, pos.PositionID)
 	if err != nil || !ok {
 		return false, minIntervalSec, 0
 	}
@@ -83,10 +83,10 @@ func (p *Pipeline) buildTightenContext(ctx context.Context, res SymbolResult, co
 	}
 	markPrice := deriveCurrentPrice(res.Gate.Derived)
 	if markPrice <= 0 {
-		if p.PriceSource == nil {
+		if p.priceSource() == nil {
 			return tightenContext{}, tightenBlockPriceSourceMiss, nil
 		}
-		quote, err := p.PriceSource.MarkPrice(ctx, res.Symbol)
+		quote, err := p.priceSource().MarkPrice(ctx, res.Symbol)
 		if err != nil {
 			if errors.Is(err, market.ErrPriceUnavailable) {
 				return tightenContext{}, tightenBlockPriceUnavailable, nil

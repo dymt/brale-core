@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"brale-core/internal/config"
@@ -17,21 +16,62 @@ import (
 	"go.uber.org/zap"
 )
 
-type coreDeps struct {
+type persistenceDeps struct {
 	store         store.Store
 	stateProvider *reconcile.FSMStateProvider
+}
+
+type executionDeps struct {
+	executor      *execution.FreqtradeAdapter
+	notifier      notify.Notifier
+	allowSymbol   func(string) bool
+	freqtradeAcct func(context.Context, string) (execution.AccountState, error)
+	scheduled     bool
+}
+
+type positionDeps struct {
+	positionCache *position.PositionCache
+	riskPlanSvc   *position.RiskPlanService
+	positioner    *position.PositionService
+	priceSource   *binance.MarkPriceStream
+	riskMonitor   *position.RiskMonitor
+}
+
+type reconcileDeps struct {
+	recovery   *reconcile.RecoveryService
+	reconciler *reconcile.ReconcileService
+}
+
+type positionServiceBuildDeps struct {
+	store    store.Store
+	executor *execution.FreqtradeAdapter
+	notifier notify.Notifier
+}
+
+type reconcileServiceBuildDeps struct {
+	sys           config.SystemConfig
+	store         store.Store
 	executor      *execution.FreqtradeAdapter
 	notifier      notify.Notifier
 	positionCache *position.PositionCache
-	allowSymbol   func(string) bool
+	planCache     *position.PlanCache
 	riskPlanSvc   *position.RiskPlanService
-	positioner    *position.PositionService
-	recovery      *reconcile.RecoveryService
-	reconciler    *reconcile.ReconcileService
+	allowSymbol   func(string) bool
 	priceSource   *binance.MarkPriceStream
-	freqtradeAcct func(context.Context, string) (execution.AccountState, error)
-	riskMonitor   *position.RiskMonitor
-	scheduled     bool
+}
+
+type riskMonitorBuildDeps struct {
+	store          store.Store
+	priceSource    *binance.MarkPriceStream
+	positioner     *position.PositionService
+	accountFetcher func(context.Context, string) (execution.AccountState, error)
+}
+
+type coreDeps struct {
+	persistence persistenceDeps
+	execution   executionDeps
+	position    positionDeps
+	reconcile   reconcileDeps
 }
 
 func buildCoreDeps(env appEnv) (coreDeps, error) {
@@ -44,29 +84,41 @@ func buildCoreDeps(env appEnv) (coreDeps, error) {
 	executor := buildExecutionAdapter(env.sys)
 	allowSymbol := buildAllowSymbol(env.index)
 
-	positionCache, riskPlanSvc, positioner := buildPositionServices(st, executor, env.notifier)
+	positionCache, riskPlanSvc, positioner := buildPositionServices(positionServiceBuildDeps{store: st, executor: executor, notifier: env.notifier})
 	priceSource := buildPriceSource(env.index)
 
-	recovery, reconciler := buildReconcileServices(env.sys, st, executor, env.notifier, positionCache, positioner.PlanCache, riskPlanSvc, allowSymbol, priceSource)
-
-	freqtradeAccount := newFreqtradeAccountFetcher(executor)
-	riskMonitor := buildRiskMonitor(st, priceSource, positioner, freqtradeAccount)
-
-	return coreDeps{
+	recovery, reconciler := buildReconcileServices(reconcileServiceBuildDeps{
+		sys:           env.sys,
 		store:         st,
-		stateProvider: stateProvider,
 		executor:      executor,
 		notifier:      env.notifier,
 		positionCache: positionCache,
-		allowSymbol:   allowSymbol,
+		planCache:     positioner.PlanCache,
 		riskPlanSvc:   riskPlanSvc,
-		positioner:    positioner,
-		recovery:      recovery,
-		reconciler:    reconciler,
+		allowSymbol:   allowSymbol,
 		priceSource:   priceSource,
-		freqtradeAcct: freqtradeAccount,
-		riskMonitor:   riskMonitor,
-		scheduled:     resolveScheduledDecision(env.sys),
+	})
+
+	freqtradeAccount := newFreqtradeAccountFetcher(executor)
+	riskMonitor := buildRiskMonitor(riskMonitorBuildDeps{store: st, priceSource: priceSource, positioner: positioner, accountFetcher: freqtradeAccount})
+
+	return coreDeps{
+		persistence: persistenceDeps{store: st, stateProvider: stateProvider},
+		execution: executionDeps{
+			executor:      executor,
+			notifier:      env.notifier,
+			allowSymbol:   allowSymbol,
+			freqtradeAcct: freqtradeAccount,
+			scheduled:     resolveScheduledDecision(env.sys),
+		},
+		position: positionDeps{
+			positionCache: positionCache,
+			riskPlanSvc:   riskPlanSvc,
+			positioner:    positioner,
+			priceSource:   priceSource,
+			riskMonitor:   riskMonitor,
+		},
+		reconcile: reconcileDeps{recovery: recovery, reconciler: reconciler},
 	}, nil
 }
 
@@ -92,13 +144,13 @@ func buildExecutionAdapter(sys config.SystemConfig) *execution.FreqtradeAdapter 
 	}
 }
 
-func buildPositionServices(st store.Store, executor *execution.FreqtradeAdapter, notifier notify.Notifier) (*position.PositionCache, *position.RiskPlanService, *position.PositionService) {
+func buildPositionServices(deps positionServiceBuildDeps) (*position.PositionCache, *position.RiskPlanService, *position.PositionService) {
 	positionCache := position.NewPositionCache()
-	riskPlanSvc := &position.RiskPlanService{Store: st}
+	riskPlanSvc := &position.RiskPlanService{Store: deps.store}
 	positioner := &position.PositionService{
-		Store:     st,
-		Executor:  executor,
-		Notifier:  notifier,
+		Store:     deps.store,
+		Executor:  deps.executor,
+		Notifier:  deps.notifier,
 		Cache:     positionCache,
 		PlanCache: position.NewPlanCache(),
 		RiskPlans: riskPlanSvc,
@@ -113,41 +165,41 @@ func buildPriceSource(index config.SymbolIndexConfig) *binance.MarkPriceStream {
 	})
 }
 
-func buildReconcileServices(sys config.SystemConfig, st store.Store, executor *execution.FreqtradeAdapter, notifier notify.Notifier, positionCache *position.PositionCache, planCache *position.PlanCache, riskPlanSvc *position.RiskPlanService, allowSymbol func(string) bool, priceSource *binance.MarkPriceStream) (*reconcile.RecoveryService, *reconcile.ReconcileService) {
+func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.RecoveryService, *reconcile.ReconcileService) {
 	recovery := &reconcile.RecoveryService{
-		Store:       st,
-		Executor:    executor,
-		Notifier:    notifier,
-		Cache:       positionCache,
-		AllowSymbol: allowSymbol,
+		Store:       deps.store,
+		Executor:    deps.executor,
+		Notifier:    deps.notifier,
+		Cache:       deps.positionCache,
+		AllowSymbol: deps.allowSymbol,
 	}
 	reconciler := &reconcile.ReconcileService{
-		Store:       st,
-		Executor:    executor,
-		Notifier:    notifier,
-		Cache:       positionCache,
-		PlanCache:   planCache,
-		RiskPlans:   riskPlanSvc,
-		AllowSymbol: allowSymbol,
+		Store:       deps.store,
+		Executor:    deps.executor,
+		Notifier:    deps.notifier,
+		Cache:       deps.positionCache,
+		PlanCache:   deps.planCache,
+		RiskPlans:   deps.riskPlanSvc,
+		AllowSymbol: deps.allowSymbol,
 	}
 	reconciler.OrderStatusFetcher = &execution.FreqtradeStatusFetcher{
-		Endpoint:  sys.ExecEndpoint,
-		APIKey:    sys.ExecAPIKey,
-		APISecret: sys.ExecAPISecret,
-		AuthType:  sys.ExecAuth,
+		Endpoint:  deps.sys.ExecEndpoint,
+		APIKey:    deps.sys.ExecAPIKey,
+		APISecret: deps.sys.ExecAPISecret,
+		AuthType:  deps.sys.ExecAuth,
 	}
-	reconciler.PriceSource = priceSource
+	reconciler.PriceSource = deps.priceSource
 	return recovery, reconciler
 }
 
-func buildRiskMonitor(st store.Store, priceSource *binance.MarkPriceStream, positioner *position.PositionService, accountFetcher func(context.Context, string) (execution.AccountState, error)) *position.RiskMonitor {
+func buildRiskMonitor(deps riskMonitorBuildDeps) *position.RiskMonitor {
 	return &position.RiskMonitor{
-		Store:       st,
-		PriceSource: priceSource,
-		Positions:   positioner,
-		PlanCache:   positioner.PlanCache,
+		Store:       deps.store,
+		PriceSource: deps.priceSource,
+		Positions:   deps.positioner,
+		PlanCache:   deps.positioner.PlanCache,
 		AccountFetcher: func(ctx context.Context, symbol string) (execution.AccountState, error) {
-			return accountFetcher(ctx, symbol)
+			return deps.accountFetcher(ctx, symbol)
 		},
 	}
 }
@@ -162,14 +214,14 @@ func resolveScheduledDecision(sys config.SystemConfig) bool {
 func buildAllowSymbol(index config.SymbolIndexConfig) func(string) bool {
 	allowed := make(map[string]struct{}, len(index.Symbols))
 	for _, item := range index.Symbols {
-		normalized := strings.ToUpper(strings.TrimSpace(item.Symbol))
+		normalized := canonicalSymbolFromIndexEntry(item)
 		if normalized == "" {
 			continue
 		}
 		allowed[normalized] = struct{}{}
 	}
 	return func(sym string) bool {
-		_, ok := allowed[strings.ToUpper(strings.TrimSpace(sym))]
+		_, ok := allowed[canonicalSymbol(sym)]
 		return ok
 	}
 }
@@ -185,13 +237,13 @@ func newFreqtradeAccountFetcher(executor *execution.FreqtradeAdapter) func(conte
 }
 
 func runScheduledWarmup(ctx context.Context, logger *zap.Logger, deps coreDeps) {
-	if !deps.scheduled {
+	if !deps.execution.scheduled {
 		return
 	}
-	if err := deps.recovery.RunOnce(ctx, ""); err != nil {
+	if err := deps.reconcile.recovery.RunOnce(ctx, ""); err != nil {
 		logger.Warn("recovery run failed", zap.Error(err))
 	}
-	if err := deps.reconciler.RunOnce(ctx, ""); err != nil {
+	if err := deps.reconcile.reconciler.RunOnce(ctx, ""); err != nil {
 		logger.Warn("reconcile warmup failed", zap.Error(err))
 	}
 }

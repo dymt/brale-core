@@ -111,16 +111,17 @@ func (s *ReconcileService) progressAbort(ctx context.Context, pos store.Position
 
 func (s *ReconcileService) startAbort(ctx context.Context, pos store.PositionRecord, reason string, mark float64) error {
 	now := s.nowMillis()
-	updates := map[string]any{
-		"status":           position.PositionOpenAborting,
-		"abort_reason":     reason,
-		"abort_started_at": now,
-		"version":          pos.Version + 1,
-	}
 	if s.Cache != nil {
 		s.Cache.UpdatePrice(pos.PositionID, pos.Symbol, mark, now)
 	}
-	ok, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, updates)
+	ok, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:      pos.PositionID,
+		ExpectedVersion: pos.Version,
+		NextVersion:     pos.Version + 1,
+		Status:          store.PtrString(position.PositionOpenAborting),
+		AbortReason:     store.PtrString(reason),
+		AbortStartedAt:  store.PtrInt64(now),
+	})
 	if err != nil || !ok {
 		return err
 	}
@@ -129,15 +130,17 @@ func (s *ReconcileService) startAbort(ctx context.Context, pos store.PositionRec
 
 func (s *ReconcileService) finalizeAbort(ctx context.Context, pos store.PositionRecord, reason string) error {
 	now := s.nowMillis()
-	updates := map[string]any{
-		"status":             position.PositionOpenAborted,
-		"abort_finalized_at": now,
-		"version":            pos.Version + 1,
+	patch := store.PositionPatch{
+		PositionID:       pos.PositionID,
+		ExpectedVersion:  pos.Version,
+		NextVersion:      pos.Version + 1,
+		Status:           store.PtrString(position.PositionOpenAborted),
+		AbortFinalizedAt: store.PtrInt64(now),
 	}
 	if strings.TrimSpace(reason) != "" {
-		updates["abort_reason"] = reason
+		patch.AbortReason = store.PtrString(reason)
 	}
-	_, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, updates)
+	_, err := s.Store.UpdatePositionPatch(ctx, patch)
 	if err != nil {
 		return err
 	}

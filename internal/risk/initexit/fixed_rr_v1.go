@@ -9,10 +9,6 @@ const fixedRRV1Name = "fixed_rr_v1"
 
 type fixedRRV1Policy struct{}
 
-func init() {
-	Register(fixedRRV1Policy{})
-}
-
 func (fixedRRV1Policy) Name() string {
 	return fixedRRV1Name
 }

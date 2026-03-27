@@ -8,6 +8,7 @@ import (
 
 	"brale-core/internal/execution"
 	"brale-core/internal/pkg/logging"
+	symbolpkg "brale-core/internal/pkg/symbol"
 	"brale-core/internal/position"
 	"brale-core/internal/store"
 
@@ -82,7 +83,7 @@ func mapExternalPositions(ext []execution.ExternalPosition) map[string]execution
 func mapExternalPositionsBySymbol(ext []execution.ExternalPosition) map[string][]execution.ExternalPosition {
 	bySymbol := make(map[string][]execution.ExternalPosition)
 	for _, p := range ext {
-		key := strings.ToUpper(strings.TrimSpace(p.Symbol))
+		key := symbolpkg.Normalize(p.Symbol)
 		if key == "" {
 			continue
 		}
@@ -110,11 +111,13 @@ func (s *RecoveryService) handleMissingExternal(ctx context.Context, logger *zap
 	if pos.Status == position.PositionOpenAborting || pos.Status == position.PositionOpenAborted {
 		return nil
 	}
-	_, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, map[string]any{
-		"status":             position.PositionClosed,
-		"close_intent_id":    "",
-		"close_submitted_at": int64(0),
-		"version":            pos.Version + 1,
+	_, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+		PositionID:       pos.PositionID,
+		ExpectedVersion:  pos.Version,
+		NextVersion:      pos.Version + 1,
+		Status:           store.PtrString(position.PositionClosed),
+		CloseIntentID:    store.PtrString(""),
+		CloseSubmittedAt: store.PtrInt64(0),
 	})
 	if err != nil {
 		return s.reportPositionError(ctx, logger, "update closed position failed", err, pos)
@@ -132,20 +135,25 @@ func (s *RecoveryService) updateActivePosition(ctx context.Context, logger *zap.
 	if s.Cache != nil {
 		s.Cache.UpdateFromExternal(extPos)
 	}
-	updates := map[string]any{
-		"status":               position.PositionOpenActive,
-		"executor_position_id": extPos.PositionID,
-		"version":              pos.Version + 1,
-		"qty":                  extPos.Quantity,
-		"avg_entry":            extPos.AvgEntry,
+	patch := store.PositionPatch{
+		PositionID:         pos.PositionID,
+		ExpectedVersion:    pos.Version,
+		NextVersion:        pos.Version + 1,
+		Status:             store.PtrString(position.PositionOpenActive),
+		ExecutorPositionID: store.PtrString(extPos.PositionID),
+		Qty:                store.PtrFloat64(extPos.Quantity),
+		AvgEntry:           store.PtrFloat64(extPos.AvgEntry),
 	}
+	updates := patch.Updates()
 	if pos.InitialStake == 0 && extPos.InitialStake > 0 {
+		patch.InitialStake = store.PtrFloat64(extPos.InitialStake)
 		updates["initial_stake"] = extPos.InitialStake
 	}
 	if strings.TrimSpace(pos.Source) == "" {
+		patch.Source = store.PtrString("freqtrade")
 		updates["source"] = "freqtrade"
 	}
-	_, err := s.Store.UpdatePosition(ctx, pos.PositionID, pos.Version, updates)
+	_, err := s.Store.UpdatePositionPatch(ctx, patch)
 	if err != nil {
 		return s.reportPositionError(ctx, logger, "update active position failed", err, pos)
 	}
@@ -159,7 +167,7 @@ func resolveRecoveryPosition(pos store.PositionRecord, byID map[string]execution
 			return ext, true
 		}
 	}
-	candidates := bySymbol[strings.ToUpper(strings.TrimSpace(pos.Symbol))]
+	candidates := bySymbol[symbolpkg.Normalize(pos.Symbol)]
 	if len(candidates) == 1 {
 		return candidates[0], true
 	}
@@ -173,7 +181,7 @@ func (s *RecoveryService) restoreMissingPositions(ctx context.Context, logger *z
 		if strings.TrimSpace(pos.ExecutorPositionID) != "" {
 			existingTradeIDs[pos.ExecutorPositionID] = struct{}{}
 		}
-		sym := strings.ToUpper(strings.TrimSpace(pos.Symbol))
+		sym := symbolpkg.Normalize(pos.Symbol)
 		if sym != "" {
 			existingSymbols[sym] = struct{}{}
 		}
@@ -188,7 +196,7 @@ func (s *RecoveryService) restoreMissingPositions(ctx context.Context, logger *z
 		if _, ok := existingTradeIDs[extPos.PositionID]; ok {
 			continue
 		}
-		symKey := strings.ToUpper(strings.TrimSpace(extPos.Symbol))
+		symKey := symbolpkg.Normalize(extPos.Symbol)
 		if symKey == "" {
 			continue
 		}
