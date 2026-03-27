@@ -1,19 +1,24 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import React from 'react';
 import satori from 'satori';
-import { Resvg } from '@resvg/resvg-js';
+import resvgJs from '@resvg/resvg-js';
+
+const { Resvg } = resvgJs;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_INPUT = path.resolve(
-  __dirname,
-  './sample-input.json',
-);
+const DEFAULT_INPUT = path.resolve(__dirname, './sample-input.json');
 const DEFAULT_OUTPUT = path.resolve(__dirname, 'ethusdt-og-card.png');
 const CONFIG_PATH = path.resolve(__dirname, '../../configs/system.toml');
 const AUTHOR_AVATAR_PATH = path.resolve(__dirname, 'auth.jpg');
+const BRALE_LOGO_PATH = path.resolve(__dirname, '../dashboard/favicon-mask.svg');
+const CARD_WIDTH = 640;
+const CANVAS_WIDTH = CARD_WIDTH;
+const DEFAULT_RENDER_HEIGHT = 1440;
+const MAX_RENDER_HEIGHT = 4096;
+const PAPER_TEXTURE_DATA_URI = "data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.9'/%3E%3C/svg%3E";
 
 const h = React.createElement;
 
@@ -28,8 +33,8 @@ const valueMap = new Map([
   ['CONSENSUS_NOT_PASSED', '三路共识未通过'],
   ['DIRECTION_MISSING', '方向缺失'],
   ['DATA_MISSING', '数据不足'],
-  ['STRUCT_BREAK', '结构破坏'],
-  ['MECH_RISK', '力学风险'],
+  ['STRUCT_BREAK', '结构失效'],
+  ['MECH_RISK', '清算风险过高'],
   ['INDICATOR_NOISE', '指标噪音'],
   ['INDICATOR_MIXED', '指标混乱'],
   ['PASS_STRONG', '强通过'],
@@ -38,7 +43,7 @@ const valueMap = new Map([
   ['direction', '方向'],
   ['data', '数据完整性'],
   ['structure', '结构完整性'],
-  ['mech_risk', '力学风险'],
+  ['mech_risk', '清算风险检查'],
   ['indicator_noise', '指标噪音'],
   ['structure_clear', '结构清晰度'],
   ['tag_consistency', '标签一致性'],
@@ -46,17 +51,58 @@ const valueMap = new Map([
   ['script_allowed', '脚本条件'],
   ['gate_allow', 'Gate 放行'],
   ['indicator', '指标'],
-  ['mechanics', '力学'],
+  ['mechanics', '市场机制'],
+  ['trend_up', '上行趋势'],
+  ['trend_down', '下行趋势'],
   ['contracting', '收敛'],
+  ['expanding', '扩张'],
+  ['aligned', '一致'],
+  ['divergent', '分歧'],
   ['mixed', '混合/分歧'],
+  ['messy', '结构杂乱'],
+  ['clean', '结构清晰'],
+  ['unclear', '不明确'],
+  ['unknown', '无法判断'],
   ['low', '低'],
-  ['divergence_reversal', '指标背离(反转风险)'],
+  ['divergence_reversal', '背离反转风险'],
+  ['pullback_entry', '回踩入场'],
+  ['trend_surge', '趋势加速'],
+  ['momentum_weak', '动能偏弱'],
   ['neutral', '中性/无明显倾向'],
+  ['fuel_ready', '条件具备'],
   ['stable', '稳定'],
-  ['long_crowded', '多头拥挤(追高风险)'],
-  ['crowded_long', '多头拥挤(追高风险)'],
-  ['crowded_short', '空头拥挤(追空风险)'],
+  ['increasing', '杠杆升温'],
+  ['overheated', '过热'],
+  ['balanced', '多空均衡'],
+  ['long_crowded', '多头拥挤'],
+  ['crowded_long', '多头拥挤'],
+  ['short_crowded', '空头拥挤'],
+  ['crowded_short', '空头拥挤'],
+  ['liquidation_cascade', '连环清算风险'],
+  ['breakout_confirmed', '突破确认'],
+  ['support_retest', '回踩确认'],
+  ['fakeout_rejection', '假突破回落'],
+  ['structure_broken', '结构失效'],
+  ['bos_up', '向上突破(BOS)'],
+  ['bos_down', '向下突破(BOS)'],
+  ['choch_up', '向上转折(CHoCH)'],
+  ['choch_down', '向下转折(CHoCH)'],
+  ['double_top', '双顶形态'],
+  ['double_bottom', '双底形态'],
+  ['head_shoulders', '头肩形态'],
+  ['inv_head_shoulders', '反头肩形态'],
+  ['triangle_sym', '对称三角形'],
+  ['triangle_asc', '上升三角形'],
+  ['triangle_desc', '下降三角形'],
+  ['wedge_rising', '上升楔形'],
+  ['wedge_falling', '下降楔形'],
+  ['flag', '旗形整理'],
+  ['pennant', '三角旗形'],
+  ['channel_up', '上行通道'],
+  ['channel_down', '下行通道'],
   ['medium', '中'],
+  ['high', '高'],
+  ['range', '区间震荡'],
   ['否决', '否决'],
 ]);
 
@@ -101,10 +147,8 @@ function parseBool(value, fallback = false) {
   if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-    if (normalized === '1') return true;
-    if (normalized === '0') return false;
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
   }
   return fallback;
 }
@@ -126,221 +170,101 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function lerp(min, max, ratio) {
-  return min + (max - min) * ratio;
+function ratioToPercent(value) {
+  return clamp(Math.round(value * 100), 0, 100);
 }
 
-function metricCardCount(model) {
-  return thresholdRows(model).reduce((sum, row) => sum + row.items.length, 0);
+function withPercent(value) {
+  return `${ratioToPercent(value)}%`;
 }
 
-function thresholdRows(model) {
-  return [
-    { key: 'hard-threshold', title: '局部阈值证据', kind: 'summary', items: model.summaryCards },
-    { key: 'evidence', title: '证据卡', kind: 'evidence', items: model.evidenceCards },
-  ].filter((row) => Array.isArray(row.items) && row.items.length > 0);
+function formatReportTime(date = new Date()) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).format(date).replace(/\//g, '-');
 }
 
-function resolveBottomRailHeight(scale) {
-  return clamp(Math.round(scale.gap * 1.55), 28, 46);
-}
-
-function chooseScale(model) {
-  const analysisChars = model.analysisLines.reduce((sum, line) => sum + line.length, 0);
-  const metricLoad = metricCardCount(model) * 44;
-  const titleLoad = (`${model.symbol}${model.reportTimeCN}`).length * 1.4;
-  const contentLoad = analysisChars + metricLoad + titleLoad;
-
-  const density = clamp((contentLoad - 420) / (980 - 420), 0, 1);
-  const inverse = 1 - density;
-
-  return {
-    body: Math.round(lerp(21, 31, inverse)),
-    section: Math.round(lerp(26, 36, inverse)),
-    metric: Math.round(lerp(18, 24, inverse)),
-    chip: Math.round(lerp(15, 21, inverse)),
-    hero: Math.round(lerp(54, 90, inverse)),
-    sub: Math.round(lerp(22, 36, inverse)),
-    gap: Math.round(lerp(13, 24, inverse)),
-    barHeight: Math.round(lerp(60, 78, inverse)),
-    cardMinHeight: Math.round(lerp(132, 186, inverse)),
-    cardGap: Math.round(lerp(8, 14, inverse)),
-    cardPadY: Math.round(lerp(12, 22, inverse)),
-    cardPadX: Math.round(lerp(14, 22, inverse)),
-    progressTrackHeight: Math.round(lerp(12, 18, inverse)),
-    cardGridGap: Math.round(lerp(10, 16, inverse)),
-  };
-}
-
-function applyScaleMultiplier(scale, multiplier) {
-  return {
-    body: clamp(Math.round(scale.body * multiplier), 18, 44),
-    section: clamp(Math.round(scale.section * multiplier), 22, 50),
-    metric: clamp(Math.round(scale.metric * multiplier), 15, 36),
-    chip: clamp(Math.round(scale.chip * multiplier), 13, 32),
-    hero: clamp(Math.round(scale.hero * multiplier), 44, 128),
-    sub: clamp(Math.round(scale.sub * multiplier), 18, 52),
-    gap: clamp(Math.round(scale.gap * multiplier), 10, 36),
-    barHeight: clamp(Math.round(scale.barHeight * multiplier), 70, 138),
-    cardMinHeight: clamp(Math.round(scale.cardMinHeight * multiplier), 130, 296),
-    cardGap: clamp(Math.round(scale.cardGap * multiplier), 6, 18),
-    cardPadY: clamp(Math.round(scale.cardPadY * multiplier), 10, 26),
-    cardPadX: clamp(Math.round(scale.cardPadX * multiplier), 12, 26),
-    progressTrackHeight: clamp(Math.round(scale.progressTrackHeight * multiplier), 10, 22),
-    cardGridGap: clamp(Math.round(scale.cardGridGap * multiplier), 8, 20),
-  };
-}
-
-function estimateLines(text, fontSize, maxWidth, ratio = 0.54) {
-  const lineWidth = Math.max(8, Math.floor(maxWidth / Math.max(8, fontSize * ratio)));
-  return Math.max(1, Math.ceil(String(text ?? '').length / lineWidth));
-}
-
-function estimateChipRows(model, scale, maxWidth) {
-  const chips = [
-    `ACTION ${model.action}`,
-    `REASON ${model.reason}`,
-    `DIRECTION ${model.direction}`,
-  ];
-  let rows = 1;
-  let current = 0;
-  const gap = Math.max(10, scale.gap - 4);
-  for (const chipText of chips) {
-    const chipWidth = Math.round(chipText.length * (scale.chip * 0.62) + scale.chip * 2.35);
-    if (current > 0 && current + gap + chipWidth > maxWidth) {
-      rows += 1;
-      current = chipWidth;
-    } else {
-      current += current > 0 ? gap + chipWidth : chipWidth;
-    }
+function resolveScale(model) {
+  const analysisChars = model.analysisItems.reduce((sum, item) => sum + item.text.length, 0);
+  const sourceChars = model.sourceCard.lines.reduce((sum, line) => sum + line.text.length, 0);
+  const total = analysisChars + sourceChars;
+  let factor = 1;
+  if (total > 1800) {
+    factor = 0.82;
+  } else if (total > 1450) {
+    factor = 0.88;
+  } else if (total > 1200) {
+    factor = 0.93;
+  } else if (total > 1000) {
+    factor = 0.96;
   }
-  return rows;
-}
-
-function estimateFillRatio(model, scale) {
-  const pageHeight = 1898 - 60;
-  const bodyWidth = 1484 - 108;
-
-  const topBlock = scale.barHeight + Math.max(18, scale.gap);
-  const bottomBlock = Math.max(14, scale.gap - 3);
-  const framePadding = 72;
-  const dividerAllowance = 8;
-
-  const heroLines = estimateLines(model.symbol, scale.hero, bodyWidth * 0.96, 0.56);
-  const timeLines = estimateLines(model.reportTimeCN, Math.max(20, Math.round(scale.hero * 0.64)), bodyWidth * 0.96, 0.56);
-  const chipRows = estimateChipRows(model, scale, bodyWidth);
-
-  const heroSection =
-    heroLines * scale.hero * 1.08 +
-    timeLines * Math.max(20, Math.round(scale.hero * 0.64)) * 1.32 +
-    chipRows * (scale.chip * 1.95) +
-    Math.max(14, scale.gap - 2) * 2 +
-    Math.max(16, scale.gap);
-
-  const analysisTitle = scale.section + 14 + 18;
-  const sourceCardHeight = model.sourceCard ? estimateSourceCardHeight(model.sourceCard, scale, bodyWidth) + Math.max(12, scale.gap - 3) : 0;
-  const analysisBody = model.analysisLines.reduce(
-    (sum, line) => sum + estimateLines(line, scale.body, bodyWidth, 0.56) * scale.body * 1.5,
-    0,
-  );
-
-  const metricRows = Math.max(1, thresholdRows(model).length);
-  const thresholdBlock = metricDockHeight(metricRows, scale);
-  const bottomRail = resolveBottomRailHeight(scale);
-
-  const middleSection =
-    Math.max(16, scale.gap - 2) +
-    sourceCardHeight +
-    analysisTitle +
-    analysisBody +
-    Math.max(16, scale.gap - 2) +
-    thresholdBlock +
-    bottomRail;
-
-  const totalEstimated = topBlock + heroSection + middleSection + bottomBlock + framePadding + dividerAllowance;
-  return totalEstimated / pageHeight;
-}
-
-function estimateSourceCardHeight(card, scale, maxWidth) {
-  const titleHeight = Math.max(scale.metric, 20) * 1.35;
-  const headlineLines = estimateLines(card.headline, Math.max(scale.metric + 4, scale.metric), maxWidth * 0.9, 0.56);
-  const sourceDetailWidth = Math.max(maxWidth * 0.48, 240);
-  const detailLines = card.lines.reduce(
-    (sum, line) => sum + estimateLines(line, Math.max(scale.metric - 2, 14), sourceDetailWidth, 0.56),
-    0,
-  );
-  return Math.round(titleHeight + headlineLines * Math.max(scale.metric + 4, scale.metric) * 1.25 + detailLines * Math.max(scale.metric - 2, 14) * 1.38 + scale.cardPadY * 2 + 28);
-}
-
-function metricDockHeight(rowCount, scale) {
-  return (
-    rowCount * scale.cardMinHeight +
-    Math.max(0, rowCount - 1) * scale.cardGridGap +
-    rowCount * Math.max(6, scale.cardGridGap - 2) +
-    12
-  );
-}
-
-function resolveAnalysisScale(model, scale) {
-  const analysisChars = model.analysisLines.reduce((sum, line) => sum + String(line ?? '').length, 0);
-  const density = clamp((analysisChars - 380) / (920 - 380), 0, 1);
-  const multiplier = lerp(1.02, 0.84, density);
+  const scaled = (v, min) => Math.max(min, Math.round(v * factor));
   return {
-    ...scale,
-    body: clamp(Math.round(scale.body * multiplier), 16, scale.body),
-    section: clamp(Math.round(scale.section * multiplier), 20, scale.section),
-    gap: clamp(Math.round(scale.gap * lerp(1, 0.88, density)), 10, scale.gap),
+    title: scaled(58, 42),
+    subtitle: scaled(26, 20),
+    body: scaled(20, 15),
+    small: scaled(17, 13),
+    tiny: scaled(13, 10),
+    cardPad: scaled(26, 18),
+    gap: scaled(18, 12),
+    tagWidth: scaled(118, 92),
+    progressHeight: scaled(14, 10),
+    headerHeight: scaled(88, 74),
+    avatar: scaled(42, 36),
   };
 }
 
-function fitScaleToPage(model, baseScale) {
-  const minTarget = 0.78;
-  const maxTarget = 0.88;
-  const target = 0.84;
+function estimateRenderHeight(model) {
+  const titleChars = model.title.length;
+  const sourceChars = model.sourceCard.lines.reduce((sum, line) => sum + line.text.length, 0);
+  const progressChars = model.progressCards.reduce((sum, card) => sum + card.title.length + card.value.length + card.status.length, 0);
+  const analysisChars = model.analysisItems.reduce((sum, item) => sum + item.tag.length + item.text.length, 0);
+  const totalChars = titleChars + sourceChars + progressChars + analysisChars;
 
-  let low = 0.8;
-  let high = 1.42;
-  let bestScale = baseScale;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < 11; i += 1) {
-    const mid = (low + high) / 2;
-    const candidate = applyScaleMultiplier(baseScale, mid);
-    const fillRatio = estimateFillRatio(model, candidate);
-    const distance = Math.abs(fillRatio - target);
-    if (distance < bestDistance && fillRatio <= maxTarget) {
-      bestDistance = distance;
-      bestScale = candidate;
-    }
-
-    if (fillRatio < minTarget) {
-      low = mid;
-      continue;
-    }
-    high = mid;
-  }
-
-  return bestScale;
+  return clamp(
+    1024
+      + Math.ceil(totalChars * 0.88)
+      + model.sourceCard.lines.length * 24
+      + model.progressCards.length * 28
+      + model.analysisItems.length * 32,
+    DEFAULT_RENDER_HEIGHT,
+    MAX_RENDER_HEIGHT,
+  );
 }
 
 function buildModel(raw) {
-  const gate = raw.raw_blocks.gate;
-  const agent = raw.raw_blocks.agent;
-
-  const action = emptyDash(mapValue(gate.decision_action));
-  const reason = emptyDash(mapValue(gate.reason_code));
-  const direction = emptyDash(mapValue(gate.direction));
+  const gate = raw?.raw_blocks?.gate ?? {};
+  const agent = raw?.raw_blocks?.agent ?? {};
+  const indicator = agent.indicator ?? {};
+  const mechanics = agent.mechanics ?? {};
+  const structure = agent.structure ?? {};
 
   const consensusRaw = gate.direction_consensus ?? {};
-  const fallbackConsensusScore = Math.max(agent.indicator.movement_score, agent.mechanics.movement_score, agent.structure.movement_score);
-  const fallbackConsensusConfidence = (agent.indicator.movement_confidence + agent.mechanics.movement_confidence + agent.structure.movement_confidence) / 3;
+  const fallbackConsensusScore = Math.max(
+    parseNumber(indicator.movement_score, 0),
+    parseNumber(mechanics.movement_score, 0),
+    parseNumber(structure.movement_score, 0),
+  );
+  const fallbackConsensusConfidence = (
+    parseNumber(indicator.movement_confidence, 0) +
+    parseNumber(mechanics.movement_confidence, 0) +
+    parseNumber(structure.movement_confidence, 0)
+  ) / 3;
+
   const consensusScore = parseNumber(consensusRaw.score, fallbackConsensusScore);
   const consensusConfidence = parseNumber(consensusRaw.confidence, fallbackConsensusConfidence);
-  const consensusScoreThreshold = parseNumber(consensusRaw.score_threshold, 0.2);
-  const consensusConfidenceThreshold = parseNumber(consensusRaw.confidence_threshold, 0.3);
+  const consensusScoreThreshold = parseNumber(consensusRaw.score_threshold, 0.5);
+  const consensusConfidenceThreshold = parseNumber(consensusRaw.confidence_threshold, 0.6);
 
   const scoreRate = consensusScoreThreshold > 0 ? Math.abs(consensusScore) / consensusScoreThreshold : 1;
   const confidenceRate = consensusConfidenceThreshold > 0 ? consensusConfidence / consensusConfidenceThreshold : 1;
+
   const scorePassed = Object.hasOwn(consensusRaw, 'score_passed')
     ? parseBool(consensusRaw.score_passed, Math.abs(consensusScore) >= consensusScoreThreshold)
     : Math.abs(consensusScore) >= consensusScoreThreshold;
@@ -350,48 +274,58 @@ function buildModel(raw) {
 
   const summaryCards = [
     {
+      key: 'score',
       title: '共识总分',
-      value: consensusScore,
-      threshold: consensusScoreThreshold,
-      progress: clamp(scoreRate, 0, 1),
-      achievedRate: Math.round(scoreRate * 100),
-      passed: scorePassed,
-      valueText: consensusScore.toFixed(3),
+      value: `当前 ${consensusScore.toFixed(3)} / 达成率 ${withPercent(scoreRate)}`,
+      progressPct: ratioToPercent(scoreRate),
+      thresholdPct: ratioToPercent(consensusScoreThreshold),
       thresholdText: consensusScoreThreshold.toFixed(3),
+      status: scorePassed ? '通过' : '未达阈值',
+      tone: scorePassed ? 'emerald' : 'rose',
+      isSuccess: scorePassed,
     },
     {
+      key: 'confidence',
       title: '共识置信度',
-      value: consensusConfidence,
-      threshold: consensusConfidenceThreshold,
-      progress: clamp(confidenceRate, 0, 1),
-      achievedRate: Math.round(confidenceRate * 100),
-      passed: confidencePassed,
-      valueText: consensusConfidence.toFixed(3),
+      value: `当前 ${consensusConfidence.toFixed(3)} / 达成率 ${withPercent(confidenceRate)}`,
+      progressPct: ratioToPercent(confidenceRate),
+      thresholdPct: ratioToPercent(consensusConfidenceThreshold),
       thresholdText: consensusConfidenceThreshold.toFixed(3),
+      status: confidencePassed ? '通过' : '未达阈值',
+      tone: confidencePassed ? 'emerald' : 'amber',
+      isSuccess: confidencePassed,
     },
   ];
 
+  const structureCurrent = parseNumber(structure.movement_confidence, 0);
+  const structureTarget = 0.6;
+  const mechanicsCurrent = parseNumber(mechanics.movement_confidence, 0);
+  const mechanicsTarget = 0.6;
+
   const evidenceCards = [
     {
+      key: 'structure',
       title: '结构状态',
-      current: agent.structure.movement_confidence,
-      target: 0.6,
-      score: agent.structure.movement_score,
-      detail: `regime ${emptyDash(mapValue(agent.structure.regime))} · quality ${emptyDash(mapValue(agent.structure.quality))}`,
+      value: `regime ${emptyDash(mapValue(structure.regime))} • quality ${emptyDash(mapValue(structure.quality))}`,
+      progressPct: ratioToPercent(structureCurrent / Math.max(structureTarget, 0.001)),
+      thresholdPct: ratioToPercent(structureTarget),
+      thresholdText: structureTarget.toFixed(2),
+      status: structureCurrent >= structureTarget ? '通过' : '未达阈值',
+      tone: structureCurrent >= structureTarget ? 'emerald' : 'amber',
+      isSuccess: structureCurrent >= structureTarget,
     },
     {
-      title: '力学风险',
-      current: agent.mechanics.movement_confidence,
-      target: 0.6,
-      score: agent.mechanics.movement_score,
-      detail: `risk ${emptyDash(mapValue(agent.mechanics.risk_level))} · crowding ${emptyDash(mapValue(agent.mechanics.crowding))}`,
+      key: 'mechanics',
+      title: '清算风险',
+      value: `risk ${emptyDash(mapValue(mechanics.risk_level))} • crowding ${emptyDash(mapValue(mechanics.crowding))}`,
+      progressPct: ratioToPercent(mechanicsCurrent / Math.max(mechanicsTarget, 0.001)),
+      thresholdPct: ratioToPercent(mechanicsTarget),
+      thresholdText: mechanicsTarget.toFixed(2),
+      status: mechanicsCurrent >= mechanicsTarget ? '通过' : '未达阈值',
+      tone: mechanicsCurrent >= mechanicsTarget ? 'emerald' : 'amber',
+      isSuccess: mechanicsCurrent >= mechanicsTarget,
     },
-  ].map((item) => ({
-    ...item,
-    progress: Math.max(0, Math.min(1, item.current / item.target)),
-    passed: item.current >= item.target,
-    detail: item.detail || `当前 ${item.current.toFixed(2)} / 得分 ${item.score.toFixed(2)}`,
-  }));
+  ];
 
   const trace = Array.isArray(gate.trace)
     ? gate.trace.filter((item) => item && typeof item === 'object' && String(item.step ?? '').trim())
@@ -400,417 +334,176 @@ function buildModel(raw) {
     const status = parseKnownBool(item.ok);
     return status.known && status.value === false;
   }) || null;
-  const traceSummary = trace.length
-    ? trace.map((item) => {
-      const status = parseKnownBool(item.ok);
-      const outcome = status.known
-        ? (status.value ? '→通过' : `→停止${item.reason ? `(${mapValue(item.reason)})` : ''}`)
-        : '→已记录';
-      return `${mapValue(item.step)}${outcome}`;
-    }).join(' · ')
-    : '未记录 Gate 路径';
+
   const stopStep = emptyDash(mapValue(gate.stop_step || failedTrace?.step));
-  const finalReason = emptyDash(mapValue(gate.reason_code || gate.reason));
+  const finalDecision = String(gate.decision_action || '').trim().toUpperCase();
   const ruleName = String(gate.rule_name || '').trim();
-  const actionBefore = String(gate.action_before || '').trim();
   const sieveAction = String(gate.sieve_action || '').trim();
   const sieveReason = String(gate.sieve_reason || '').trim();
-  const finalDecision = String(gate.decision_action || '').trim().toUpperCase();
+  const actionBefore = String(gate.action_before || '').trim();
   const sieveTriggered = Boolean(sieveAction || sieveReason);
-  const gateStopDetail = failedTrace
-    ? traceSummary
-    : finalDecision === 'VETO' && sieveTriggered
-      ? `Gate 主流程未中断，最终由风控覆写否决 · ${traceSummary}`
-      : traceSummary;
 
-  const sourceHeadline = sieveTriggered && finalDecision === 'VETO'
-    ? '最终否决来源：风控覆写'
+  const sourceLabel = sieveTriggered && finalDecision === 'VETO'
+    ? '风控覆写'
     : failedTrace
-      ? '最终否决来源：Gate 主流程'
-      : '最终判定来源：Gate 总结';
-  const sourceTone = finalDecision === 'ALLOW'
-    ? 'pass'
-    : finalDecision === 'WAIT'
-      ? 'neutral'
-      : 'fail';
+      ? 'Gate 主流程'
+      : 'Gate 总结';
+
   const sourceLines = [
-    failedTrace
-      ? `停止步骤：${stopStep}${failedTrace?.reason ? ` · 命中 ${emptyDash(mapValue(failedTrace.reason))}` : ''}`
-      : `停止步骤：${sieveTriggered && finalDecision === 'VETO' ? 'Gate 未中断' : stopStep}`,
+    {
+      text: failedTrace
+        ? `停止步骤：${stopStep}${failedTrace?.reason ? ` · 命中 ${emptyDash(mapValue(failedTrace.reason))}` : ''}`
+        : `停止步骤：${sieveTriggered && finalDecision === 'VETO' ? 'Gate 未中断' : stopStep}`,
+      note: false,
+    },
   ];
   if (ruleName) {
-    sourceLines.push(`命中规则：${emptyDash(mapValue(ruleName))} (${ruleName})`);
+    sourceLines.push({
+      text: `命中规则：${emptyDash(mapValue(ruleName))} (${ruleName})`,
+      note: false,
+    });
   }
   if (sieveTriggered) {
-    sourceLines.push(`风控筛选：${emptyDash(mapValue(actionBefore || '—'))} → ${emptyDash(mapValue(sieveAction || finalDecision || '—'))}${sieveReason ? ` · ${emptyDash(mapValue(sieveReason))}` : ''}`);
+    sourceLines.push({
+      text: `风控筛选：${emptyDash(mapValue(actionBefore || '—'))} → ${emptyDash(mapValue(sieveAction || finalDecision || '—'))}${sieveReason ? ` · ${emptyDash(mapValue(sieveReason))}` : ''}`,
+      note: false,
+    });
   }
-  sourceLines.push('说明：下方证据卡只展示局部阈值，通过不代表最终放行。');
+  sourceLines.push({
+    text: '说明：下方证据卡只展示局部阈值，通过不代表最终放行。',
+    note: true,
+  });
 
   const sourceCard = {
     title: '判定来源说明',
-    headline: sourceHeadline,
+    tradeable: parseBool(gate.tradeable, false),
+    sourceLabel,
     lines: sourceLines,
-    tone: sourceTone,
-    meta: gate.tradeable ? '可交易' : '不可交易',
+    verdictText: parseBool(gate.tradeable, false) ? '可交易' : '不可交易',
   };
+
+  const analysisItems = [
+    {
+      tag: 'Indicator',
+      text: `扩张状态=${emptyDash(mapValue(indicator.expansion))} 一致性=${emptyDash(mapValue(indicator.alignment))} 噪音=${emptyDash(mapValue(indicator.noise))}`,
+      variant: 'indicator',
+      isCategory: true,
+    },
+    {
+      tag: '动能细节',
+      text: mapSentence(indicator.momentum_detail),
+      variant: 'indicator',
+      isCategory: false,
+    },
+    {
+      tag: '冲突细节',
+      text: emptyDash(mapSentence(indicator.conflict_detail)),
+      variant: 'indicator',
+      isCategory: false,
+    },
+    {
+      tag: 'Mechanics',
+      text: `杠杆=${emptyDash(mapValue(mechanics.leverage_state))} 拥挤度=${emptyDash(mapValue(mechanics.crowding))} 风险等级=${emptyDash(mapValue(mechanics.risk_level))}`,
+      variant: 'mechanics',
+      isCategory: true,
+    },
+    {
+      tag: '持仓量背景',
+      text: mapSentence(mechanics.open_interest_context),
+      variant: 'mechanics',
+      isCategory: false,
+    },
+    {
+      tag: '异常细节',
+      text: mapSentence(mechanics.anomaly_detail),
+      variant: 'mechanics',
+      isCategory: false,
+    },
+    {
+      tag: 'Structure',
+      text: `结构状态=${emptyDash(mapValue(structure.regime))} 最近突破=${emptyDash(mapValue(structure.last_break))} 形态=${emptyDash(mapValue(structure.pattern))} 质量=${emptyDash(mapValue(structure.quality))}`,
+      variant: 'structure',
+      isCategory: true,
+    },
+    {
+      tag: 'Structure细节',
+      text: `量能配合=${mapSentence(structure.volume_action)} K线反应=${mapSentence(structure.candle_reaction)}`,
+      variant: 'structure',
+      isCategory: false,
+    },
+  ];
 
   return {
-    symbol: raw.symbol,
-    action,
-    reason,
-    direction,
-    summaryCards,
-    analysisLines: [
-      `Indicator | 扩张状态=${mapValue(agent.indicator.expansion)}  一致性=${mapValue(agent.indicator.alignment)}  噪音=${mapValue(agent.indicator.noise)}`,
-      `动能细节=${mapSentence(agent.indicator.momentum_detail)}`,
-      `冲突细节=${emptyDash(mapSentence(agent.indicator.conflict_detail))}`,
-      `Mechanics | 杠杆=${mapValue(agent.mechanics.leverage_state)}  拥挤度=${mapValue(agent.mechanics.crowding)}  风险等级=${mapValue(agent.mechanics.risk_level)}`,
-      `持仓量背景=${mapSentence(agent.mechanics.open_interest_context)}`,
-      `异常细节=${mapSentence(agent.mechanics.anomaly_detail)}`,
-      `Structure | 结构状态=${emptyDash(mapValue(agent.structure.regime))}  最近突破=${emptyDash(mapValue(agent.structure.last_break))}  形态=${emptyDash(mapValue(agent.structure.pattern))}  质量=${emptyDash(mapValue(agent.structure.quality))}`,
-      `Structure细节 | 量能配合=${mapSentence(agent.structure.volume_action)}  K线反应=${mapSentence(agent.structure.candle_reaction)}`,
-    ],
+    symbol: emptyDash(raw?.symbol || 'UNKNOWN'),
+    title: `${emptyDash(raw?.symbol || 'UNKNOWN')} 的决策报告`,
+    reportTimeCN: formatReportTime(),
     sourceCard,
-    evidenceCards,
-    reportTimeCN: '',
+    progressCards: [...summaryCards, ...evidenceCards],
+    analysisItems,
   };
-}
-
-function authorAvatar(dataUri, size) {
-  if (!dataUri) {
-    return h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          width: size,
-          height: size,
-          borderRadius: 999,
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#e2e8f0',
-          color: '#475569',
-          fontSize: Math.max(14, Math.round(size * 0.34)),
-          fontWeight: 700,
-          letterSpacing: '0.02em',
-        },
-      },
-      'L',
-    );
-  }
-  return h('img', {
-    src: dataUri,
-    width: size,
-    height: size,
-    style: {
-      display: 'flex',
-      width: size,
-      height: size,
-      borderRadius: 999,
-      objectFit: 'cover',
-      border: '1px solid #cbd5e1',
-      background: '#ffffff',
-      boxSizing: 'border-box',
-    },
-  });
-}
-
-function toolbar({ center, avatarDataUri, height = 72 }) {
-  const avatarSize = clamp(Math.round(height * 0.72), 42, 56);
-  return h(
-    'div',
-    {
-      style: {
-        width: '100%',
-        height,
-        display: 'flex',
-        alignItems: 'center',
-        background: '#ffffff',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '0 40px',
-        boxSizing: 'border-box',
-      },
-    },
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          alignItems: 'center',
-          color: '#334155',
-          fontSize: 21,
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-        },
-      },
-      'Brale',
-    ),
-    h('div', { style: { display: 'flex', marginLeft: 'auto', marginRight: 'auto', fontSize: 18, color: '#64748b', letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 600 } }, center),
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: avatarSize, height: avatarSize, marginLeft: 'auto' } }, authorAvatar(avatarDataUri, avatarSize)),
-  );
-}
-
-function chip(text, tone) {
-  return h(
-    'div',
-    {
-      style: {
-        display: 'flex',
-        padding: '8px 16px',
-        background: tone.background,
-        color: tone.color,
-        borderRadius: 999,
-        fontSize: tone.fontSize,
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        border: `1px solid ${tone.border}`,
-      },
-    },
-    text,
-  );
-}
-
-function section(title, lines, scale, dotColor) {
-  return h(
-    'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: 16 } },
-    h(
-      'div',
-      { style: { display: 'flex', alignItems: 'center', gap: 14 } },
-      h('div', { style: { display: 'flex', width: 10, height: 10, borderRadius: 999, background: dotColor } }),
-      h('div', { style: { display: 'flex', fontSize: scale.section, fontWeight: 700, color: '#0f172a', letterSpacing: '0.04em', textTransform: 'uppercase' } }, title),
-    ),
-    h('div', { style: { display: 'flex', width: '100%', borderTop: '1px dashed #cbd5e1' } }),
-    ...lines.map((line) =>
-      h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 12,
-            paddingLeft: 2,
-          },
-        },
-        h('div', { style: { display: 'flex', width: 3, minHeight: Math.max(26, scale.body + 2), background: '#cbd5e1', borderRadius: 999 } }),
-        h(
-          'div',
-          {
-            style: {
-              display: 'flex',
-              fontSize: scale.body,
-              lineHeight: 1.62,
-              color: '#334155',
-              whiteSpace: 'pre-wrap',
-            },
-          },
-          line,
-        ),
-      ),
-    ),
-  );
-}
-
-function consensusSummaryCard(item, scale) {
-  const ratio = clamp(item.progress, 0, 1);
-  const percent = Math.round(ratio * 100);
-  const markerPos = clamp(Math.round(item.threshold * 100), 0, 100);
-  return h(
-    'div',
-    {
-      style: {
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        gap: scale.cardGap,
-        padding: `${scale.cardPadY}px ${scale.cardPadX}px`,
-        background: '#ffffff',
-        border: `1px solid ${item.passed ? '#d1fae5' : '#fde7d9'}`,
-        borderRadius: 18,
-        width: '100%',
-        height: '100%',
-        flex: 1,
-        boxSizing: 'border-box',
-        boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
-        minWidth: 0,
-      },
-    },
-    h(
-      'div',
-      { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } },
-      h('div', { style: { display: 'flex', fontSize: scale.metric + 2, color: '#0f172a', fontWeight: 700 } }, item.title),
-      h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            fontSize: scale.metric - 4,
-            color: item.passed ? '#166534' : '#b45309',
-            background: item.passed ? '#dcfce7' : '#ffedd5',
-            border: `1px solid ${item.passed ? '#86efac' : '#fdba74'}`,
-            borderRadius: 999,
-            padding: '4px 8px',
-            fontWeight: 700,
-          },
-        },
-        item.passed ? '通过' : '未达阈值',
-      ),
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          fontSize: Math.max(14, scale.metric - 6),
-          lineHeight: 1.25,
-          color: '#64748b',
-          whiteSpace: 'nowrap',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontVariantNumeric: 'tabular-nums',
-        },
-      },
-      `当前 ${item.valueText} / 达成率 ${item.achievedRate}%`,
-    ),
-    h(
-      'div',
-      { style: { display: 'flex', position: 'relative', height: scale.progressTrackHeight, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' } },
-      h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(ratio * 100).toFixed(2)}%`, background: item.passed ? '#34d399' : '#fb923c', borderRadius: 999 } }),
-      h('div', { style: { display: 'flex', position: 'absolute', left: `${markerPos}%`, top: -1, bottom: -1, width: 2, background: item.passed ? '#0f172a' : '#b91c1c' } }),
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          justifyContent: 'space-between',
-          color: '#64748b',
-          fontSize: scale.metric - 2,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontVariantNumeric: 'tabular-nums',
-        },
-      },
-      h('div', { style: { display: 'flex' } }, `进度 ${percent}%`),
-      h('div', { style: { display: 'flex' } }, `阈值 ${item.thresholdText}`),
-    ),
-  );
-}
-
-function thresholdCard(item, scale) {
-  const ratio = clamp(item.progress, 0, 1);
-  const percent = Math.round(ratio * 100);
-  const markerPos = clamp(Math.round(item.target * 100), 0, 100);
-  return h(
-    'div',
-    {
-      style: {
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        gap: scale.cardGap,
-        padding: `${scale.cardPadY}px ${scale.cardPadX}px`,
-        background: '#ffffff',
-        border: `1px solid ${item.passed ? '#d1fae5' : '#fde7d9'}`,
-        borderRadius: 18,
-        width: '100%',
-        height: '100%',
-        flex: 1,
-        boxSizing: 'border-box',
-        boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
-      },
-    },
-    h(
-      'div',
-      { style: { display: 'flex', flexDirection: 'column', gap: Math.max(6, scale.cardGap - 2) } },
-    h(
-      'div',
-      { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 } },
-      h('div', { style: { display: 'flex', fontSize: scale.metric + 2, fontWeight: 700, color: '#0f172a' } }, item.title),
-      h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            fontSize: scale.metric - 4,
-            color: item.passed ? '#166534' : '#b45309',
-            fontWeight: 700,
-            letterSpacing: '0.02em',
-            background: item.passed ? '#dcfce7' : '#ffedd5',
-            border: `1px solid ${item.passed ? '#86efac' : '#fdba74'}`,
-            borderRadius: 999,
-            padding: '4px 8px',
-          },
-        },
-        item.passed ? '通过' : '未达阈值',
-      ),
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          fontSize: scale.metric - 1,
-          color: '#64748b',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'normal',
-          wordBreak: 'break-word',
-          lineHeight: 1.28,
-        },
-      },
-      item.detail,
-    ),
-    ),
-    h(
-      'div',
-      { style: { display: 'flex', flexDirection: 'column', gap: Math.max(6, scale.cardGap - 1) } },
-    h(
-      'div',
-      { style: { display: 'flex', position: 'relative', height: scale.progressTrackHeight, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' } },
-      h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(ratio * 100).toFixed(2)}%`, background: item.passed ? '#34d399' : '#fb923c', borderRadius: 999 } }),
-      h('div', { style: { display: 'flex', position: 'absolute', left: `${markerPos}%`, top: -1, bottom: -1, width: 2, background: item.passed ? '#0f172a' : '#b91c1c' } }),
-    ),
-    h(
-      'div',
-      { style: { display: 'flex', justifyContent: 'space-between', fontSize: scale.metric - 2, color: '#64748b', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontVariantNumeric: 'tabular-nums' } },
-      h('div', { style: { display: 'flex' } }, `进度 ${percent}%`),
-      h('div', { style: { display: 'flex' } }, `阈值 ${item.target.toFixed(2)}`),
-    ),
-    ),
-  );
 }
 
 function tonePalette(tone) {
-  if (tone === 'pass') {
-    return { border: '#d1fae5', bg: '#ecfdf5', fg: '#166534', soft: '#bbf7d0' };
+  if (tone === 'emerald') {
+    return {
+      fill: '#34d399',
+      badgeBg: '#ecfdf5',
+      badgeText: '#059669',
+      badgeBorder: '#a7f3d0',
+    };
   }
-  if (tone === 'neutral') {
-    return { border: '#fde68a', bg: '#fffbeb', fg: '#92400e', soft: '#fcd34d' };
+  if (tone === 'amber') {
+    return {
+      fill: '#fbbf24',
+      badgeBg: '#fffbeb',
+      badgeText: '#b45309',
+      badgeBorder: '#fde68a',
+    };
   }
-  return { border: '#fecaca', bg: '#fef2f2', fg: '#991b1b', soft: '#fca5a5' };
+  return {
+    fill: '#fb7185',
+    badgeBg: '#fff1f2',
+    badgeText: '#e11d48',
+    badgeBorder: '#fecdd3',
+  };
 }
 
-function sourceCard(card, scale) {
+function categoryTagStyle(variant) {
+  const map = {
+    indicator: { bg: '#cbd5e1', fg: '#1e293b', border: '#94a3b8' },
+    mechanics: { bg: '#fde68a', fg: '#78350f', border: '#f59e0b' },
+    structure: { bg: '#fecdd3', fg: '#881337', border: '#fb7185' },
+    default: { bg: '#e5e7eb', fg: '#111827', border: '#9ca3af' },
+  };
+  return map[variant] ?? map.default;
+}
+
+function normalTagStyle(variant) {
+  const map = {
+    indicator: { bg: '#f1f5f9', fg: '#475569', border: '#cbd5e1' },
+    mechanics: { bg: '#fffbeb', fg: '#b45309', border: '#fde68a' },
+    structure: { bg: '#fff1f2', fg: '#e11d48', border: '#fecdd3' },
+    default: { bg: '#f8fafc', fg: '#4b5563', border: '#d1d5db' },
+  };
+  return map[variant] ?? map.default;
+}
+
+function progressCard(card, scale) {
   const tone = tonePalette(card.tone);
   return h(
     'div',
     {
       style: {
         display: 'flex',
-        alignItems: 'stretch',
+        flexDirection: 'column',
         justifyContent: 'space-between',
-        gap: Math.max(18, scale.cardGap + 6),
-        padding: `${scale.cardPadY}px ${scale.cardPadX}px`,
-        background: '#ffffff',
-        border: `1px solid ${tone.border}`,
-        borderRadius: 18,
+        gap: Math.max(8, scale.gap - 10),
         width: '100%',
-        height: '100%',
-        flex: 1,
-        boxSizing: 'border-box',
-        boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
         minWidth: 0,
+        background: 'rgba(255,255,255,0.72)',
+        border: '1px solid rgba(203,213,225,0.9)',
+        borderRadius: 18,
+        padding: `${Math.max(12, scale.cardPad - 10)}px ${Math.max(14, scale.cardPad - 8)}px`,
       },
     },
     h(
@@ -818,12 +511,9 @@ function sourceCard(card, scale) {
       {
         style: {
           display: 'flex',
-          alignItems: 'stretch',
-          justifyContent: 'center',
-          gap: Math.max(20, scale.cardGap + 8),
-          width: '100%',
-          height: '100%',
-          minWidth: 0,
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 10,
         },
       },
       h(
@@ -832,12 +522,9 @@ function sourceCard(card, scale) {
           style: {
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'flex-start',
-            gap: Math.max(8, scale.cardGap - 1),
-            width: '42%',
-            minWidth: 300,
-            maxWidth: '46%',
+            gap: 4,
+            flex: 1,
+            minWidth: 0,
           },
         },
         h(
@@ -845,10 +532,11 @@ function sourceCard(card, scale) {
           {
             style: {
               display: 'flex',
-              fontSize: scale.metric + 1,
-              color: '#0f172a',
+              fontSize: scale.small,
+              color: '#1f2937',
               fontWeight: 700,
-              textAlign: 'left',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
             },
           },
           card.title,
@@ -858,33 +546,15 @@ function sourceCard(card, scale) {
           {
             style: {
               display: 'flex',
-              fontSize: Math.max(scale.metric + 4, scale.metric),
-              color: '#0f172a',
-              fontWeight: 800,
-              lineHeight: 1.22,
+              fontSize: scale.tiny,
+              color: '#6b7280',
+              whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
-              textAlign: 'left',
-              width: '100%',
+              lineHeight: 1.35,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             },
           },
-          card.headline,
-        ),
-        h(
-          'div',
-          {
-            style: {
-              display: 'flex',
-              fontSize: scale.metric - 5,
-              color: tone.fg,
-              background: tone.bg,
-              border: `1px solid ${tone.soft}`,
-              borderRadius: 999,
-              padding: '4px 8px',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-            },
-          },
-          card.meta,
+          card.value,
         ),
       ),
       h(
@@ -892,209 +562,557 @@ function sourceCard(card, scale) {
         {
           style: {
             display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'center',
-            gap: Math.max(6, scale.cardGap - 5),
-            flex: 1,
-            width: '100%',
-            minWidth: 0,
+            padding: '4px 8px',
+            borderRadius: 8,
+            border: `1px solid ${tone.badgeBorder}`,
+            background: tone.badgeBg,
+            color: tone.badgeText,
+            fontSize: Math.max(10, scale.tiny - 2),
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
           },
         },
-        ...card.lines.map((line) => h(
-          'div',
-          {
-            style: {
-              display: 'flex',
-              justifyContent: 'flex-start',
-              width: '100%',
-              fontSize: scale.metric - 2,
-              color: '#64748b',
-              lineHeight: 1.35,
-              wordBreak: 'break-word',
-              whiteSpace: 'pre-wrap',
-              textAlign: 'left',
-            },
-          },
-          line,
-        )),
+        card.status,
       ),
+    ),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          position: 'relative',
+          width: '100%',
+          height: scale.progressHeight,
+          borderRadius: 999,
+          background: '#e5e7eb',
+          overflow: 'hidden',
+        },
+      },
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: `${card.progressPct}%`,
+          background: tone.fill,
+          borderRadius: 999,
+        },
+      }),
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          top: -1,
+          bottom: -1,
+          left: `${card.thresholdPct}%`,
+          width: 2,
+          transform: 'translateX(-50%)',
+          background: '#6b7280',
+        },
+      }),
+    ),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: Math.max(10, scale.tiny - 2),
+          color: '#9ca3af',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        },
+      },
+      h('div', { style: { display: 'flex' } }, `进度 ${card.progressPct}%`),
+      h('div', { style: { display: 'flex' } }, `阈值 ${card.thresholdText}`),
     ),
   );
 }
 
-function thresholdSection(model, scale) {
-  const rows = thresholdRows(model);
+function analysisItem(item, scale) {
+  const tagStyle = item.isCategory ? categoryTagStyle(item.variant) : normalTagStyle(item.variant);
+  return h(
+    'div',
+    {
+      style: {
+        display: 'flex',
+        gap: Math.max(10, scale.gap - 8),
+        alignItems: 'center',
+        width: '100%',
+      },
+    },
+    h(
+      'div',
+      {
+          style: {
+            display: 'flex',
+            width: scale.tagWidth,
+            flexShrink: 0,
+            marginTop: 0,
+            alignSelf: 'center',
+          },
+        },
+      h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            width: '100%',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '6px 8px',
+            borderRadius: 10,
+            border: `1px solid ${tagStyle.border}`,
+            background: tagStyle.bg,
+            color: tagStyle.fg,
+            fontSize: Math.max(9, scale.tiny - 2),
+            letterSpacing: '0.04em',
+            fontWeight: item.isCategory ? 800 : 600,
+            textTransform: 'uppercase',
+            textAlign: 'center',
+            lineHeight: 1.2,
+          },
+        },
+        item.tag,
+      ),
+    ),
+    h(
+      'div',
+      {
+        style: {
+            display: 'flex',
+            flex: 1,
+            minWidth: 0,
+            fontSize: Math.max(14, scale.small - 1),
+            color: '#475569',
+            lineHeight: 1.55,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          },
+      },
+      item.text,
+    ),
+  );
+}
 
+function sourceCard(card, scale) {
+  const tradeable = card.tradeable;
   return h(
     'div',
     {
       style: {
         display: 'flex',
         flexDirection: 'column',
-        gap: scale.cardGridGap,
-        width: '100%',
-        height: '100%',
-        minWidth: 0,
-      },
-    },
-    ...rows.map((row) =>
-      h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: Math.max(6, scale.cardGridGap - 2), width: '100%', minWidth: 0 } },
-        h(
-          'div',
-          {
-            style: {
-              display: 'flex',
-              fontSize: scale.metric - 4,
-              color: '#64748b',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontWeight: 700,
-              paddingLeft: 2,
-            },
-          },
-          row.title,
-        ),
-        h(
-          'div',
-          { style: { display: 'flex', gap: scale.cardGridGap, height: scale.cardMinHeight, width: '100%', minWidth: 0 } },
-          ...row.items.map((item) =>
-            h(
-              'div',
-              { style: { display: 'flex', flex: 1, minWidth: 0, height: '100%' } },
-              row.kind === 'summary'
-                ? consensusSummaryCard(item, scale)
-                : thresholdCard(item, scale),
-            ),
-          ),
-          ...Array.from({ length: Math.max(0, 2 - row.items.length) }).map(() =>
-            h('div', { style: { display: 'flex', flex: 1, minWidth: 0, height: '100%' } }),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-function buildTree(model, meta) {
-  const enrichedModel = { ...model, reportTimeCN: meta.reportTimeCN };
-  const baseScale = chooseScale(enrichedModel);
-  const scale = fitScaleToPage(enrichedModel, baseScale);
-  const analysisScale = resolveAnalysisScale(enrichedModel, scale);
-  const metricRows = Math.max(1, thresholdRows(enrichedModel).length);
-  const metricDockSize = metricDockHeight(metricRows, scale);
-  const bottomRailHeight = resolveBottomRailHeight(scale);
-  return h(
-    'div',
-    {
-      style: {
-        width: '1484px',
-        height: '1898px',
-        display: 'flex',
-        background: '#f8fafc',
-        color: '#15212c',
-        fontFamily: 'Noto Sans SC',
-        padding: '30px',
-        boxSizing: 'border-box',
+        gap: Math.max(10, scale.gap - 8),
+        marginTop: Math.max(4, scale.gap - 12),
       },
     },
     h(
       'div',
       {
         style: {
-          width: '100%',
-          height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: 24,
-          boxShadow: '0 2px 10px rgba(15,23,42,0.06)',
+          gap: 0,
+          borderRadius: 14,
+          border: '1px solid rgba(251,113,133,0.16)',
+          background: 'linear-gradient(135deg, rgba(255,241,242,0.92), rgba(255,255,255,0.66))',
+          boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
+          position: 'relative',
           overflow: 'hidden',
         },
       },
-      toolbar({
-        center: `${meta.runner}`,
-        avatarDataUri: meta.avatarDataUri,
-        height: scale.barHeight,
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 4,
+          background: '#fb7185',
+        },
       }),
       h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', padding: '36px 46px', flexGrow: 1 } },
+        {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '18px 18px 14px 22px',
+          },
+        },
         h(
           'div',
-          { style: { display: 'flex', flexDirection: 'column', gap: Math.max(6, scale.gap - 8), maxWidth: '96%' } },
-          h('div', { style: { display: 'flex', fontSize: scale.hero, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1.05, flexWrap: 'wrap' } }, model.symbol),
-          h('div', { style: { display: 'flex', fontSize: Math.max(20, Math.round(scale.hero * 0.64)), fontWeight: 700, color: '#334155', letterSpacing: '-0.01em', lineHeight: 1.15, flexWrap: 'wrap' } }, meta.reportTimeCN),
+          {
+            style: {
+              display: 'flex',
+              width: 28,
+              height: 28,
+              borderRadius: 999,
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#ffe4e6',
+              color: '#f43f5e',
+              flexShrink: 0,
+            },
+          },
+          '!',
         ),
-        h('div', { style: { display: 'flex', height: Math.max(14, scale.gap - 3) } }),
         h(
           'div',
-          { style: { display: 'flex', gap: Math.max(12, scale.gap - 5), alignItems: 'center', flexWrap: 'wrap' } },
-          chip(`ACTION ${model.action}`, { background: '#fee2e2', color: '#7f1d1d', border: '#fecaca', fontSize: scale.chip }),
-          chip(`REASON ${model.reason}`, { background: '#f1f5f9', color: '#334155', border: '#e2e8f0', fontSize: scale.chip }),
-          chip(`DIRECTION ${model.direction}`, { background: '#ecfeff', color: '#155e75', border: '#bae6fd', fontSize: scale.chip }),
-        ),
-        h('div', { style: { display: 'flex', height: Math.max(12, scale.gap - 5) } }),
-        sourceCard(model.sourceCard, scale),
-        h('div', { style: { display: 'flex', height: Math.max(12, scale.gap - 5) } }),
-        h('div', { style: { display: 'flex', borderTop: '1px solid #e2e8f0' } }),
-        h(
-          'div',
-          { style: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, paddingTop: Math.max(14, scale.gap - 3) } },
+          {
+            style: {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              flex: 1,
+              minWidth: 0,
+            },
+          },
           h(
             'div',
-            { style: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, overflow: 'hidden' } },
-            section('Analysis', model.analysisLines, analysisScale, '#94a3b8'),
+            {
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              },
+            },
+            h('div', {
+              style: {
+                display: 'flex',
+                fontSize: Math.max(18, scale.small),
+                color: '#1f2937',
+                fontWeight: 800,
+              },
+            }, '总判定结果'),
+            h('div', {
+              style: {
+                display: 'flex',
+                marginLeft: 'auto',
+                padding: '6px 12px',
+                borderRadius: 8,
+                background: tradeable ? '#10b981' : '#f43f5e',
+                color: '#ffffff',
+                fontWeight: 900,
+                fontSize: Math.max(11, scale.tiny + 1),
+                letterSpacing: '0.08em',
+              },
+            }, card.verdictText),
           ),
-          h('div', { style: { display: 'flex', borderTop: '1px dashed #cbd5e1', flexShrink: 0, marginTop: Math.max(10, scale.gap - 6) } }),
-          h(
-            'div',
-            { style: { display: 'flex', width: '100%', minWidth: 0, height: metricDockSize, flexShrink: 0, marginTop: Math.max(10, scale.gap - 6) } },
-            thresholdSection(model, scale),
-          ),
-          h('div', { style: { display: 'flex', height: bottomRailHeight, flexShrink: 0 } }),
+          h('div', {
+            style: {
+              display: 'flex',
+              paddingLeft: 0,
+              fontSize: Math.max(15, scale.small - 1),
+              color: '#334155',
+              fontWeight: 700,
+            },
+          }, `最终否决来源: ${card.sourceLabel}`),
         ),
       ),
+    ),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: Math.max(8, scale.gap - 12),
+          borderRadius: 14,
+          border: '1px solid rgba(203,213,225,0.8)',
+          background: 'rgba(248,250,252,0.72)',
+          boxShadow: '0 2px 8px rgba(15,23,42,0.03)',
+          padding: '16px 18px',
+        },
+      },
+      ...card.lines.map((line) => h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+            width: '100%',
+          },
+        },
+        h('div', {
+          style: {
+            display: 'flex',
+            width: 6,
+            height: 6,
+            marginTop: 7,
+            borderRadius: 999,
+            flexShrink: 0,
+            background: line.note ? '#3b82f6' : '#94a3b8',
+          },
+        }),
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              flex: 1,
+              minWidth: 0,
+              fontSize: Math.max(12, scale.tiny),
+              color: line.note ? '#2563eb' : '#475569',
+              fontWeight: line.note ? 700 : 500,
+              lineHeight: 1.45,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            },
+          },
+          line.text,
+        ),
+      )),
     ),
   );
 }
 
-async function resolveRunnerAndTime() {
-  const config = await fs.readFile(CONFIG_PATH, 'utf8');
-  const match = config.match(/^exec_api_key\s*=\s*"(.+)"$/m);
-  let runner = 'UNKNOWN';
-  if (match) {
-    const raw = match[1].trim();
-    const envRef = raw.match(/^\$\{(.+)\}$/);
-    if (envRef) {
-      runner = (process.env[envRef[1]] || envRef[1]).toUpperCase();
-    } else {
-      runner = raw.toUpperCase();
-    }
-  }
-  const reportTime = new Intl.DateTimeFormat('en-GB', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Shanghai',
-  }).format(new Date()).replace(',', '');
-  const reportTimeCN = new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Shanghai',
-  }).format(new Date()).replace(/\//g, '-');
-  const avatarDataUri = await loadAuthorAvatar();
-  return { runner, reportTime, reportTimeCN, avatarDataUri };
+function buildTree(model, meta, canvasHeight) {
+  const scale = resolveScale(model);
+
+  return h(
+    'div',
+    {
+      style: {
+        width: `${CANVAS_WIDTH}px`,
+        height: `${canvasHeight}px`,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-start',
+        padding: '0',
+        boxSizing: 'border-box',
+        fontFamily: 'Noto Sans SC',
+        color: '#1f2937',
+      },
+    },
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          width: `${CARD_WIDTH}px`,
+          flexDirection: 'column',
+          borderRadius: 24,
+          background: '#E8E6E1',
+          position: 'relative',
+          overflow: 'hidden',
+        },
+      },
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `url(${PAPER_TEXTURE_DATA_URI})`,
+          backgroundSize: '200px 200px',
+          opacity: 0.1,
+        },
+      }),
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(135deg, rgba(0,0,0,0.03), rgba(255,255,255,0), rgba(0,0,0,0.015))',
+          opacity: 0.65,
+        },
+      }),
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          width: 260,
+          height: 1,
+          left: -36,
+          top: 220,
+          background: 'rgba(15,23,42,0.05)',
+          transform: 'rotate(15deg)',
+        },
+      }),
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          width: 320,
+          height: 1,
+          right: 40,
+          top: 540,
+          background: 'rgba(255,255,255,0.8)',
+          transform: 'rotate(-12deg)',
+        },
+      }),
+      h('div', {
+        style: {
+          display: 'flex',
+          position: 'absolute',
+          width: 320,
+          height: 1,
+          right: 40,
+          top: 542,
+          background: 'rgba(15,23,42,0.04)',
+          transform: 'rotate(-12deg)',
+        },
+      }),
+      h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            position: 'relative',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 38px',
+            height: scale.headerHeight,
+            borderBottom: '1px solid rgba(203,213,225,0.7)',
+          },
+        },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          meta.logoDataUri
+            ? h('img', {
+              src: meta.logoDataUri,
+              width: 38,
+              height: 38,
+              style: { display: 'flex', width: 38, height: 38, objectFit: 'contain' },
+            })
+            : h('div', {
+              style: {
+                display: 'flex', width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', background: '#cbd5e1', color: '#0f172a', fontWeight: 800,
+              },
+            }, 'B'),
+          h('div', {
+            style: {
+              display: 'flex', fontSize: Math.max(18, scale.small), letterSpacing: '0.12em', fontWeight: 800, color: '#0f172a',
+            },
+          }, 'BRALE'),
+        ),
+        h('div', {
+          style: {
+            display: 'flex',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            color: '#9ca3af',
+            fontSize: Math.max(10, scale.tiny - 1),
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          },
+        }, meta.runner),
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          h('div', {
+            style: {
+              display: 'flex', fontSize: Math.max(12, scale.small - 3), color: '#334155', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontWeight: 700,
+            },
+          }, '@lauk_liu'),
+          meta.avatarDataUri
+            ? h('img', {
+              src: meta.avatarDataUri,
+              width: scale.avatar,
+              height: scale.avatar,
+              style: { display: 'flex', width: scale.avatar, height: scale.avatar, borderRadius: 999, border: '2px solid #ffffff', objectFit: 'cover', background: '#f3f4f6' },
+            })
+            : h('div', {
+              style: {
+                display: 'flex', width: scale.avatar, height: scale.avatar, borderRadius: 999, alignItems: 'center', justifyContent: 'center', background: '#e5e7eb', color: '#374151', fontWeight: 700,
+              },
+            }, 'L'),
+        ),
+      ),
+      h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            position: 'relative',
+            flexDirection: 'column',
+            padding: '24px 34px 34px',
+            gap: Math.max(22, scale.gap),
+          },
+        },
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: Math.max(12, scale.gap - 10) } },
+          h(
+            'div',
+            {
+              style: {
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              },
+            },
+            h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, alignItems: 'flex-start' } },
+              h('div', {
+                style: {
+                  display: 'flex', fontSize: Math.max(36, scale.title - 6), lineHeight: 1.1, letterSpacing: '-0.03em', color: '#0f172a', fontWeight: 900, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                },
+              }, model.title),
+              h(
+                'div',
+                {
+                  style: {
+                    display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280', fontSize: Math.max(13, scale.small - 4), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  },
+                },
+                h('div', { style: { display: 'flex', width: 8, height: 8, borderRadius: 999, background: '#94a3b8', flexShrink: 0 } }),
+                h('div', { style: { display: 'flex' } }, model.reportTimeCN),
+              ),
+            ),
+          ),
+          sourceCard(model.sourceCard, scale),
+        ),
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: Math.max(18, scale.gap - 6) } },
+          h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: Math.max(10, scale.gap - 12) } },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: Math.max(16, scale.small - 2), color: '#334155', letterSpacing: '0.05em', fontWeight: 800, textTransform: 'uppercase' } },
+              h('div', { style: { display: 'flex', width: 10, height: 10, borderRadius: 999, background: '#64748b' } }),
+              h('div', { style: { display: 'flex' } }, '局部阈值证据'),
+            ),
+            h(
+              'div',
+              { style: { display: 'flex', flexWrap: 'wrap', width: '100%', gap: Math.max(12, scale.gap - 10) } },
+              ...model.progressCards.map((card) => h(
+                'div',
+                { style: { display: 'flex', width: '48.8%', minWidth: 0 } },
+                progressCard(card, scale),
+              )),
+            ),
+          ),
+          h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: Math.max(10, scale.gap - 12) } },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: Math.max(16, scale.small - 2), color: '#334155', letterSpacing: '0.05em', fontWeight: 800, textTransform: 'uppercase' } },
+              h('div', { style: { display: 'flex', width: 10, height: 10, borderRadius: 999, background: '#64748b' } }),
+              h('div', { style: { display: 'flex' } }, 'Analysis Report'),
+            ),
+            h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: Math.max(8, scale.gap - 12) } },
+              ...model.analysisItems.map((item) => analysisItem(item, scale)),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 async function loadAuthorAvatar() {
@@ -1104,6 +1122,33 @@ async function loadAuthorAvatar() {
     return `data:image/jpeg;base64,${raw.toString('base64')}`;
   } catch {
     return '';
+  }
+}
+
+async function loadBraleLogo() {
+  try {
+    await fs.access(BRALE_LOGO_PATH);
+    const raw = await fs.readFile(BRALE_LOGO_PATH);
+    return `data:image/svg+xml;base64,${raw.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+async function resolveRunner() {
+  try {
+    const config = await fs.readFile(CONFIG_PATH, 'utf8');
+    const match = config.match(/^exec_api_key\s*=\s*"(.+)"$/m);
+    if (!match) return 'UNKNOWN';
+
+    const raw = match[1].trim();
+    const envRef = raw.match(/^\$\{(.+)\}$/);
+    if (!envRef) {
+      return raw.toUpperCase();
+    }
+    return (process.env[envRef[1]] || envRef[1]).toUpperCase();
+  } catch {
+    return 'UNKNOWN';
   }
 }
 
@@ -1119,33 +1164,77 @@ async function loadFonts() {
   ];
 }
 
-async function main() {
-  const inputPath = path.resolve(process.env.OG_INPUT ?? process.argv[2] ?? DEFAULT_INPUT);
-  const outputPath = path.resolve(process.env.OG_OUTPUT ?? process.argv[3] ?? DEFAULT_OUTPUT);
+export async function renderCard({ inputPath, outputPath }) {
   await fs.access(inputPath);
   await fs.access(path.resolve(__dirname, 'fonts/NotoSansCJKsc-Regular.otf'));
   await fs.access(path.resolve(__dirname, 'fonts/NotoSansCJKsc-Bold.otf'));
 
   const raw = JSON.parse(await fs.readFile(inputPath, 'utf8'));
   const model = buildModel(raw);
-  const meta = await resolveRunnerAndTime();
-  const fonts = await loadFonts();
+  const renderHeight = estimateRenderHeight(model);
+  const [runner, avatarDataUri, logoDataUri, fonts] = await Promise.all([
+    resolveRunner(),
+    loadAuthorAvatar(),
+    loadBraleLogo(),
+    loadFonts(),
+  ]);
 
-  const svg = await satori(buildTree(model, meta), {
-    width: 1484,
-    height: 1898,
+  const svg = await satori(buildTree(model, {
+    runner,
+    avatarDataUri,
+    logoDataUri,
+  }, renderHeight), {
+    width: CANVAS_WIDTH,
+    height: renderHeight,
     fonts,
   });
 
   const resvg = new Resvg(svg, {
-    fitTo: { mode: 'width', value: 1484 },
-    background: 'white',
+    fitTo: { mode: 'width', value: CANVAS_WIDTH },
   });
-  await fs.writeFile(outputPath, resvg.render().asPng());
-  console.log(outputPath);
+
+  const bbox = resvg.getBBox();
+  if (bbox) {
+    const cropHeight = clamp(
+      Math.ceil(bbox.y + bbox.height + 2),
+      1,
+      renderHeight,
+    );
+    bbox.x = 0;
+    bbox.y = 0;
+    bbox.width = CANVAS_WIDTH;
+    bbox.height = cropHeight;
+    resvg.cropByBBox(bbox);
+  }
+
+  const rendered = resvg.render();
+
+  await fs.writeFile(outputPath, rendered.asPng());
+  return {
+    outputPath,
+    width: rendered.width,
+    height: rendered.height,
+    estimatedHeight: renderHeight,
+  };
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function main() {
+  const inputPath = path.resolve(process.env.OG_INPUT ?? process.argv[2] ?? DEFAULT_INPUT);
+  const outputPath = path.resolve(process.env.OG_OUTPUT ?? process.argv[3] ?? DEFAULT_OUTPUT);
+  const result = await renderCard({ inputPath, outputPath });
+  console.log(result.outputPath);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+export {
+  CANVAS_WIDTH,
+  CARD_WIDTH,
+  DEFAULT_RENDER_HEIGHT,
+  estimateRenderHeight,
+};
