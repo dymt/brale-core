@@ -45,7 +45,7 @@ func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenA
 	if role.Temperature != nil {
 		temp = *role.Temperature
 	}
-	modelCfg := sys.LLMModels[role.Model]
+	modelCfg, _ := config.LookupLLMModelConfig(sys, role.Model)
 	timeoutSec := 30
 	if modelCfg.TimeoutSec != nil {
 		timeoutSec = *modelCfg.TimeoutSec

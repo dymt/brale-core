@@ -198,7 +198,7 @@ rebuild: check prepare
 stop:
 	@$(STACK_ENV) $(COMPOSE) stop brale freqtrade
 
-restart: start
+restart: apply-config
 
 down:
 	@$(STACK_ENV) $(COMPOSE) down --remove-orphans

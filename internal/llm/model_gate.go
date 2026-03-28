@@ -234,5 +234,5 @@ func (g *modelGate) markAcquire() {
 }
 
 func normalizeGateKey(key string) string {
-	return strings.TrimSpace(key)
+	return strings.ToLower(strings.TrimSpace(key))
 }

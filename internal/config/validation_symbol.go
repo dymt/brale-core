@@ -168,7 +168,7 @@ func ValidateSymbolLLMModels(sys SystemConfig, cfg SymbolConfig) error {
 		if model == "" {
 			continue
 		}
-		if _, ok := sys.LLMModels[model]; !ok {
+		if _, ok := LookupLLMModelConfig(sys, model); !ok {
 			return validationErrorf("%s.model=%s not found in system llm_models", role.path, model)
 		}
 	}
