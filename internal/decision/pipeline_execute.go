@@ -276,7 +276,8 @@ func (p *Pipeline) handleSymbol(ctx context.Context, res SymbolResult, snapID ui
 	if err != nil {
 		logger.Error("fsm eval failed", zap.Error(err))
 		p.notifyError(ctx, err)
-		return out, nil
+		out.Err = err
+		return out, err
 	}
 	if fsmHit.Name != "" {
 		logger.Debug("fsm rule hit", zap.String("rule", fsmHit.Name))

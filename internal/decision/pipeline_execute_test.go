@@ -10,7 +10,10 @@ import (
 	"brale-core/internal/config"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/decision/decisionmode"
+	"brale-core/internal/decision/features"
+	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/fund"
+	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
 	"brale-core/internal/llm"
 	"brale-core/internal/snapshot"
@@ -184,5 +187,61 @@ func TestHandleSymbolErrorNotificationIncludesRoundID(t *testing.T) {
 	}
 	if !strings.Contains(message, "symbol=ETHUSDT stage=structure") {
 		t.Fatalf("message=%q missing stage details", message)
+	}
+}
+
+func TestHandleSymbolReturnsErrorOnFSMFailure(t *testing.T) {
+	notifier := &countingNotifier{}
+	p := &Pipeline{
+		Runner:   &Runner{},
+		Notifier: notifier,
+	}
+	out, err := p.handleSymbol(context.Background(), SymbolResult{
+		Symbol: "ETHUSDT",
+		Gate: fund.GateDecision{
+			GlobalTradeable: true,
+			GateReason:      "ALLOW",
+		},
+		Plan: &execution.ExecutionPlan{Valid: true},
+	}, 0, snapshot.MarketSnapshot{}, features.CompressionResult{}, fsm.StateFlat, "")
+	if err == nil {
+		t.Fatal("expected fsm error")
+	}
+	if !strings.Contains(err.Error(), "ruleflow result missing") {
+		t.Fatalf("err=%v want ruleflow result missing", err)
+	}
+	if !errors.Is(out.Err, err) {
+		t.Fatalf("out.Err=%v want=%v", out.Err, err)
+	}
+	if len(notifier.messages) != 1 {
+		t.Fatalf("notifier messages=%v want 1 message", notifier.messages)
+	}
+}
+
+func TestHandleInPositionReturnsErrorOnFSMFailure(t *testing.T) {
+	notifier := &countingNotifier{}
+	p := &Pipeline{
+		Notifier: notifier,
+	}
+	out, err := p.handleInPosition(context.Background(), zap.NewNop(), PersistResult{Symbol: "ETHUSDT"}, SymbolResult{
+		Symbol:              "ETHUSDT",
+		InPositionEvaluated: true,
+		RuleflowResult: &ruleflow.Result{
+			Gate:       fund.GateDecision{GateReason: "HOLD"},
+			FSMNext:    fsm.StateInPosition,
+			FSMActions: []fsm.Action{{Type: fsm.ActionNoop}},
+		},
+	}, 0, snapshot.MarketSnapshot{}, features.CompressionResult{}, "pos-1")
+	if err == nil {
+		t.Fatal("expected fsm error")
+	}
+	if !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("err=%v want runner is required", err)
+	}
+	if !errors.Is(out.Err, err) {
+		t.Fatalf("out.Err=%v want=%v", out.Err, err)
+	}
+	if len(notifier.messages) != 1 {
+		t.Fatalf("notifier messages=%v want 1 message", notifier.messages)
 	}
 }

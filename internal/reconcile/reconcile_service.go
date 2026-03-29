@@ -3,6 +3,8 @@ package reconcile
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -62,6 +64,7 @@ func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {
 			return err
 		}
 	}
+	reconcileErrs := make([]error, 0)
 	for _, pos := range positions {
 		if symbol != "" && !strings.EqualFold(pos.Symbol, symbol) {
 			continue
@@ -71,8 +74,7 @@ func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {
 		}
 		if err := s.reconcilePosition(ctx, pos, byID, bySymbol); err != nil {
 			logger.Error("reconcile position failed", zap.Error(err), zap.String("position_id", pos.PositionID), zap.String("symbol", pos.Symbol))
-			s.notifyError(ctx, logger, err)
-			return err
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("reconcile position %s (%s): %w", pos.PositionID, pos.Symbol, err))
 		}
 	}
 	if s.Cache != nil {
@@ -82,6 +84,11 @@ func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {
 			}
 			s.Cache.UpdateFromExternal(extPos)
 		}
+	}
+	if len(reconcileErrs) > 0 {
+		err := errors.Join(reconcileErrs...)
+		s.notifyError(ctx, logger, err)
+		return err
 	}
 	logger.Debug("reconcile completed", zap.String("symbol", symbol))
 	return nil
