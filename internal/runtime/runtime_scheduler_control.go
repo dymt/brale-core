@@ -14,8 +14,6 @@ type streamTransition struct {
 }
 
 func (s *RuntimeScheduler) SetScheduledDecision(enable bool) {
-	transition := streamTransition{}
-
 	s.mu.Lock()
 	s.EnableScheduledDecision = enable
 	s.ensureSymbolModesLocked()
@@ -30,17 +28,7 @@ func (s *RuntimeScheduler) SetScheduledDecision(enable bool) {
 		}
 		s.symbolModes[symbol] = SymbolModeObserve
 	}
-	started, currentStreamCtx := s.lifecycleSnapshot()
-	if started {
-		if enable {
-			if !s.allSymbolsIdleLocked() {
-				transition.shouldStart = true
-				transition.streamCtx = currentStreamCtx
-			}
-		} else if len(s.monitorSymbols) == 0 {
-			transition.shouldStop = true
-		}
-	}
+	transition := s.planStreamTransitionLocked()
 	s.mu.Unlock()
 	s.applyStreamTransition(transition)
 }
@@ -49,7 +37,6 @@ func (s *RuntimeScheduler) SetMonitorSymbols(symbols []string) error {
 	if s == nil {
 		return fmt.Errorf("scheduler is nil")
 	}
-	transition := streamTransition{}
 	nextMonitorSymbols := make(map[string]struct{}, len(symbols))
 	for _, symbol := range symbols {
 		if symbol == "" {
@@ -63,21 +50,13 @@ func (s *RuntimeScheduler) SetMonitorSymbols(symbols []string) error {
 
 	s.mu.Lock()
 	s.monitorSymbols = nextMonitorSymbols
-	started, currentStreamCtx := s.lifecycleSnapshot()
-	if started && len(s.monitorSymbols) > 0 {
-		transition.shouldStart = true
-		transition.streamCtx = currentStreamCtx
-	} else if started && !s.EnableScheduledDecision {
-		transition.shouldStop = true
-	}
+	transition := s.planStreamTransitionLocked()
 	s.mu.Unlock()
 	s.applyStreamTransition(transition)
 	return nil
 }
 
 func (s *RuntimeScheduler) ClearMonitorSymbols() {
-	transition := streamTransition{}
-
 	s.mu.Lock()
 	if s.monitorSymbols == nil {
 		s.mu.Unlock()
@@ -86,10 +65,7 @@ func (s *RuntimeScheduler) ClearMonitorSymbols() {
 	for symbol := range s.monitorSymbols {
 		delete(s.monitorSymbols, symbol)
 	}
-	started, _ := s.lifecycleSnapshot()
-	if started && !s.EnableScheduledDecision {
-		transition.shouldStop = true
-	}
+	transition := s.planStreamTransitionLocked()
 	s.mu.Unlock()
 	s.applyStreamTransition(transition)
 }
@@ -104,8 +80,6 @@ func (s *RuntimeScheduler) SetSymbolMode(symbol string, mode SymbolMode) error {
 	if s == nil {
 		return fmt.Errorf("scheduler is nil")
 	}
-	transition := streamTransition{}
-
 	s.mu.Lock()
 	if s.symbolModes == nil {
 		s.symbolModes = make(map[string]SymbolMode)
@@ -115,17 +89,7 @@ func (s *RuntimeScheduler) SetSymbolMode(symbol string, mode SymbolMode) error {
 		return fmt.Errorf("symbol %s not found", symbol)
 	}
 	s.symbolModes[symbol] = mode
-	started, currentStreamCtx := s.lifecycleSnapshot()
-	if started {
-		if mode == SymbolModeOff || mode == SymbolModeObserve {
-			if s.allSymbolsIdleLocked() && len(s.monitorSymbols) == 0 {
-				transition.shouldStop = true
-			}
-		} else if s.EnableScheduledDecision || len(s.monitorSymbols) > 0 {
-			transition.shouldStart = true
-			transition.streamCtx = currentStreamCtx
-		}
-	}
+	transition := s.planStreamTransitionLocked()
 	s.mu.Unlock()
 	s.applyStreamTransition(transition)
 	return nil
@@ -175,6 +139,27 @@ func (s *RuntimeScheduler) ensureSymbolModesLocked() {
 			s.symbolModes[symbol] = SymbolModeTrade
 		}
 	}
+}
+
+func (s *RuntimeScheduler) shouldPriceStreamBeRunningLocked() bool {
+	if len(s.monitorSymbols) > 0 {
+		return true
+	}
+	if !s.EnableScheduledDecision {
+		return false
+	}
+	return !s.allSymbolsIdleLocked()
+}
+
+func (s *RuntimeScheduler) planStreamTransitionLocked() streamTransition {
+	started, currentStreamCtx := s.lifecycleSnapshot()
+	if !started {
+		return streamTransition{}
+	}
+	if s.shouldPriceStreamBeRunningLocked() {
+		return streamTransition{shouldStart: true, streamCtx: currentStreamCtx}
+	}
+	return streamTransition{shouldStop: true}
 }
 
 func (s *RuntimeScheduler) applyStreamTransition(transition streamTransition) {

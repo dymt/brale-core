@@ -19,7 +19,25 @@ func (defaultRuntimeTaskExecutor) Execute(ctx context.Context, scheduler *Runtim
 	if scheduler == nil {
 		return
 	}
-	logger := scheduler.Logger.With(zap.String("symbol", task.Symbol), zap.String("task", string(task.Type)))
+	fields := []zap.Field{
+		zap.String("symbol", task.Symbol),
+		zap.String("task", string(task.Type)),
+	}
+	if task.Type == TaskWebhookEvent {
+		if strings.TrimSpace(task.WebhookEventType) != "" {
+			fields = append(fields, zap.String("webhook_event_type", strings.TrimSpace(task.WebhookEventType)))
+		}
+		if task.WebhookTradeID > 0 {
+			fields = append(fields, zap.Int("webhook_trade_id", task.WebhookTradeID))
+		}
+		if task.WebhookTimestamp > 0 {
+			fields = append(fields, zap.Int64("webhook_timestamp", task.WebhookTimestamp))
+		}
+		if strings.TrimSpace(task.WebhookExitReason) != "" {
+			fields = append(fields, zap.String("webhook_exit_reason", strings.TrimSpace(task.WebhookExitReason)))
+		}
+	}
+	logger := scheduler.Logger.With(fields...)
 	rt, ok := scheduler.Symbols[task.Symbol]
 	if !ok {
 		logger.Error("symbol runtime missing")

@@ -91,9 +91,31 @@ func (s *RuntimeScheduler) runPeriodicTaskLoop(ctx context.Context, interval tim
 }
 
 func (s *RuntimeScheduler) enqueueTaskWithWarning(task RuntimeTask, warnMessage string) {
-	if err := s.Enqueue(task); err != nil && s.Logger != nil {
-		s.Logger.Warn(warnMessage, zap.String("symbol", task.Symbol), zap.Error(err))
+	if !s.markTaskPending(task) {
+		coalescedCount := s.recordCoalescedTask(task)
+		if s.Logger != nil {
+			s.Logger.Debug("task coalesced",
+				zap.String("symbol", task.Symbol),
+				zap.String("task_type", string(task.Type)),
+				zap.Int64("coalesced_count", coalescedCount),
+			)
+		}
+		return
 	}
+	if err := s.Enqueue(task); err != nil {
+		s.clearPendingTask(task)
+		if s.Logger != nil {
+			dropCount := s.recordDroppedTask(task)
+			s.Logger.Warn(warnMessage,
+				zap.String("symbol", task.Symbol),
+				zap.String("task_type", string(task.Type)),
+				zap.Int64("drop_count", dropCount),
+				zap.Error(err),
+			)
+		}
+		return
+	}
+	s.resetDroppedTaskCount(task)
 }
 
 func nextBarClose(now time.Time, interval time.Duration) time.Time {

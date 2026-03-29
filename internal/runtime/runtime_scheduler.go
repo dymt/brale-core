@@ -47,6 +47,11 @@ type RuntimeScheduler struct {
 
 	symbolModes    map[string]SymbolMode
 	monitorSymbols map[string]struct{}
+
+	taskStateMu         sync.Mutex
+	pendingTaskKeys     map[string]struct{}
+	droppedTaskCounts   map[string]int64
+	coalescedTaskCounts map[string]int64
 }
 
 func (s *RuntimeScheduler) Start(ctx context.Context) error {
@@ -70,8 +75,12 @@ func (s *RuntimeScheduler) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.symbolWorkers = make(map[string]*WorkerPool[RuntimeTask], len(s.Symbols))
 	s.barWorkers = make([]*WorkerPool[RuntimeTask], 0, len(s.Symbols))
+	s.pendingTaskKeys = make(map[string]struct{}, len(s.Symbols)*3)
+	s.droppedTaskCounts = make(map[string]int64, len(s.Symbols)*3)
+	s.coalescedTaskCounts = make(map[string]int64, len(s.Symbols)*3)
 	s.mu.Lock()
 	s.ensureSymbolModesLocked()
+	shouldStartStream := s.shouldPriceStreamBeRunningLocked()
 	s.mu.Unlock()
 	for symbol := range s.Symbols {
 		s.Symbols[symbol].StartServices(runCtx)
@@ -87,7 +96,7 @@ func (s *RuntimeScheduler) Start(ctx context.Context) error {
 		s.PriceTickInterval = time.Second
 	}
 	s.setLifecycle(true, runCtx, cancel)
-	if s.EnableScheduledDecision {
+	if shouldStartStream {
 		s.startPriceStream(runCtx)
 	}
 	s.startLoops(runCtx)
@@ -122,7 +131,86 @@ func (s *RuntimeScheduler) Enqueue(task RuntimeTask) error {
 }
 
 func (s *RuntimeScheduler) handleTask(ctx context.Context, task RuntimeTask) {
+	defer s.clearPendingTask(task)
 	s.taskExecutor().Execute(ctx, s, task)
+}
+
+func (s *RuntimeScheduler) shouldCoalesceTask(task RuntimeTask) bool {
+	switch task.Type {
+	case TaskBarDecide, TaskPriceTick, TaskReconcile:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *RuntimeScheduler) taskStateKey(task RuntimeTask) string {
+	return task.Symbol + "|" + string(task.Type)
+}
+
+func (s *RuntimeScheduler) markTaskPending(task RuntimeTask) bool {
+	if s == nil || !s.shouldCoalesceTask(task) {
+		return true
+	}
+	key := s.taskStateKey(task)
+	s.taskStateMu.Lock()
+	defer s.taskStateMu.Unlock()
+	if s.pendingTaskKeys == nil {
+		s.pendingTaskKeys = make(map[string]struct{})
+	}
+	if _, exists := s.pendingTaskKeys[key]; exists {
+		return false
+	}
+	s.pendingTaskKeys[key] = struct{}{}
+	return true
+}
+
+func (s *RuntimeScheduler) clearPendingTask(task RuntimeTask) {
+	if s == nil || !s.shouldCoalesceTask(task) {
+		return
+	}
+	key := s.taskStateKey(task)
+	s.taskStateMu.Lock()
+	defer s.taskStateMu.Unlock()
+	delete(s.pendingTaskKeys, key)
+}
+
+func (s *RuntimeScheduler) recordDroppedTask(task RuntimeTask) int64 {
+	if s == nil {
+		return 0
+	}
+	key := s.taskStateKey(task)
+	s.taskStateMu.Lock()
+	defer s.taskStateMu.Unlock()
+	if s.droppedTaskCounts == nil {
+		s.droppedTaskCounts = make(map[string]int64)
+	}
+	s.droppedTaskCounts[key]++
+	return s.droppedTaskCounts[key]
+}
+
+func (s *RuntimeScheduler) resetDroppedTaskCount(task RuntimeTask) {
+	if s == nil {
+		return
+	}
+	key := s.taskStateKey(task)
+	s.taskStateMu.Lock()
+	defer s.taskStateMu.Unlock()
+	delete(s.droppedTaskCounts, key)
+}
+
+func (s *RuntimeScheduler) recordCoalescedTask(task RuntimeTask) int64 {
+	if s == nil {
+		return 0
+	}
+	key := s.taskStateKey(task)
+	s.taskStateMu.Lock()
+	defer s.taskStateMu.Unlock()
+	if s.coalescedTaskCounts == nil {
+		s.coalescedTaskCounts = make(map[string]int64)
+	}
+	s.coalescedTaskCounts[key]++
+	return s.coalescedTaskCounts[key]
 }
 
 func (s *RuntimeScheduler) validate() error {

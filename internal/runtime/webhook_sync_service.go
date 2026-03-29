@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type WebhookSyncService struct {
 	mu              sync.Mutex
 	openNotified    map[int]int64
 	lastExitOrderID map[int]exitNotifyState
+	workerQueues    []chan WebhookEvent
 }
 
 type exitNotifyState struct {
@@ -75,6 +77,7 @@ func NewWebhookSyncService(cfg config.WebhookConfig, dispatcher TaskDispatcher) 
 		WorkerCount:     workers,
 		openNotified:    make(map[int]int64),
 		lastExitOrderID: make(map[int]exitNotifyState),
+		workerQueues:    newWebhookWorkerQueues(workers, queueSize),
 	}
 }
 
@@ -118,13 +121,14 @@ func (s *WebhookSyncService) Start(ctx context.Context) {
 	if s == nil {
 		return
 	}
+	go s.dispatch(ctx)
 	for i := 0; i < s.WorkerCount; i++ {
-		go s.worker(ctx)
+		go s.worker(ctx, s.workerQueue(i))
 	}
 }
 
-func (s *WebhookSyncService) worker(ctx context.Context) {
-	if s == nil || s.Dispatcher == nil || s.Queue == nil {
+func (s *WebhookSyncService) dispatch(ctx context.Context) {
+	if s == nil || s.Queue == nil {
 		return
 	}
 	for {
@@ -135,11 +139,73 @@ func (s *WebhookSyncService) worker(ctx context.Context) {
 			if !ok {
 				return
 			}
+			queue := s.workerQueueForSymbol(evt.Symbol)
+			if queue == nil {
+				if err := s.process(ctx, evt); err != nil {
+					logging.FromContext(ctx).Named("webhook").Warn("webhook event process failed", zap.Error(err))
+				}
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case queue <- evt:
+			}
+		}
+	}
+}
+
+func (s *WebhookSyncService) worker(ctx context.Context, queue <-chan WebhookEvent) {
+	if s == nil || s.Dispatcher == nil || queue == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-queue:
+			if !ok {
+				return
+			}
 			if err := s.process(ctx, evt); err != nil {
 				logging.FromContext(ctx).Named("webhook").Warn("webhook event process failed", zap.Error(err))
 			}
 		}
 	}
+}
+
+func newWebhookWorkerQueues(workers int, queueSize int) []chan WebhookEvent {
+	if workers <= 0 {
+		workers = 1
+	}
+	queues := make([]chan WebhookEvent, 0, workers)
+	for i := 0; i < workers; i++ {
+		queues = append(queues, make(chan WebhookEvent, queueSize))
+	}
+	return queues
+}
+
+func (s *WebhookSyncService) workerQueue(workerIdx int) chan WebhookEvent {
+	if s == nil || len(s.workerQueues) == 0 {
+		return nil
+	}
+	if workerIdx < 0 || workerIdx >= len(s.workerQueues) {
+		return nil
+	}
+	return s.workerQueues[workerIdx]
+}
+
+func (s *WebhookSyncService) workerQueueForSymbol(symbol string) chan WebhookEvent {
+	if s == nil || len(s.workerQueues) == 0 {
+		return nil
+	}
+	if len(s.workerQueues) == 1 {
+		return s.workerQueues[0]
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.ToUpper(strings.TrimSpace(symbol))))
+	idx := int(hasher.Sum32() % uint32(len(s.workerQueues)))
+	return s.workerQueues[idx]
 }
 
 func (s *WebhookSyncService) enqueue(evt WebhookEvent) error {
@@ -158,10 +224,19 @@ func (s *WebhookSyncService) process(ctx context.Context, evt WebhookEvent) erro
 	if strings.TrimSpace(evt.Symbol) == "" {
 		return fmt.Errorf("symbol is required")
 	}
-	s.notify(ctx, evt)
-	if err := s.Dispatcher.Enqueue(RuntimeTask{Type: TaskWebhookEvent, Symbol: evt.Symbol}); err != nil {
+	task := RuntimeTask{
+		Type:              TaskWebhookEvent,
+		Symbol:            evt.Symbol,
+		EnqueuedAt:        time.Now(),
+		WebhookEventType:  evt.Type,
+		WebhookTradeID:    evt.TradeID,
+		WebhookTimestamp:  evt.Timestamp,
+		WebhookExitReason: evt.ExitReason,
+	}
+	if err := s.Dispatcher.Enqueue(task); err != nil {
 		return err
 	}
+	s.notify(ctx, evt)
 	return nil
 }
 

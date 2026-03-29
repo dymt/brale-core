@@ -22,9 +22,13 @@ const (
 )
 
 type RuntimeTask struct {
-	Type       TaskType
-	Symbol     string
-	EnqueuedAt time.Time
+	Type              TaskType
+	Symbol            string
+	EnqueuedAt        time.Time
+	WebhookEventType  string
+	WebhookTradeID    int
+	WebhookTimestamp  int64
+	WebhookExitReason string
 }
 
 type TaskDispatcher interface {
