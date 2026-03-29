@@ -119,8 +119,8 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 	if err != nil {
 		return err
 	}
-	closeQty, reason := m.resolveCloseIntent(ctx, pos, plan, trigger, logger)
-	return m.submitCloseIntent(ctx, pos, quote, closeQty, reason, logger)
+	closeQty, positionQty, reason := m.resolveCloseIntent(ctx, pos, plan, trigger, logger)
+	return m.submitCloseIntent(ctx, pos, quote, closeQty, positionQty, reason, logger)
 }
 
 func (m *RiskMonitor) loadActiveRiskContext(ctx context.Context, pos store.PositionRecord) (store.PositionRecord, risk.RiskPlan, market.PriceQuote, bool, error) {
@@ -235,9 +235,9 @@ func shouldMoveStopToBreakeven(side string, currentStop float64, breakevenStop f
 	return currentStop < breakevenStop
 }
 
-func (m *RiskMonitor) resolveCloseIntent(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, logger *zap.Logger) (float64, string) {
+func (m *RiskMonitor) resolveCloseIntent(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, logger *zap.Logger) (float64, float64, string) {
 	statusQty := float64(0)
-	if trigger.Type == "TAKE_PROFIT" && trigger.QtyPct > 0 && trigger.QtyPct < 1 {
+	if shouldFetchStatusAmount(pos, trigger) {
 		qty, ok, err := m.fetchStatusAmount(ctx, pos.ExecutorPositionID)
 		if err != nil {
 			logger.Warn("freqtrade status amount fetch failed", zap.Error(err), zap.Duration("timeout", riskMonitorStatusFetchTimeout))
@@ -245,25 +245,33 @@ func (m *RiskMonitor) resolveCloseIntent(ctx context.Context, pos store.Position
 			statusQty = qty
 		}
 	}
-	closeQty, reason := resolveCloseQty(pos, plan, trigger, statusQty)
-	if pos.Qty > 0 && closeQty > pos.Qty {
-		closeQty = pos.Qty
+	closeQty, positionQty, reason := resolveCloseQty(pos, plan, trigger, statusQty)
+	if closeQty <= 0 {
+		logger.Warn("skip close intent because reliable position quantity is unavailable",
+			zap.String("trigger_type", trigger.Type),
+			zap.String("level_id", trigger.LevelID),
+			zap.Float64("qty_pct", trigger.QtyPct),
+			zap.Float64("position_qty", pos.Qty),
+			zap.Float64("status_qty", statusQty),
+			zap.Float64("plan_initial_qty", plan.InitialQty),
+		)
 	}
-	return closeQty, reason
+	return closeQty, positionQty, reason
 }
 
-func (m *RiskMonitor) submitCloseIntent(ctx context.Context, pos store.PositionRecord, quote market.PriceQuote, closeQty float64, reason string, logger *zap.Logger) error {
+func (m *RiskMonitor) submitCloseIntent(ctx context.Context, pos store.PositionRecord, quote market.PriceQuote, closeQty float64, positionQty float64, reason string, logger *zap.Logger) error {
 	if closeQty <= 0 {
 		return nil
 	}
 	logger.Info("close intent arm",
 		zap.String("reason", reason),
 		zap.Float64("close_qty", closeQty),
-		zap.Float64("position_qty", pos.Qty),
+		zap.Float64("position_qty", positionQty),
+		zap.Float64("stored_position_qty", pos.Qty),
 		zap.Float64("entry_price", pos.AvgEntry),
 		zap.Float64("mark_price", quote.Price),
 	)
-	_, err := m.Positions.ArmClose(ctx, pos, reason, quote.Price, closeQty)
+	_, err := m.Positions.ArmClose(ctx, pos, reason, quote.Price, closeQty, positionQty)
 	if err != nil {
 		logger.Error("arm close failed", zap.Error(err), zap.String("reason", reason))
 		return err
@@ -303,25 +311,22 @@ func fetchFreqtradeStatusAmount(ctx context.Context, executor execution.Executor
 	return 0, false, nil
 }
 
-func resolveCloseQty(pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, statusQty float64) (float64, string) {
-	closeQty := resolveBaseCloseQty(pos)
+func resolveCloseQty(pos store.PositionRecord, plan risk.RiskPlan, trigger risk.RiskTrigger, statusQty float64) (float64, float64, string) {
+	positionQty := resolveBaseCloseQty(pos, statusQty)
+	closeQty := positionQty
 	reason := resolveCloseReason(trigger)
 	if isPartialTakeProfit(trigger) {
-		baseQty := resolvePartialTPBaseQty(pos, plan, statusQty)
+		baseQty := resolvePartialTPBaseQty(plan)
 		if baseQty > 0 {
 			closeQty = baseQty * trigger.QtyPct
+		} else {
+			closeQty = 0
 		}
 	}
 	closeQty = floorCloseQty(closeQty)
-	limitQty := resolveCloseLimitQty(pos, statusQty)
-	closeQty = clipCloseQty(closeQty, limitQty)
-	if isFinalTakeProfit(trigger) && limitQty > 0 {
-		dust := math.Max(limitQty*0.001, closeQtyPrecision)
-		if limitQty-closeQty <= dust {
-			closeQty = limitQty
-		}
-	}
-	return closeQty, reason
+	closeQty = clipCloseQty(closeQty, positionQty)
+	closeQty = cleanupDustCloseQty(closeQty, positionQty)
+	return closeQty, positionQty, reason
 }
 
 const (
@@ -345,12 +350,12 @@ func riskMonitorChildTimeout(ctx context.Context, timeout time.Duration) (contex
 	return context.WithTimeout(ctx, timeout)
 }
 
-func resolveBaseCloseQty(pos store.PositionRecord) float64 {
+func resolveBaseCloseQty(pos store.PositionRecord, statusQty float64) float64 {
+	if statusQty > 0 {
+		return statusQty
+	}
 	if pos.Qty > 0 {
 		return pos.Qty
-	}
-	if pos.InitialStake > 0 {
-		return pos.InitialStake
 	}
 	return 0
 }
@@ -378,21 +383,22 @@ func isFinalTakeProfit(trigger risk.RiskTrigger) bool {
 	return trigger.Type == "TAKE_PROFIT" && trigger.QtyPct == 1.0
 }
 
-func resolvePartialTPBaseQty(pos store.PositionRecord, plan risk.RiskPlan, statusQty float64) float64 {
-	candidates := []float64{statusQty, plan.InitialQty, pos.InitialStake, pos.Qty}
-	for _, candidate := range candidates {
-		if candidate > 0 {
-			return candidate
-		}
+func resolvePartialTPBaseQty(plan risk.RiskPlan) float64 {
+	if plan.InitialQty > 0 {
+		return plan.InitialQty
 	}
 	return 0
 }
 
-func resolveCloseLimitQty(pos store.PositionRecord, statusQty float64) float64 {
-	if statusQty > 0 {
-		return statusQty
+func cleanupDustCloseQty(closeQty, limitQty float64) float64 {
+	if closeQty <= 0 || limitQty <= 0 || closeQty >= limitQty {
+		return closeQty
 	}
-	return pos.Qty
+	dust := math.Max(limitQty*0.001, closeQtyPrecision)
+	if limitQty-closeQty <= dust {
+		return limitQty
+	}
+	return closeQty
 }
 
 func clipCloseQty(closeQty, limitQty float64) float64 {
@@ -407,6 +413,13 @@ func floorCloseQty(value float64) float64 {
 		return value
 	}
 	return math.Floor(value/closeQtyPrecision) * closeQtyPrecision
+}
+
+func shouldFetchStatusAmount(pos store.PositionRecord, trigger risk.RiskTrigger) bool {
+	if pos.Qty <= 0 {
+		return true
+	}
+	return isPartialTakeProfit(trigger)
 }
 
 func (m *RiskMonitor) handlePlanEntry(ctx context.Context, symbol string) error {

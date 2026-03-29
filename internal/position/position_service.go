@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -277,7 +278,7 @@ func (s *PositionService) hasPartialEntryFill(ctx context.Context, pos store.Pos
 	return false, 0, nil
 }
 
-func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, closeQty float64) (string, error) {
+func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, closeQty float64, positionQty float64) (string, error) {
 	if err := s.ensureCloseDeps(); err != nil {
 		return "", err
 	}
@@ -285,7 +286,7 @@ func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord
 		return existingIntentID, err
 	}
 	intentID := uuid.NewString()
-	pos, intentKind, clientOrderID, err := s.prepareCloseOrder(ctx, pos, intentID, reason, triggerPrice, closeQty)
+	pos, intentKind, clientOrderID, err := s.prepareCloseOrder(ctx, pos, intentID, reason, triggerPrice, closeQty, positionQty)
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +320,7 @@ func (s *PositionService) guardArmClose(ctx context.Context, pos store.PositionR
 	return "", false, nil
 }
 
-func (s *PositionService) prepareCloseOrder(ctx context.Context, pos store.PositionRecord, intentID string, reason string, triggerPrice float64, closeQty float64) (store.PositionRecord, string, string, error) {
+func (s *PositionService) prepareCloseOrder(ctx context.Context, pos store.PositionRecord, intentID string, reason string, triggerPrice float64, closeQty float64, positionQty float64) (store.PositionRecord, string, string, error) {
 	pos, err := s.latchClose(ctx, pos, intentID, triggerPrice)
 	if err != nil {
 		return store.PositionRecord{}, "", "", err
@@ -327,7 +328,11 @@ func (s *PositionService) prepareCloseOrder(ctx context.Context, pos store.Posit
 	if s.Cache != nil {
 		pos = s.Cache.HydratePosition(pos)
 	}
-	intentKind := resolveCloseIntentKind(pos, closeQty)
+	effectiveQty := resolveClosePositionQty(pos, positionQty)
+	if effectiveQty > 0 {
+		pos.Qty = effectiveQty
+	}
+	intentKind := resolveCloseIntentKind(effectiveQty, closeQty)
 	clientOrderID := "brale-" + intentID
 	if s.Cache != nil {
 		s.Cache.SetCloseReason(pos.ExecutorPositionID, reason)
@@ -451,11 +456,32 @@ func (s *PositionService) latchClose(ctx context.Context, pos store.PositionReco
 	return pos, nil
 }
 
-func resolveCloseIntentKind(pos store.PositionRecord, closeQty float64) string {
-	if closeQty > 0 && pos.Qty > 0 && closeQty < pos.Qty {
+func resolveCloseIntentKind(positionQty float64, closeQty float64) string {
+	if closeQty > 0 && positionQty > 0 && !shouldCloseEntirePosition(closeQty, positionQty) {
 		return "REDUCE"
 	}
 	return "CLOSE"
+}
+
+func resolveClosePositionQty(pos store.PositionRecord, positionQty float64) float64 {
+	if positionQty > 0 {
+		return positionQty
+	}
+	if pos.Qty > 0 {
+		return pos.Qty
+	}
+	return 0
+}
+
+func shouldCloseEntirePosition(closeQty, positionQty float64) bool {
+	if closeQty <= 0 || positionQty <= 0 {
+		return false
+	}
+	if closeQty >= positionQty {
+		return true
+	}
+	dust := math.Max(positionQty*0.001, closeQtyPrecision)
+	return positionQty-closeQty <= dust
 }
 
 func (s *PositionService) logCloseIntent(ctx context.Context, pos store.PositionRecord, intentKind string, reason string, triggerPrice float64, closeQty float64, clientOrderID string) {
