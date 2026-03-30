@@ -31,6 +31,29 @@ const defaultAgentIndicatorPrompt = "" +
 	"重要约束：\n" +
 	"- 不要输出任何交易动作或建议（例如开仓/平仓/做多/做空/买入/卖出等）。只输出分析结论分数与证据描述。"
 
+const defaultProviderIndicatorPrompt = "" +
+	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：\n" +
+	"- momentum_expansion: bool\n" +
+	"- alignment: bool\n" +
+	"- mean_rev_noise: bool\n" +
+	"- signal_tag: trend_surge/pullback_entry/divergence_reversal/noise/momentum_weak\n" +
+	"判断边界：只能基于摘要输入中的 expansion/alignment/noise/momentum_detail/conflict_detail 以及上下文做判断；禁止编造任何额外信号、阈值或上下文。\n" +
+	"判断原则：\n" +
+	"- 若显示动量在增强、扩张更明显，可将 momentum_expansion 判断为 true。\n" +
+	"- 若多个关键信号方向一致、冲突较少，可将 alignment 判断为 true。\n" +
+	"- 若噪声较高、来回拉扯明显、或更像均值回归环境，可将 mean_rev_noise 判断为 true。\n" +
+	"- signal_tag 需要综合整体判断给出：明显噪声环境优先考虑 noise；一致性差且冲突明显时可考虑 divergence_reversal；动量扩张明显且一致性较强时可考虑 trend_surge；一致性尚可但更像延续中的回踩/整理时可考虑 pullback_entry；证据不足、方向性弱或结论不稳定时输出 momentum_weak。\n" +
+	"- 若 momentum_detail 与 conflict_detail 均为空、无法提供有效证据，整体应保守，优先考虑较弱结论。"
+
+const defaultInPosIndicatorPrompt = "" +
+	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：momentum_sustaining(bool), divergence_detected(bool), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
+	"约束：禁止生成新的连续数值/阈值；reason 尽量引用输入字段名或 field=value；两份输入都无法引用时才写“数据不足”。\n" +
+	"判断原则：若当前动量仍在延续、尚未出现明显衰减或破坏，可将 momentum_sustaining 判断为 true；若出现明显背离、动量衰减、或价格行为开始不支持原持仓方向，可将 divergence_detected 判断为 true。\n" +
+	"monitor_tag 需要综合判断：原方向动量仍健康、持仓逻辑未受破坏时输出 keep；动量有所减弱但尚未到必须退出的程度时输出 tighten；背离明显、原逻辑失效、或继续持有的风险明显升高时输出 exit。\n" +
+	"不要因为轻微波动就直接输出 exit；除非证据足够明确。"
+
+// -----------------------------------------------------------------------------------------------
+
 const defaultAgentStructurePrompt = "" +
 	"你是交易系统中的 Market Structure 分析器。基于输入的 Trend/Structure  JSON，输出一个严格 JSON 对象，用于后续审计与自动化处理。\n" +
 	"\n" +
@@ -62,6 +85,28 @@ const defaultAgentStructurePrompt = "" +
 	"重要约束（防止行动泄漏）：\n" +
 	"- 不要输出任何交易动作或建议（例如做多/做空/开仓等）。只输出结构判断与分数。"
 
+const defaultProviderStructurePrompt = "" +
+	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：\n" +
+	"- clear_structure: bool\n" +
+	"- integrity: bool\n" +
+	"- reason: string\n" +
+	"- signal_tag: breakout_confirmed/support_retest/fakeout_rejection/structure_broken\n" +
+	"判断边界：只能基于摘要输入中的 regime/quality/last_break/pattern/volume_action/candle_reaction 以及上下文做判断；禁止编造结构事件或额外背景。\n" +
+	"判断原则：\n" +
+	"- 若结构清晰、趋势或区间状态明确、关键事件可辨认，可将 clear_structure 判断为 true。\n" +
+	"- 若结构没有明显被破坏、突破/回踩/反应逻辑基本连贯，可将 integrity 判断为 true；若结构混乱、关键事件不明确、或价格反应与结构叙事冲突，integrity 应偏向 false。\n" +
+	"- signal_tag 需要综合结构状态给出：突破清晰且确认度高时可考虑 breakout_confirmed；结构仍完整但更像突破后的回踩、确认或续势时可考虑 support_retest；价格对关键位更像拒绝、假突破或失败确认时可考虑 fakeout_rejection；结构本身已明显受损、失真或方向叙事失效时输出 structure_broken。\n" +
+	"- reason 必须尽量引用至少 2 个输入字段名（可写 field=value）；仅当所有相关字段都缺失/为空/为“数据不足”时，才允许写“数据不足”。"
+
+const defaultInPosStructurePrompt = "" +
+	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：integrity(bool), threat_level(none/low/medium/high/critical), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
+	"约束：禁止生成新的连续数值/阈值；reason 尽量引用输入字段名或 field=value；两份输入都无法引用时才写“数据不足”。\n" +
+	"判断原则：若原持仓方向对应的结构仍成立、关键位未被破坏、价格行为与原叙事一致，可将 integrity 判断为 true；若出现反向 break、结构质量恶化、趋势/区间判断失真、或原持仓叙事被削弱，integrity 应偏向 false。\n" +
+	"threat_level 表示当前结构层面对持仓的威胁程度：none/low 表示结构基本健康；medium 表示出现一定破坏或不确定性；high 表示结构明显受损、继续持有风险较高；critical 表示原持仓结构逻辑已明显失效或处于高风险区间。\n" +
+	"monitor_tag 需要综合 integrity、threat_level 与仓位状态判断：结构仍完整时优先 keep；威胁上升但未完全失效时优先 tighten；结构明显失效或威胁达到 critical 时输出 exit。\n" +
+	"当结构信号与仓位状态存在冲突时，优先保守，不要勉强给出过强结论。"
+
+// -------------------------------------------------------------
 const defaultAgentMechanicsPrompt = "" +
 	"你是交易系统中的 Market Mechanics 分析器。基于提供的 Mechanics 输入 JSON，输出一个严格 JSON 对象，用于后续审计与自动化处理。\n" +
 	"\n" +
@@ -92,33 +137,6 @@ const defaultAgentMechanicsPrompt = "" +
 	"重要约束（防止行动泄漏）：\n" +
 	"- 不要输出任何交易动作或建议（例如做多/做空/开仓等）。只输出机制判断与分数。"
 
-const defaultProviderIndicatorPrompt = "" +
-	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：\n" +
-	"- momentum_expansion: bool\n" +
-	"- alignment: bool\n" +
-	"- mean_rev_noise: bool\n" +
-	"- signal_tag: trend_surge/pullback_entry/divergence_reversal/noise/momentum_weak\n" +
-	"判断边界：只能基于摘要输入中的 expansion/alignment/noise/momentum_detail/conflict_detail 或上下文做判断；禁止编造任何额外信号、阈值或上下文。\n" +
-	"判断原则：\n" +
-	"- 若摘要显示动量在增强、扩张更明显，可将 momentum_expansion 判断为 true。\n" +
-	"- 若多个关键信号方向一致、冲突较少，可将 alignment 判断为 true。\n" +
-	"- 若噪声较高、来回拉扯明显、或更像均值回归环境，可将 mean_rev_noise 判断为 true。\n" +
-	"- signal_tag 需要综合整体判断给出：明显噪声环境优先考虑 noise；一致性差且冲突明显时可考虑 divergence_reversal；动量扩张明显且一致性较强时可考虑 trend_surge；一致性尚可但更像延续中的回踩/整理时可考虑 pullback_entry；证据不足、方向性弱或结论不稳定时输出 momentum_weak。\n" +
-	"- 若 momentum_detail 与 conflict_detail 均为空、无法提供有效证据，整体应保守，优先考虑较弱结论。"
-
-const defaultProviderStructurePrompt = "" +
-	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：\n" +
-	"- clear_structure: bool\n" +
-	"- integrity: bool\n" +
-	"- reason: string\n" +
-	"- signal_tag: breakout_confirmed/support_retest/fakeout_rejection/structure_broken\n" +
-	"判断边界：只能基于摘要输入中的 regime/quality/last_break/pattern/volume_action/candle_reaction 或上下文做判断；禁止编造结构事件或额外背景。\n" +
-	"判断原则：\n" +
-	"- 若结构清晰、趋势或区间状态明确、关键事件可辨认，可将 clear_structure 判断为 true。\n" +
-	"- 若结构没有明显被破坏、突破/回踩/反应逻辑基本连贯，可将 integrity 判断为 true；若结构混乱、关键事件不明确、或价格反应与结构叙事冲突，integrity 应偏向 false。\n" +
-	"- signal_tag 需要综合结构状态给出：突破清晰且确认度高时可考虑 breakout_confirmed；结构仍完整但更像突破后的回踩、确认或续势时可考虑 support_retest；价格对关键位更像拒绝、假突破或失败确认时可考虑 fakeout_rejection；结构本身已明显受损、失真或方向叙事失效时输出 structure_broken。\n" +
-	"- reason 必须尽量引用至少 2 个输入字段名（可写 field=value）；仅当所有相关字段都缺失/为空/为“数据不足”时，才允许写“数据不足”。"
-
 const defaultProviderMechanicsPrompt = "" +
 	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：\n" +
 	"- liquidation_stress: {value: bool, confidence: low|high, reason: string}\n" +
@@ -130,21 +148,6 @@ const defaultProviderMechanicsPrompt = "" +
 	"- reason 需要简要说明依据与交易影响；只要 open_interest_context 或 anomaly_detail 不是空/“数据不足”，reason 就必须引用至少 2 个输入字段名或 field=value，并说明更像缩仓、等待确认、避免追价还是极端危险。仅当两者都为空或为“数据不足”时，reason 才可写“数据不足”。\n" +
 	"- signal_tag 需要综合机制状态判断：若连锁清算/踩踏或挤压已经明显主导盘面，才输出 liquidation_cascade；若多头拥挤、杠杆偏热、上方风险更突出但更像风险折扣，应输出 crowded_long；若空头拥挤、杠杆偏热、下方风险更突出但更像风险折扣，应输出 crowded_short；若风险不高、杠杆未明显失衡且更像仍有推动空间，可输出 fuel_ready；其余不明确或中性状态输出 neutral。\n" +
 	"- 不要因为一般拥挤或单一字段极端就升级为 liquidation_cascade；若信号冲突，保持保守。"
-
-const defaultInPosIndicatorPrompt = "" +
-	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：momentum_sustaining(bool), divergence_detected(bool), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
-	"约束：禁止生成新的连续数值/阈值；reason 尽量引用输入字段名或 field=value；两份输入都无法引用时才写“数据不足”。\n" +
-	"判断原则：若当前动量仍在延续、尚未出现明显衰减或破坏，可将 momentum_sustaining 判断为 true；若出现明显背离、动量衰减、或价格行为开始不支持原持仓方向，可将 divergence_detected 判断为 true。\n" +
-	"monitor_tag 需要综合判断：原方向动量仍健康、持仓逻辑未受破坏时输出 keep；动量有所减弱但尚未到必须退出的程度时输出 tighten；背离明显、原逻辑失效、或继续持有的风险明显升高时输出 exit。\n" +
-	"不要因为轻微波动就直接输出 exit；除非证据足够明确。"
-
-const defaultInPosStructurePrompt = "" +
-	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：integrity(bool), threat_level(none/low/medium/high/critical), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
-	"约束：禁止生成新的连续数值/阈值；reason 尽量引用输入字段名或 field=value；两份输入都无法引用时才写“数据不足”。\n" +
-	"判断原则：若原持仓方向对应的结构仍成立、关键位未被破坏、价格行为与原叙事一致，可将 integrity 判断为 true；若出现反向 break、结构质量恶化、趋势/区间判断失真、或原持仓叙事被削弱，integrity 应偏向 false。\n" +
-	"threat_level 表示当前结构层面对持仓的威胁程度：none/low 表示结构基本健康；medium 表示出现一定破坏或不确定性；high 表示结构明显受损、继续持有风险较高；critical 表示原持仓结构逻辑已明显失效或处于高风险区间。\n" +
-	"monitor_tag 需要综合 integrity、threat_level 与仓位状态判断：结构仍完整时优先 keep；威胁上升但未完全失效时优先 tighten；结构明显失效或威胁达到 critical 时输出 exit。\n" +
-	"当结构信号与仓位状态存在冲突时，优先保守，不要勉强给出过强结论。"
 
 const defaultInPosMechanicsPrompt = "" +
 	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：adverse_liquidation(bool), crowding_reversal(bool), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
@@ -172,6 +175,8 @@ const defaultRiskFlatInitPrompt = "" +
 	"}\n" +
 	"\n" +
 	"约束（必须满足）：\n" +
+	"- direction 是输入上下文条件，不得出现在输出 JSON 中。输出字段只能是：entry, stop_loss, take_profits, take_profit_ratios, reason。\n" +
+	"- 若输出包含 direction、symbol、risk_pct、consensus、structure、provider_summary 或任何其他额外字段，均视为错误。\n" +
 	"- direction=long：stop_loss 必须 < entry，take_profits 必须严格递增且全部 > entry。\n" +
 	"- direction=short：stop_loss 必须 > entry，take_profits 必须严格递减且全部 < entry。\n" +
 	"- 必须从输入上下文独立生成完整 entry/stop_loss/take_profits/take_profit_ratios；禁止依赖或引用任何既有 TP/SL 基线。\n" +
