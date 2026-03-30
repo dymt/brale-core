@@ -45,5 +45,5 @@ func StructureTradeable(st StructureAtomic) bool {
 }
 
 func MechanicsTradeable(mech MechanicsAtomic) bool {
-	return !mech.LiquidationStress
+	return !strings.EqualFold(strings.TrimSpace(mech.SignalTag), "liquidation_cascade")
 }

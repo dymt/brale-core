@@ -103,6 +103,7 @@ func (h StoreHooks) SaveProvider(ctx context.Context, snap snapshot.MarketSnapsh
 	})
 	mechanicsTradeable := gate.MechanicsTradeable(gate.MechanicsAtomic{
 		LiquidationStress: providers.Mechanics.LiquidationStress.Value,
+		SignalTag:         providers.Mechanics.SignalTag,
 	})
 	if providers.Enabled.Indicator {
 		if err := h.saveProviderStage(ctx, snapID, sym, "indicator", providers.Indicator, indicatorTradeable, ts, prompts.Indicator); err != nil {

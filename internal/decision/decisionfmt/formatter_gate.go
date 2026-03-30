@@ -28,6 +28,7 @@ type semanticSignal struct {
 
 type mechanicsProviderOut struct {
 	LiquidationStress semanticSignal `json:"liquidation_stress"`
+	SignalTag         string         `json:"signal_tag"`
 }
 
 type gateRefs struct {
@@ -329,6 +330,7 @@ func buildGateProviders(refs gateRefs) []GateProviderStatus {
 	})
 	mechanicsTradeable := gate.MechanicsTradeable(gate.MechanicsAtomic{
 		LiquidationStress: refs.Mechanics.LiquidationStress.Value,
+		SignalTag:         refs.Mechanics.SignalTag,
 	})
 	out := []GateProviderStatus{
 		{

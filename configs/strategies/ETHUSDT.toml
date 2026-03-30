@@ -132,8 +132,8 @@ min_update_interval_sec = 300
 [risk_management.sieve]
 # 作用：Gate 已放行(ALLOW)后的二次风控与仓位缩放
 # 匹配规则：rows 为 AND 过滤；字段留空=通配
-# 选择规则：priority 较高优先；若相同则匹配字段更多者优先；再按配置顺序
-# 支持字段：indicator_tag / structure_tag / mechanics_tag / liq_confidence / crowding_align / direction / priority
+# 选择规则：当前配置模型仅支持按已声明字段匹配，命中多行时按“匹配字段更多者优先；再按配置顺序”
+# 当前配置支持字段：mechanics_tag / liq_confidence / crowding_align / gate_action / size_factor / reason_code
 # gate_action：ALLOW/WAIT/VETO（WAIT=观望，VETO=硬拒绝）
 # size_factor：仅对 ALLOW 生效；<=0 时使用 default_size_factor，再受 min_size_factor 下限约束
 # reason_code：命中理由回写到 gate 派生信息，便于审计
@@ -141,21 +141,18 @@ min_update_interval_sec = 300
 # min_size_factor：最小仓位比例（仅对 ALLOW 生效）
 min_size_factor = 0.35
 # 未命中任何行时默认动作与比例
-default_gate_action = "ALLOW"
-default_size_factor = 1.0
+default_gate_action = "WAIT"
+default_size_factor = 0.0
 # 字段含义说明：
-# indicator_tag：指标标签（来自 indicator.signal_tag）
-# structure_tag：结构标签（来自 structure.signal_tag）
 # mechanics_tag：力学场景标签（来自 mechanics.signal_tag）
 #   - fuel_ready：杠杆与资金健康、未见显著风险，作为可启动的场景
 #   - neutral：无显著异常，但证据一般
-#   - crowded_long / crowded_short：同向拥挤（风险偏高）
-#   - liquidation_cascade：链式风险信号（硬风险）
-# liq_confidence：对 liquidation_stress.value 判断的证据质量（high/low）
+#   - crowded_long / crowded_short：拥挤与风险折扣，通常更适合缩仓/等待确认，而非等价于硬拒绝
+#   - liquidation_cascade：连锁清算主导盘面的极端机制风险（硬风险）
+# liq_confidence：对 liquidation_stress.value 判断的证据质量（high=显著影响入场条件，low=更像预警/折扣）
 # crowding_align：是否同向拥挤（true=方向与拥挤一致，风险偏高；false=反向拥挤，风险较低）
 # gate_action：本行命中后是否允许交易（ALLOW/WAIT/VETO）
 # size_factor：仓位比例因子（仅对 ALLOW 生效）
-# direction：方向标签（来自 gate.direction；long/short/none）
 
 [[risk_management.sieve.rows]]
 # fuel_ready + high + 不同向拥挤
@@ -176,24 +173,6 @@ size_factor = 0.7
 reason_code = "FUEL_LOW"
 
 [[risk_management.sieve.rows]]
-# fuel_ready + high + 同向拥挤
-mechanics_tag = "fuel_ready"
-liq_confidence = "high"
-crowding_align = true
-gate_action = "ALLOW"
-size_factor = 0.7
-reason_code = "FUEL_HIGH_ALIGN"
-
-[[risk_management.sieve.rows]]
-# fuel_ready + low + 同向拥挤
-mechanics_tag = "fuel_ready"
-liq_confidence = "low"
-crowding_align = true
-gate_action = "ALLOW"
-size_factor = 0.7
-reason_code = "FUEL_LOW_ALIGN"
-
-[[risk_management.sieve.rows]]
 # neutral + high + 不同向拥挤
 mechanics_tag = "neutral"
 liq_confidence = "high"
@@ -212,40 +191,22 @@ size_factor = 0.5
 reason_code = "NEUTRAL_LOW"
 
 [[risk_management.sieve.rows]]
-# neutral + high + 同向拥挤
-mechanics_tag = "neutral"
-liq_confidence = "high"
-crowding_align = true
-gate_action = "ALLOW"
-size_factor = 0.7
-reason_code = "NEUTRAL_HIGH_ALIGN"
-
-[[risk_management.sieve.rows]]
-# neutral + low + 同向拥挤
-mechanics_tag = "neutral"
-liq_confidence = "low"
-crowding_align = true
-gate_action = "ALLOW"
-size_factor = 0.5
-reason_code = "NEUTRAL_LOW_ALIGN"
-
-[[risk_management.sieve.rows]]
 # crowded_long + high + 同向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "high"
 crowding_align = true
 gate_action = "ALLOW"
 size_factor = 0.4
-reason_code = "CROWD_ALIGN_HIGH"
+reason_code = "CROWD_LONG_ALIGN_HIGH"
 
 [[risk_management.sieve.rows]]
 # crowded_long + low + 同向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "low"
 crowding_align = true
-gate_action = "WAIT"
-size_factor = 0.0
-reason_code = "CROWD_ALIGN_LOW_BLOCK"
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_LONG_ALIGN_LOW"
 
 [[risk_management.sieve.rows]]
 # crowded_short + high + 同向拥挤
@@ -254,16 +215,16 @@ liq_confidence = "high"
 crowding_align = true
 gate_action = "ALLOW"
 size_factor = 0.4
-reason_code = "CROWD_ALIGN_HIGH"
+reason_code = "CROWD_SHORT_ALIGN_HIGH"
 
 [[risk_management.sieve.rows]]
 # crowded_short + low + 同向拥挤
 mechanics_tag = "crowded_short"
 liq_confidence = "low"
 crowding_align = true
-gate_action = "WAIT"
-size_factor = 0.0
-reason_code = "CROWD_ALIGN_LOW_BLOCK"
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_SHORT_ALIGN_LOW"
 
 [[risk_management.sieve.rows]]
 # crowded_long + high + 反向拥挤
@@ -271,8 +232,8 @@ mechanics_tag = "crowded_long"
 liq_confidence = "high"
 crowding_align = false
 gate_action = "ALLOW"
-size_factor = 0.3
-reason_code = "CROWD_COUNTER_HIGH"
+size_factor = 0.35
+reason_code = "CROWD_LONG_COUNTER_HIGH"
 
 [[risk_management.sieve.rows]]
 # crowded_long + low + 反向拥挤
@@ -281,7 +242,7 @@ liq_confidence = "low"
 crowding_align = false
 gate_action = "ALLOW"
 size_factor = 0.5
-reason_code = "CROWD_COUNTER_LOW"
+reason_code = "CROWD_LONG_COUNTER_LOW"
 
 [[risk_management.sieve.rows]]
 # crowded_short + high + 反向拥挤
@@ -289,8 +250,8 @@ mechanics_tag = "crowded_short"
 liq_confidence = "high"
 crowding_align = false
 gate_action = "ALLOW"
-size_factor = 0.3
-reason_code = "CROWD_COUNTER_HIGH"
+size_factor = 0.35
+reason_code = "CROWD_SHORT_COUNTER_HIGH"
 
 [[risk_management.sieve.rows]]
 # crowded_short + low + 反向拥挤
@@ -299,40 +260,4 @@ liq_confidence = "low"
 crowding_align = false
 gate_action = "ALLOW"
 size_factor = 0.5
-reason_code = "CROWD_COUNTER_LOW"
-
-[[risk_management.sieve.rows]]
-# liquidation_cascade + high + 不同向拥挤
-mechanics_tag = "liquidation_cascade"
-liq_confidence = "high"
-crowding_align = false
-gate_action = "VETO"
-size_factor = 0.0
-reason_code = "LIQ_CASCADE"
-
-[[risk_management.sieve.rows]]
-# liquidation_cascade + low + 不同向拥挤
-mechanics_tag = "liquidation_cascade"
-liq_confidence = "low"
-crowding_align = false
-gate_action = "VETO"
-size_factor = 0.0
-reason_code = "LIQ_CASCADE"
-
-[[risk_management.sieve.rows]]
-# liquidation_cascade + high + 同向拥挤
-mechanics_tag = "liquidation_cascade"
-liq_confidence = "high"
-crowding_align = true
-gate_action = "VETO"
-size_factor = 0.0
-reason_code = "LIQ_CASCADE"
-
-[[risk_management.sieve.rows]]
-# liquidation_cascade + low + 同向拥挤
-mechanics_tag = "liquidation_cascade"
-liq_confidence = "low"
-crowding_align = true
-gate_action = "VETO"
-size_factor = 0.0
-reason_code = "LIQ_CASCADE"
+reason_code = "CROWD_SHORT_COUNTER_LOW"

@@ -111,11 +111,13 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	gateActionBeforeSieve := decision.Action
 	var sieveDecision sieveDecision
 	if decision.Action == "ALLOW" {
-		sieveDecision = resolveSieveDecision(riskMgmt, indicatorTag, structureTag, mechanicsTag, liqConfidence, decision.Direction, crowdingAlign)
-		if sieveDecision.Action != "" && sieveDecision.Action != "ALLOW" {
-			decision.Action = sieveDecision.Action
+		sieveDecision = resolveSieveDecision(riskMgmt, mechanicsTag, liqConfidence, crowdingAlign)
+		if sieveDecision.Hit {
 			decision.Reason = "SIEVE_POLICY"
 			decision.Priority = gatePrioritySieveOverride
+		}
+		if sieveDecision.Action != "" && sieveDecision.Action != "ALLOW" {
+			decision.Action = sieveDecision.Action
 			decision.Grade = gateGradeNone
 		}
 	}
@@ -129,6 +131,26 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		"direction": decision.Direction,
 		"default":   false,
 	}
+	derived := cloneMap(root["derived"])
+	if len(derived) == 0 {
+		derived = map[string]any{}
+	}
+	derived["indicator_tag"] = indicatorTag
+	derived["structure_tag"] = structureTag
+	derived["mechanics_tag"] = mechanicsTag
+	derived["crowding_align"] = crowdingAlign
+	derived["gate_trace"] = decision.GateTrace
+	derived["gate_stop_step"] = decision.StopStep
+	derived["gate_stop_reason"] = decision.StopReason
+	derived["gate_action_before_sieve"] = gateActionBeforeSieve
+	derived["sieve_action"] = sieveDecision.Action
+	derived["sieve_size_factor"] = sieveDecision.SizeFactor
+	derived["sieve_reason"] = sieveDecision.Reason
+	derived["sieve_hit"] = sieveDecision.Hit
+	derived["sieve_min_size_factor"] = sieveDecision.MinSizeFactor
+	derived["sieve_default_action"] = sieveDecision.DefaultAction
+	derived["sieve_default_size_factor"] = sieveDecision.DefaultSizeFactor
+	derived["sieve_policy_hash"] = toString(binding["strategy_hash"])
 
 	root["gate"] = map[string]any{
 		"action":    decision.Action,
@@ -136,25 +158,8 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		"grade":     decision.Grade,
 		"direction": decision.Direction,
 		"tradeable": decision.Action == "ALLOW",
-		"derived": map[string]any{
-			"indicator_tag":             indicatorTag,
-			"structure_tag":             structureTag,
-			"mechanics_tag":             mechanicsTag,
-			"crowding_align":            crowdingAlign,
-			"gate_trace":                decision.GateTrace,
-			"gate_stop_step":            decision.StopStep,
-			"gate_stop_reason":          decision.StopReason,
-			"gate_action_before_sieve":  gateActionBeforeSieve,
-			"sieve_action":              sieveDecision.Action,
-			"sieve_size_factor":         sieveDecision.SizeFactor,
-			"sieve_reason":              sieveDecision.Reason,
-			"sieve_hit":                 sieveDecision.Hit,
-			"sieve_min_size_factor":     sieveDecision.MinSizeFactor,
-			"sieve_default_action":      sieveDecision.DefaultAction,
-			"sieve_default_size_factor": sieveDecision.DefaultSizeFactor,
-			"sieve_policy_hash":         toString(binding["strategy_hash"]),
-		},
-		"rule_hit": ruleHit,
+		"derived":   derived,
+		"rule_hit":  ruleHit,
 	}
 	respondRuleMsgJSON(ctx, msg, root)
 }
@@ -283,8 +288,12 @@ func (e *gateDecisionEvaluator) evalMechRisk() {
 	if e.hasAction() {
 		return
 	}
-	if e.inputs.LiquidationStress || e.inputs.MechanicsTag == "liquidation_cascade" {
+	if e.inputs.MechanicsTag == "liquidation_cascade" {
 		e.setStop("mech_risk", "VETO", "MECH_RISK", gatePriorityMechRisk)
+		return
+	}
+	if e.inputs.LiquidationStress && e.inputs.LiqConfidence != "low" {
+		e.setStop("mech_risk", "WAIT", "MECH_RISK", gatePriorityMechRisk)
 		return
 	}
 	e.appendGateTrace("mech_risk", true, "")
@@ -427,7 +436,7 @@ type sieveDecision struct {
 	DefaultSizeFactor float64
 }
 
-func resolveSieveDecision(riskMgmt map[string]any, indicatorTag, structureTag, mechanicsTag, liqConfidence, direction string, crowdingAlign bool) sieveDecision {
+func resolveSieveDecision(riskMgmt map[string]any, mechanicsTag, liqConfidence string, crowdingAlign bool) sieveDecision {
 	result := sieveDecision{
 		Action:            "ALLOW",
 		SizeFactor:        1.0,
@@ -456,7 +465,7 @@ func resolveSieveDecision(riskMgmt map[string]any, indicatorTag, structureTag, m
 		result.SizeFactor = result.DefaultSizeFactor
 		return result
 	}
-	inputs := normalizeSieveInputs(indicatorTag, structureTag, mechanicsTag, liqConfidence, direction, crowdingAlign)
+	inputs := normalizeSieveInputs(mechanicsTag, liqConfidence, crowdingAlign)
 	bestRow := selectBestSieveRow(rows, inputs)
 	if bestRow != nil {
 		result.Action = strings.ToUpper(strings.TrimSpace(toString(bestRow["gate_action"])))
@@ -492,43 +501,31 @@ func resolveSieveDecision(riskMgmt map[string]any, indicatorTag, structureTag, m
 }
 
 type sieveMatchInputs struct {
-	IndicatorTag  string
-	StructureTag  string
 	MechanicsTag  string
 	LiqConfidence string
-	Direction     string
 	CrowdingAlign bool
 }
 
-func normalizeSieveInputs(indicatorTag, structureTag, mechanicsTag, liqConfidence, direction string, crowdingAlign bool) sieveMatchInputs {
+func normalizeSieveInputs(mechanicsTag, liqConfidence string, crowdingAlign bool) sieveMatchInputs {
 	return sieveMatchInputs{
-		IndicatorTag:  strings.ToLower(strings.TrimSpace(indicatorTag)),
-		StructureTag:  strings.ToLower(strings.TrimSpace(structureTag)),
 		MechanicsTag:  strings.ToLower(strings.TrimSpace(mechanicsTag)),
 		LiqConfidence: strings.ToLower(strings.TrimSpace(liqConfidence)),
-		Direction:     strings.ToLower(strings.TrimSpace(direction)),
 		CrowdingAlign: crowdingAlign,
 	}
 }
 
 func selectBestSieveRow(rows []any, inputs sieveMatchInputs) map[string]any {
-	bestPriority := -1 << 30
 	bestMatchCount := -1
 	var bestRow map[string]any
 	for _, rowRaw := range rows {
 		row := toMap(rowRaw)
-		rowPriority := toInt(row["priority"])
 		matchCount, ok := matchSieveRow(row, inputs)
 		if !ok {
 			continue
 		}
-		if rowPriority < bestPriority {
+		if matchCount <= bestMatchCount {
 			continue
 		}
-		if rowPriority == bestPriority && matchCount <= bestMatchCount {
-			continue
-		}
-		bestPriority = rowPriority
 		bestMatchCount = matchCount
 		bestRow = row
 	}
@@ -537,24 +534,9 @@ func selectBestSieveRow(rows []any, inputs sieveMatchInputs) map[string]any {
 
 func matchSieveRow(row map[string]any, inputs sieveMatchInputs) (int, bool) {
 	matchCount := 0
-	rowInd := strings.ToLower(strings.TrimSpace(toString(row["indicator_tag"])))
-	rowStruct := strings.ToLower(strings.TrimSpace(toString(row["structure_tag"])))
 	rowTag := strings.ToLower(strings.TrimSpace(toString(row["mechanics_tag"])))
 	rowConf := strings.ToLower(strings.TrimSpace(toString(row["liq_confidence"])))
-	rowDir := strings.ToLower(strings.TrimSpace(toString(row["direction"])))
 	rowAlign, hasAlign := row["crowding_align"]
-	if rowInd != "" {
-		if rowInd != inputs.IndicatorTag {
-			return 0, false
-		}
-		matchCount++
-	}
-	if rowStruct != "" {
-		if rowStruct != inputs.StructureTag {
-			return 0, false
-		}
-		matchCount++
-	}
 	if rowTag != "" && rowTag != inputs.MechanicsTag {
 		return 0, false
 	}
@@ -565,12 +547,6 @@ func matchSieveRow(row map[string]any, inputs sieveMatchInputs) (int, bool) {
 		return 0, false
 	}
 	if rowConf != "" {
-		matchCount++
-	}
-	if rowDir != "" {
-		if rowDir != inputs.Direction {
-			return 0, false
-		}
 		matchCount++
 	}
 	if hasAlign {

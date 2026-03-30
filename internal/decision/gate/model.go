@@ -30,6 +30,7 @@ type StructureAtomic struct {
 
 type MechanicsAtomic struct {
 	LiquidationStress bool
+	SignalTag         string
 }
 
 type MonitorAtomic struct {
