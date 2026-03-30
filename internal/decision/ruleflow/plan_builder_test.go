@@ -104,6 +104,52 @@ func TestParseResultIncludesPlanSource(t *testing.T) {
 	}
 }
 
+func TestPlanBuilderWaitDoesNotBuildPlan(t *testing.T) {
+	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
+		mechanics: provider.MechanicsProviderOut{
+			LiquidationStress: provider.SemanticSignal{Value: true, Confidence: provider.ConfidenceHigh, Reason: "stress"},
+			SignalTag:         "crowded_long",
+		},
+	})
+	if result.Gate.DecisionAction != "WAIT" {
+		t.Fatalf("gate action=%s want WAIT", result.Gate.DecisionAction)
+	}
+	if result.Plan != nil {
+		t.Fatalf("expected no plan when gate waits")
+	}
+}
+
+func TestPlanBuilderAppliesSieveSizeFactor(t *testing.T) {
+	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
+		mechanics: provider.MechanicsProviderOut{
+			LiquidationStress: provider.SemanticSignal{Value: true, Confidence: provider.ConfidenceLow, Reason: "stress"},
+			SignalTag:         "crowded_long",
+		},
+		sieve: config.RiskManagementSieveConfig{
+			MinSizeFactor:     0.1,
+			DefaultGateAction: "ALLOW",
+			DefaultSizeFactor: 1.0,
+			Rows: []config.RiskManagementSieveRow{{
+				MechanicsTag:  "crowded_long",
+				LiqConfidence: "low",
+				CrowdingAlign: boolPtr(true),
+				GateAction:    "ALLOW",
+				SizeFactor:    0.5,
+				ReasonCode:    "CROWD_ALIGN_LOW",
+			}},
+		},
+	})
+	if result.Plan == nil || !result.Plan.Valid {
+		t.Fatalf("expected valid plan")
+	}
+	if result.Plan.RiskPct != 0.005 {
+		t.Fatalf("risk_pct=%v want 0.005", result.Plan.RiskPct)
+	}
+	if result.Plan.PositionSize <= 0 {
+		t.Fatalf("position_size=%v want > 0", result.Plan.PositionSize)
+	}
+}
+
 func evaluateFlatPlanForRiskMode(t *testing.T, mode string) Result {
 	t.Helper()
 	engine := NewEngine()

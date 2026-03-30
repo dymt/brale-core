@@ -376,11 +376,11 @@ func providerExampleStructure() string {
 func providerExampleMechanics() string {
 	ex := provider.MechanicsProviderOut{
 		LiquidationStress: provider.SemanticSignal{
-			Value:      false,
+			Value:      true,
 			Confidence: provider.ConfidenceLow,
-			Reason:     "funding.rate=0.0001; oi_history.4h.change_pct=0.8（示例仅示意字段结构与引用格式）",
+			Reason:     "crowding.long_short_ratio=1.4; oi_history.4h.change_pct=3.2，更多像缩仓或等待确认而非直接回避（示例仅示意字段结构与引用格式）",
 		},
-		SignalTag: "fuel_ready",
+		SignalTag: "crowded_long",
 	}
 
 	raw, _ := json.Marshal(ex)
