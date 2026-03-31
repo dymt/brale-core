@@ -22,7 +22,6 @@ type SystemConfig struct {
 }
 
 type SystemLLMConfig struct {
-	SessionMode string `mapstructure:"session_mode"`
 }
 
 type LLMModelConfig struct {
@@ -140,9 +139,8 @@ type CooldownConfig struct {
 }
 
 type SymbolLLMConfig struct {
-	SessionMode string     `mapstructure:"session_mode"`
-	Agent       LLMRoleSet `mapstructure:"agent"`
-	Provider    LLMRoleSet `mapstructure:"provider"`
+	Agent    LLMRoleSet `mapstructure:"agent"`
+	Provider LLMRoleSet `mapstructure:"provider"`
 }
 
 type LLMRoleSet struct {

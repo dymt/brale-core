@@ -3,8 +3,6 @@ package config
 import (
 	"strings"
 	"time"
-
-	"brale-core/internal/llm"
 )
 
 func ValidateSystemConfig(cfg SystemConfig) error {
@@ -30,9 +28,6 @@ func ValidateSystemConfig(cfg SystemConfig) error {
 		if val <= 0 {
 			return validationErrorf("llm_min_interval must be > 0")
 		}
-	}
-	if err := validateSessionMode("llm.session_mode", cfg.LLM.SessionMode); err != nil {
-		return err
 	}
 	for model, modelCfg := range cfg.LLMModels {
 		if strings.TrimSpace(model) == "" {
@@ -67,13 +62,6 @@ func validatePersistMode(mode string) error {
 	default:
 		return validationErrorf("persist_mode must be minimal or full")
 	}
-}
-
-func validateSessionMode(path, mode string) error {
-	if _, err := llm.NewSessionMode(normalizeSessionMode(mode)); err != nil {
-		return validationErrorf("%s must be session/stateless", path)
-	}
-	return nil
 }
 
 func validateNotificationConfig(cfg NotificationConfig) error {

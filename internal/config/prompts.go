@@ -158,7 +158,7 @@ const defaultInPosMechanicsPrompt = "" +
 	"不要因为单一异常点就直接判定 exit；只有在机制性风险足够明确时才这样做。"
 
 const defaultRiskFlatInitPrompt = "" +
-	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、共识摘要、结构摘要与其他 Provider 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
+	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、计划摘要、共识摘要、结构摘要与其他 Provider 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -177,6 +177,7 @@ const defaultRiskFlatInitPrompt = "" +
 	"约束（必须满足）：\n" +
 	"- direction 是输入上下文条件，不得出现在输出 JSON 中。输出字段只能是：entry, stop_loss, take_profits, take_profit_ratios, reason。\n" +
 	"- 若输出包含 direction、symbol、risk_pct、consensus、structure、provider_summary 或任何其他额外字段，均视为错误。\n" +
+	"- 必须同时参考计划摘要中的 atr/max_leverage/max_invest_pct/liq_price（若给出）与结构摘要/其他 Provider 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
 	"- direction=long：stop_loss 必须 < entry，take_profits 必须严格递增且全部 > entry。\n" +
 	"- direction=short：stop_loss 必须 > entry，take_profits 必须严格递减且全部 < entry。\n" +
 	"- 必须从输入上下文独立生成完整 entry/stop_loss/take_profits/take_profit_ratios；禁止依赖或引用任何既有 TP/SL 基线。\n" +

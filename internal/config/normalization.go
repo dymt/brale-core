@@ -3,7 +3,6 @@ package config
 import (
 	"strings"
 
-	"brale-core/internal/llm"
 	"brale-core/internal/pkg/symbol"
 )
 
@@ -12,7 +11,6 @@ func NormalizeSystemConfig(cfg *SystemConfig) {
 		return
 	}
 	cfg.PersistMode = normalizePersistMode(cfg.PersistMode)
-	cfg.LLM.SessionMode = normalizeSessionMode(cfg.LLM.SessionMode)
 	cfg.Notification.Feishu.BotMode = NormalizeFeishuBotMode(cfg.Notification.Feishu.BotMode)
 }
 
@@ -30,7 +28,6 @@ func NormalizeSymbolConfig(cfg *SymbolConfig) {
 		return
 	}
 	cfg.Symbol = NormalizeSymbol(cfg.Symbol)
-	cfg.LLM.SessionMode = normalizeSessionMode(cfg.LLM.SessionMode)
 }
 
 func NormalizeStrategyConfig(cfg *StrategyConfig) {
@@ -54,14 +51,6 @@ func normalizePersistMode(raw string) string {
 	default:
 		return mode
 	}
-}
-
-func normalizeSessionMode(mode string) string {
-	trimmed := strings.TrimSpace(mode)
-	if trimmed == "" {
-		return llm.SessionModeSession.String()
-	}
-	return trimmed
 }
 
 func NormalizeFeishuBotMode(value string) string {
