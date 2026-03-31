@@ -167,6 +167,72 @@ function parseKnownBool(value) {
   return { known: false, value: false };
 }
 
+function trimFloat(value, digits = 4) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
+function translateExecutionBlockedReason(reason) {
+  switch (String(reason ?? '').trim().toLowerCase()) {
+    case 'monitor_gate':
+      return '收紧监控门槛未满足';
+    case 'atr_missing':
+      return 'ATR 数据缺失';
+    case 'atr_gate':
+      return 'ATR 门槛未满足';
+    case 'atr_value_missing':
+      return 'ATR 数值缺失';
+    case 'score_threshold':
+      return '评分未达标';
+    case 'score_parse':
+      return '评分解析失败';
+    case 'risk_plan_missing':
+      return '风控计划缺失';
+    case 'risk_plan_disabled':
+      return '风控更新未启用';
+    case 'price_unavailable':
+      return '价格不可用';
+    case 'price_source_missing':
+      return '价格源缺失';
+    case 'binding_missing':
+      return '策略绑定缺失';
+    case 'no_tighten_needed':
+      return '执行阶段未发现更优止损';
+    case 'not_evaluated':
+      return '未完成评估';
+    case 'tighten_debounce':
+      return '收紧更新冷却中';
+    default:
+      return String(reason ?? '').trim();
+  }
+}
+
+function formatPositionDirection(direction) {
+  const normalized = String(direction ?? '').trim().toLowerCase();
+  switch (normalized) {
+    case 'long':
+    case '多头':
+      return '多头';
+    case 'short':
+    case '空头':
+      return '空头';
+    case 'conflict':
+    case '信号冲突':
+      return '信号冲突';
+    default:
+      return String(direction ?? '').trim() || '持仓中';
+  }
+}
+
+function formatTakeProfitList(levels) {
+  if (!Array.isArray(levels) || levels.length === 0) return '—';
+  const values = levels
+    .map((value) => trimFloat(value))
+    .filter((value) => value !== '—');
+  return values.length > 0 ? values.join(' / ') : '—';
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -355,6 +421,7 @@ export function buildModel(raw) {
   const trace = Array.isArray(gate.trace)
     ? gate.trace.filter((item) => item && typeof item === 'object' && String(item.step ?? '').trim())
     : [];
+  const execution = gate.execution && typeof gate.execution === 'object' ? gate.execution : null;
   const failedTrace = trace.find((item) => {
     const status = parseKnownBool(item.ok);
     return status.known && status.value === false;
@@ -390,6 +457,44 @@ export function buildModel(raw) {
       kind: 'danger',
     },
   ];
+  const blockedBy = Array.isArray(execution?.blocked_by)
+    ? execution.blocked_by.map((item) => translateExecutionBlockedReason(item)).filter(Boolean)
+    : [];
+  const positionText = formatPositionDirection(gate.direction);
+  const isTightenContext = String(execution?.action ?? '').trim().toLowerCase() === 'tighten';
+  if (isTightenContext) {
+    if (parseBool(execution.executed, false)) {
+      sourceLines.push({
+        text: '持仓处理：已执行收紧',
+        note: false,
+        kind: 'default',
+      });
+    } else if (blockedBy.length > 0) {
+      sourceLines.push({
+        text: `持仓处理：收紧未执行 · 原因：${blockedBy.join(' / ')}`,
+        note: false,
+        kind: 'danger',
+      });
+    } else if (parseBool(execution.evaluated, false)) {
+      sourceLines.push({
+        text: '持仓处理：收紧未触发',
+        note: false,
+        kind: 'default',
+      });
+    }
+    sourceLines.push({
+      text: `当前仓位：${positionText}`,
+      note: false,
+      kind: 'default',
+    });
+    if (parseBool(execution.executed, false)) {
+      sourceLines.push({
+        text: `止损：${trimFloat(execution.stop_loss)} · 止盈：${formatTakeProfitList(execution.take_profits)}`,
+        note: false,
+        kind: 'default',
+      });
+    }
+  }
   if (ruleName) {
     sourceLines.push({
       text: `命中规则：${emptyDash(mapValue(ruleName))} (${ruleName})`,
