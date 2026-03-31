@@ -41,9 +41,6 @@ type Pipeline struct {
 	ProviderInPositionStore func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind provider.InPositionIndicatorOut, st provider.InPositionStructureOut, mech provider.InPositionMechanicsOut, prompts ProviderPromptSet, enabled AgentEnabled) error
 	GateStore               func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, gate fund.GateDecision, providers fund.ProviderBundle) error
 	Notifier                Notifier
-	SessionManager          *llm.RoundSessionManager
-	SessionMode             llm.SessionMode
-	SessionCleanup          llm.SessionCleanup
 	RoundIDFactory          func() (llm.RoundID, error)
 	TightenRiskLLM          TightenRiskUpdateLLM
 }
