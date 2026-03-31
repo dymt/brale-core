@@ -45,6 +45,18 @@ func toMap(v any) map[string]any {
 	return map[string]any{}
 }
 
+func cloneMap(v any) map[string]any {
+	src := toMap(v)
+	if len(src) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(src))
+	for k, val := range src {
+		out[k] = val
+	}
+	return out
+}
+
 func toString(v any) string {
 	if v == nil {
 		return ""

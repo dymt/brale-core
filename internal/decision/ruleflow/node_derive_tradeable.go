@@ -42,7 +42,7 @@ func (n *DeriveTradeableNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 			"tradeable": toBool(structure["clear_structure"]) && toBool(structure["integrity"]),
 		},
 		"mechanics": map[string]any{
-			"tradeable": !toBool(toMap(mechanics["liquidation_stress"])["value"]),
+			"tradeable": strings.ToLower(toString(mechanics["signal_tag"])) != "liquidation_cascade",
 		},
 	}
 	structureDirection := strings.ToLower(toString(root["structure_direction"]))

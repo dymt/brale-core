@@ -161,6 +161,46 @@ async function main() {
   assert.match(tightenedRiskModel.sourceCard.lines[2].text, /风控筛选：(开多|OPEN_LONG) → (观望|等待|WAIT)/);
   await renderScenario({ tmpDir, name: 'tightened-risk', input: tightenedRiskInput });
 
+  const tightenSkippedInput = createInput({
+    decision_action: 'TIGHTEN',
+    decision_text: '继续持仓（收紧未执行：评分未达标）',
+    direction: 'long',
+    execution: {
+      action: 'tighten',
+      evaluated: true,
+      executed: false,
+      blocked_by: ['score_threshold'],
+    },
+    trace: [
+      { step: 'indicator', tag: 'tighten', reason: '动能转弱' },
+      { step: 'structure', tag: 'keep', reason: '结构仍完整' },
+    ],
+  });
+  const tightenSkippedModel = buildModel(tightenSkippedInput);
+  assert.equal(tightenSkippedModel.sourceCard.lines[1].text, '持仓处理：收紧未执行 · 原因：评分未达标');
+  assert.equal(tightenSkippedModel.sourceCard.lines[2].text, '当前仓位：多头');
+
+  const tightenExecutedInput = createInput({
+    decision_action: 'TIGHTEN',
+    decision_text: '执行收紧风控',
+    direction: 'short',
+    execution: {
+      action: 'tighten',
+      evaluated: true,
+      executed: true,
+      stop_loss: 2415.5,
+      take_profits: [2399.1, 2377.3],
+    },
+    trace: [
+      { step: 'indicator', tag: 'tighten', reason: '动能走弱' },
+      { step: 'mechanics', tag: 'tighten', reason: '拥挤回升' },
+    ],
+  });
+  const tightenExecutedModel = buildModel(tightenExecutedInput);
+  assert.equal(tightenExecutedModel.sourceCard.lines[1].text, '持仓处理：已执行收紧');
+  assert.equal(tightenExecutedModel.sourceCard.lines[2].text, '当前仓位：空头');
+  assert.equal(tightenExecutedModel.sourceCard.lines[3].text, '止损：2415.5 · 止盈：2399.1 / 2377.3');
+
   const sampleInputPath = path.resolve('./sample-input.json');
   const sampleResult = await renderCard({ inputPath: sampleInputPath, outputPath: sampleOutputPath });
   assert.equal(sampleResult.logicalWidth, CARD_WIDTH, 'sample logical width should stay fixed');

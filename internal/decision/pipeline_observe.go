@@ -73,7 +73,6 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 	}
 	ctx = llm.WithSessionRoundID(ctx, roundID)
 	logger = logger.With(zap.String("round_id", roundID.String()))
-	defer p.cleanupRound(ctx, logger, roundID)
 	if decisionCtx == nil {
 		decisionCtx = make(map[string]symbolDecisionContext)
 	}
@@ -168,7 +167,6 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 	}
 	ctx = llm.WithSessionRoundID(ctx, roundID)
 	logger = logger.With(zap.String("round_id", roundID.String()))
-	defer p.cleanupRound(ctx, logger, roundID)
 	opts := p.enrichRunOptions(RunOptions{BuildPlan: true}, []string{symbol}, map[string]decisionmode.Mode{symbol: decisionmode.ModeInPosition})
 	results, _, comp, err := p.Runner.RunOnceWithOptions(ctx, []string{symbol}, intervals, limit, acct, risk, opts)
 	if err != nil {

@@ -95,6 +95,9 @@ func parsePlan(data map[string]any) *execution.ExecutionPlan {
 	if tps, ok := planMap["take_profits"].([]any); ok {
 		plan.TakeProfits = toFloatSlice(tps)
 	}
+	if !plan.Valid {
+		return nil
+	}
 	return plan
 }
 

@@ -1,8 +1,12 @@
 package onboarding
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"brale-core/internal/config"
 )
 
 func TestPreviewNotificationDefaultsDisabled(t *testing.T) {
@@ -122,6 +126,51 @@ func TestPreviewStrategyFilesUseLLMRiskModeByDefault(t *testing.T) {
 	}
 	if !strings.Contains(symbolStrategy, "[risk_management.initial_exit]\npolicy = \"atr_structure_v1\"") {
 		t.Fatalf("symbol strategy missing compatibility initial_exit policy:\n%s", symbolStrategy)
+	}
+}
+
+func TestPreviewGeneratedStrategyFilesRemainLoadable(t *testing.T) {
+	g := NewGenerator(t.TempDir())
+	result, err := g.Preview(basePreviewRequest())
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	for _, rel := range []string{"configs/strategies/default.toml", "configs/strategies/ETHUSDT.toml"} {
+		t.Run(rel, func(t *testing.T) {
+			content := generatedFileContent(t, result, rel)
+			path := filepath.Join(t.TempDir(), filepath.Base(rel))
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", rel, err)
+			}
+			cfg, err := config.LoadStrategyConfig(path)
+			if err != nil {
+				t.Fatalf("LoadStrategyConfig(%s) error = %v\n%s", rel, err, content)
+			}
+			if err := config.ValidateStrategyConfig(cfg); err != nil {
+				t.Fatalf("ValidateStrategyConfig(%s) error = %v\n%s", rel, err, content)
+			}
+		})
+	}
+}
+
+func TestPreviewTemplateBackedStrategiesUseConservativeSieveFallback(t *testing.T) {
+	g := NewGenerator(t.TempDir())
+	result, err := g.Preview(basePreviewRequest())
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	for _, rel := range []string{"configs/strategies/default.toml", "configs/strategies/ETHUSDT.toml"} {
+		t.Run(rel, func(t *testing.T) {
+			content := generatedFileContent(t, result, rel)
+			if !strings.Contains(content, "default_gate_action = \"WAIT\"") {
+				t.Fatalf("%s missing conservative default_gate_action:\n%s", rel, content)
+			}
+			if !strings.Contains(content, "default_size_factor = 0.0") {
+				t.Fatalf("%s missing conservative default_size_factor:\n%s", rel, content)
+			}
+		})
 	}
 }
 

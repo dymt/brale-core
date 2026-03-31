@@ -49,9 +49,6 @@ func ValidateSymbolConfig(cfg SymbolConfig) error {
 	if err := validateCooldownConfig(cfg.Cooldown); err != nil {
 		return err
 	}
-	if err := validateSessionMode("llm.session_mode", cfg.LLM.SessionMode); err != nil {
-		return err
-	}
 	if err := validateLLMConfig(cfg.LLM, enabled); err != nil {
 		return err
 	}

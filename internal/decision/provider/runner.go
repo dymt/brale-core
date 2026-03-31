@@ -84,56 +84,32 @@ func (r *Runner) providerFor(stage string) (llm.Provider, error) {
 }
 
 func (r *Runner) JudgeIndicator(ctx context.Context, system, user string) (IndicatorProviderOut, error) {
-	return r.JudgeIndicatorWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "indicator", system, user, decodeIndicator)
 }
 
 func (r *Runner) JudgeStructure(ctx context.Context, system, user string) (StructureProviderOut, error) {
-	return r.JudgeStructureWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "structure", system, user, decodeStructure)
 }
 
 func (r *Runner) JudgeMechanics(ctx context.Context, system, user string) (MechanicsProviderOut, error) {
-	return r.JudgeMechanicsWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "mechanics", system, user, decodeMechanics)
 }
 
 func (r *Runner) JudgeIndicatorInPosition(ctx context.Context, system, user string) (InPositionIndicatorOut, error) {
-	return r.JudgeIndicatorInPositionWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "indicator_in_position", system, user, decodeInPositionIndicator)
 }
 
 func (r *Runner) JudgeStructureInPosition(ctx context.Context, system, user string) (InPositionStructureOut, error) {
-	return r.JudgeStructureInPositionWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "structure_in_position", system, user, decodeInPositionStructure)
 }
 
 func (r *Runner) JudgeMechanicsInPosition(ctx context.Context, system, user string) (InPositionMechanicsOut, error) {
-	return r.JudgeMechanicsInPositionWithSession(ctx, "", system, user)
+	return runAndParse(ctx, r, "mechanics_in_position", system, user, decodeInPositionMechanics)
 }
 
-func (r *Runner) JudgeIndicatorWithSession(ctx context.Context, sessionID, system, user string) (IndicatorProviderOut, error) {
-	return runAndParse(ctx, r, "indicator", sessionID, system, user, decodeIndicator)
-}
-
-func (r *Runner) JudgeStructureWithSession(ctx context.Context, sessionID, system, user string) (StructureProviderOut, error) {
-	return runAndParse(ctx, r, "structure", sessionID, system, user, decodeStructure)
-}
-
-func (r *Runner) JudgeMechanicsWithSession(ctx context.Context, sessionID, system, user string) (MechanicsProviderOut, error) {
-	return runAndParse(ctx, r, "mechanics", sessionID, system, user, decodeMechanics)
-}
-
-func (r *Runner) JudgeIndicatorInPositionWithSession(ctx context.Context, sessionID, system, user string) (InPositionIndicatorOut, error) {
-	return runAndParse(ctx, r, "indicator_in_position", sessionID, system, user, decodeInPositionIndicator)
-}
-
-func (r *Runner) JudgeStructureInPositionWithSession(ctx context.Context, sessionID, system, user string) (InPositionStructureOut, error) {
-	return runAndParse(ctx, r, "structure_in_position", sessionID, system, user, decodeInPositionStructure)
-}
-
-func (r *Runner) JudgeMechanicsInPositionWithSession(ctx context.Context, sessionID, system, user string) (InPositionMechanicsOut, error) {
-	return runAndParse(ctx, r, "mechanics_in_position", sessionID, system, user, decodeInPositionMechanics)
-}
-
-func runAndParse[T any](ctx context.Context, r *Runner, stage, sessionID, system, user string, decode func(string) (T, error)) (T, error) {
+func runAndParse[T any](ctx context.Context, r *Runner, stage, system, user string, decode func(string) (T, error)) (T, error) {
 	logger := logging.FromContext(ctx).Named("provider")
-	return decisionutil.RunAndParseWithSession(ctx, r.providerFor, stage, sessionID, system, user, func(raw string) (T, error) {
+	return decisionutil.RunAndParse(ctx, r.providerFor, stage, system, user, func(raw string) (T, error) {
 		logger.Info("provider raw output",
 			zap.String("stage", stage),
 			zap.String("output", trimForLog(raw, 1200)),
