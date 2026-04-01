@@ -2,11 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"math"
-	"sort"
-	"strconv"
 	"strings"
 
 	"brale-core/internal/position"
@@ -15,8 +10,6 @@ import (
 )
 
 const dashboardDecisionFlowGateScanLimit = 200
-
-var dashboardFlowOrderedRoles = []string{"indicator", "structure", "mechanics"}
 
 type dashboardFlowUsecase struct {
 	resolver    SymbolResolver
@@ -29,17 +22,6 @@ type dashboardFlowStore interface {
 	store.TimelineQueryStore
 	store.PositionQueryStore
 	store.RiskPlanQueryStore
-}
-
-type dashboardFlowStageData struct {
-	Stage   string
-	Mode    string
-	Source  string
-	Model   string
-	Status  string
-	Reason  string
-	Summary string
-	Values  []DashboardFlowValueField
 }
 
 func newDashboardFlowUsecase(s *Server) dashboardFlowUsecase {
@@ -170,116 +152,6 @@ func (u dashboardFlowUsecase) resolveAgentStageModels(symbol string) map[string]
 		return nil
 	}
 	return models
-}
-
-func dashboardStatusFromTradeable(tradeable bool) string {
-	if tradeable {
-		return "ok"
-	}
-	return "blocked"
-}
-
-func firstBlockingFieldReason(fields []DashboardFlowValueField) string {
-	for _, field := range fields {
-		if strings.EqualFold(strings.TrimSpace(field.State), "block") {
-			return strings.TrimSpace(field.Key) + "=" + strings.TrimSpace(field.Value)
-		}
-	}
-	return ""
-}
-
-func extractTraceFieldsFromObject(obj map[string]any) []DashboardFlowValueField {
-	if len(obj) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(obj))
-	for key := range obj {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	ordered := make([]DashboardFlowValueField, 0, len(keys))
-	for _, key := range keys {
-		lk := strings.ToLower(strings.TrimSpace(key))
-		if strings.Contains(lk, "detail") || strings.Contains(lk, "reason") || strings.Contains(lk, "prompt") || strings.Contains(lk, "markdown") || strings.Contains(lk, "report") || strings.Contains(lk, "text") {
-			continue
-		}
-		if field, ok := traceFieldFromValue(key, obj[key]); ok {
-			ordered = append(ordered, field)
-		}
-	}
-	return ordered
-}
-
-func traceFieldFromValue(key string, value any) (DashboardFlowValueField, bool) {
-	field := DashboardFlowValueField{Key: key}
-	switch v := value.(type) {
-	case bool:
-		if v {
-			field.Value = "true"
-			field.State = "pass"
-		} else {
-			field.Value = "false"
-			field.State = "block"
-		}
-		return field, true
-	case string:
-		text := strings.TrimSpace(v)
-		if text == "" || len(text) > 48 {
-			return DashboardFlowValueField{}, false
-		}
-		field.Value = text
-		return field, true
-	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return DashboardFlowValueField{}, false
-		}
-		field.Value = strconv.FormatFloat(v, 'f', -1, 64)
-		return field, true
-	case int, int64, uint, uint64, int32, uint32, float32:
-		field.Value = fmt.Sprintf("%v", v)
-		return field, true
-	default:
-		return DashboardFlowValueField{}, false
-	}
-}
-
-func decodeJSONObject(raw json.RawMessage) map[string]any {
-	if len(raw) == 0 {
-		return nil
-	}
-	var obj map[string]any
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return nil
-	}
-	return obj
-}
-
-func extractGateRules(raw json.RawMessage) []DashboardFlowValueField {
-	obj := decodeJSONObject(raw)
-	if len(obj) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(obj))
-	for key := range obj {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]DashboardFlowValueField, 0, len(keys))
-	for _, key := range keys {
-		field, ok := traceFieldFromValue(key, obj[key])
-		if !ok {
-			continue
-		}
-		if field.State == "" {
-			if strings.EqualFold(field.Value, "true") {
-				field.State = "pass"
-			} else if strings.EqualFold(field.Value, "false") {
-				field.State = "block"
-			}
-		}
-		out = append(out, field)
-	}
-	return out
 }
 
 func (u dashboardFlowUsecase) resolveSymbolIntervals(symbol string) []string {

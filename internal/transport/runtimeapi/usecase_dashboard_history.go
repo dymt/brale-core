@@ -12,6 +12,7 @@ import (
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/position"
+	readmodel "brale-core/internal/readmodel/dashboard"
 	"brale-core/internal/runtime"
 	"brale-core/internal/store"
 )
@@ -208,45 +209,22 @@ func decisionDisplayReason(action string, fallback string, tighten *DashboardDec
 }
 
 func buildDecisionTightenDetail(raw json.RawMessage) *DashboardDecisionTightenDetail {
-	if len(raw) == 0 {
+	rm := readmodel.BuildDecisionTightenDetail(raw)
+	if rm == nil {
 		return nil
 	}
-	var derived map[string]any
-	if err := json.Unmarshal(raw, &derived); err != nil {
-		return nil
+	return &DashboardDecisionTightenDetail{
+		Action:         rm.Action,
+		Evaluated:      rm.Evaluated,
+		Eligible:       rm.Eligible,
+		Executed:       rm.Executed,
+		TPTightened:    rm.TPTightened,
+		BlockedBy:      rm.BlockedBy,
+		Score:          rm.Score,
+		ScoreThreshold: rm.ScoreThreshold,
+		ScoreParseOK:   rm.ScoreParseOK,
+		DisplayReason:  rm.DisplayReason,
 	}
-	execRaw, ok := derived["execution"].(map[string]any)
-	if !ok || len(execRaw) == 0 {
-		return nil
-	}
-	action := strings.TrimSpace(fmt.Sprint(execRaw["action"]))
-	if !strings.EqualFold(action, "tighten") {
-		return nil
-	}
-	detail := &DashboardDecisionTightenDetail{
-		Action:      strings.ToUpper(action),
-		Evaluated:   parseDecisionBool(execRaw["evaluated"]),
-		Eligible:    parseDecisionBool(execRaw["eligible"]),
-		Executed:    parseDecisionBool(execRaw["executed"]),
-		TPTightened: parseDecisionBool(execRaw["tp_tightened"]),
-	}
-	if blockedBy, ok := execRaw["blocked_by"].([]any); ok {
-		list := make([]string, 0, len(blockedBy))
-		for _, item := range blockedBy {
-			text := strings.TrimSpace(fmt.Sprint(item))
-			if text != "" {
-				list = append(list, text)
-			}
-		}
-		detail.BlockedBy = list
-	}
-	if score, ok := execRaw["score"].(map[string]any); ok {
-		detail.Score = parseDecisionFloat(score["total"])
-		detail.ScoreThreshold = parseDecisionFloat(score["threshold"])
-		detail.ScoreParseOK = parseDecisionBool(score["parse_ok"])
-	}
-	detail.DisplayReason = tightenDisplayReason(detail)
-	return detail
 }
 
 func tightenDisplayReason(detail *DashboardDecisionTightenDetail) string {
@@ -448,50 +426,16 @@ type dashboardConsensusMetrics struct {
 }
 
 func extractConsensusMetrics(raw json.RawMessage) dashboardConsensusMetrics {
-	if len(raw) == 0 {
-		return dashboardConsensusMetrics{}
+	rm := readmodel.ExtractConsensusMetrics(raw)
+	return dashboardConsensusMetrics{
+		Score:               rm.Score,
+		Confidence:          rm.Confidence,
+		ScoreThreshold:      rm.ScoreThreshold,
+		ConfidenceThreshold: rm.ConfidenceThreshold,
+		ScorePassed:         rm.ScorePassed,
+		ConfidencePassed:    rm.ConfidencePassed,
+		Passed:              rm.Passed,
 	}
-	var derived map[string]any
-	if err := json.Unmarshal(raw, &derived); err != nil {
-		return dashboardConsensusMetrics{}
-	}
-	consensusRaw, ok := derived["direction_consensus"]
-	if !ok {
-		return dashboardConsensusMetrics{}
-	}
-	consensus, ok := consensusRaw.(map[string]any)
-	if !ok || len(consensus) == 0 {
-		return dashboardConsensusMetrics{}
-	}
-	out := dashboardConsensusMetrics{}
-	if score, ok := parseutil.FloatOK(consensus["score"]); ok {
-		out.Score = &score
-	}
-	if confidence, ok := parseutil.FloatOK(consensus["confidence"]); ok {
-		out.Confidence = &confidence
-	}
-	if scoreThreshold, ok := parseutil.FloatOK(consensus["score_threshold"]); ok {
-		out.ScoreThreshold = &scoreThreshold
-	}
-	if confidenceThreshold, ok := parseutil.FloatOK(consensus["confidence_threshold"]); ok {
-		out.ConfidenceThreshold = &confidenceThreshold
-	}
-	if scorePassed, ok := parseConsensusBool(consensus["score_passed"]); ok {
-		out.ScorePassed = boolPtr(scorePassed)
-	} else if out.Score != nil && out.ScoreThreshold != nil {
-		out.ScorePassed = boolPtr(absFloat(*out.Score) >= *out.ScoreThreshold)
-	}
-	if confidencePassed, ok := parseConsensusBool(consensus["confidence_passed"]); ok {
-		out.ConfidencePassed = boolPtr(confidencePassed)
-	} else if out.Confidence != nil && out.ConfidenceThreshold != nil {
-		out.ConfidencePassed = boolPtr(*out.Confidence >= *out.ConfidenceThreshold)
-	}
-	if passed, ok := parseConsensusBool(consensus["passed"]); ok {
-		out.Passed = boolPtr(passed)
-	} else if out.ScorePassed != nil && out.ConfidencePassed != nil {
-		out.Passed = boolPtr(*out.ScorePassed && *out.ConfidencePassed)
-	}
-	return out
 }
 
 func parseConsensusBool(value any) (bool, bool) {
