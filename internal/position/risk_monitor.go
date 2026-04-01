@@ -44,23 +44,48 @@ type cachedStatusAmount struct {
 	fetchedAt time.Time
 }
 
+type riskMonitorOpError struct {
+	Op     string
+	Symbol string
+	Err    error
+}
+
+func (e *riskMonitorOpError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	op := strings.TrimSpace(e.Op)
+	symbol := strings.ToUpper(strings.TrimSpace(e.Symbol))
+	if symbol != "" {
+		return fmt.Sprintf("risk monitor %s: symbol=%s: %v", op, symbol, e.Err)
+	}
+	return fmt.Sprintf("risk monitor %s: %v", op, e.Err)
+}
+
+func (e *riskMonitorOpError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 func (m *RiskMonitor) RunOnce(ctx context.Context, symbol string) error {
 	if err := m.validate(); err != nil {
-		return err
+		return &riskMonitorOpError{Op: "validate", Symbol: symbol, Err: err}
 	}
 	if err := m.handleEntryArmed(ctx, symbol); err != nil {
-		return err
+		return &riskMonitorOpError{Op: "handle entry armed", Symbol: symbol, Err: err}
 	}
 	positions, err := m.Store.ListPositionsByStatus(ctx, []string{PositionOpenActive})
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "list open positions", Symbol: symbol, Err: err}
 	}
 	for _, pos := range positions {
 		if symbol != "" && !strings.EqualFold(pos.Symbol, symbol) {
 			continue
 		}
 		if err := m.handleActivePosition(ctx, pos); err != nil {
-			return err
+			return &riskMonitorOpError{Op: "handle active position", Symbol: pos.Symbol, Err: err}
 		}
 	}
 	return nil
@@ -71,7 +96,11 @@ func (m *RiskMonitor) handleEntryArmed(ctx context.Context, symbol string) error
 		return nil
 	}
 	if strings.TrimSpace(symbol) != "" {
-		return m.handlePlanEntry(ctx, strings.TrimSpace(symbol))
+		sym := strings.TrimSpace(symbol)
+		if err := m.handlePlanEntry(ctx, sym); err != nil {
+			return &riskMonitorOpError{Op: "handle plan entry", Symbol: sym, Err: err}
+		}
+		return nil
 	}
 	entries := m.PlanCache.ListEntries()
 	seen := make(map[string]struct{}, len(entries))
@@ -85,7 +114,7 @@ func (m *RiskMonitor) handleEntryArmed(ctx context.Context, symbol string) error
 		}
 		seen[sym] = struct{}{}
 		if err := m.handlePlanEntry(ctx, sym); err != nil {
-			return err
+			return &riskMonitorOpError{Op: "handle plan entry", Symbol: sym, Err: err}
 		}
 	}
 	return nil
@@ -105,7 +134,7 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 	)
 	pos, plan, quote, skip, err := m.loadActiveRiskContext(ctx, pos)
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "load active risk context", Symbol: pos.Symbol, Err: err}
 	}
 	if skip {
 		return nil
@@ -117,10 +146,13 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 	logRiskTriggerHit(logger, trigger, quote.Price, plan.StopPrice)
 	pos, plan, err = m.refreshRiskPlanOnTPHit(ctx, pos, plan, trigger, logger)
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "refresh risk plan on tp hit", Symbol: pos.Symbol, Err: err}
 	}
 	closeQty, positionQty, reason := m.resolveCloseIntent(ctx, pos, plan, trigger, logger)
-	return m.submitCloseIntent(ctx, pos, quote, closeQty, positionQty, reason, logger)
+	if err := m.submitCloseIntent(ctx, pos, quote, closeQty, positionQty, reason, logger); err != nil {
+		return &riskMonitorOpError{Op: "submit close intent", Symbol: pos.Symbol, Err: err}
+	}
+	return nil
 }
 
 func (m *RiskMonitor) loadActiveRiskContext(ctx context.Context, pos store.PositionRecord) (store.PositionRecord, risk.RiskPlan, market.PriceQuote, bool, error) {
@@ -144,7 +176,7 @@ func (m *RiskMonitor) loadActiveRiskContext(ctx context.Context, pos store.Posit
 	}
 	plan, err := DecodeRiskPlan(pos.RiskJSON)
 	if err != nil {
-		return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, false, err
+		return store.PositionRecord{}, risk.RiskPlan{}, market.PriceQuote{}, false, fmt.Errorf("decode risk plan for %s: %w", pos.Symbol, err)
 	}
 	return pos, plan, quote, false, nil
 }
@@ -179,10 +211,10 @@ func (m *RiskMonitor) refreshRiskPlanOnTPHit(ctx context.Context, pos store.Posi
 	refreshed, ok, err := m.Store.FindPositionByID(ctx, pos.PositionID)
 	if err != nil {
 		logger.Warn("risk plan refresh failed", zap.Error(err))
-		return store.PositionRecord{}, risk.RiskPlan{}, err
+		return store.PositionRecord{}, risk.RiskPlan{}, fmt.Errorf("reload position %s after tp hit: %w", pos.PositionID, err)
 	}
 	if !ok {
-		return store.PositionRecord{}, risk.RiskPlan{}, fmt.Errorf("position not found after refresh")
+		return store.PositionRecord{}, risk.RiskPlan{}, fmt.Errorf("position %s not found after refresh", pos.PositionID)
 	}
 	pos = refreshed
 	if decoded, decErr := DecodeRiskPlan(pos.RiskJSON); decErr == nil {
@@ -274,7 +306,7 @@ func (m *RiskMonitor) submitCloseIntent(ctx context.Context, pos store.PositionR
 	_, err := m.Positions.ArmClose(ctx, pos, reason, quote.Price, closeQty, positionQty)
 	if err != nil {
 		logger.Error("arm close failed", zap.Error(err), zap.String("reason", reason))
-		return err
+		return fmt.Errorf("arm close for %s: %w", strings.TrimSpace(pos.Symbol), err)
 	}
 	return nil
 }
@@ -428,23 +460,29 @@ func (m *RiskMonitor) handlePlanEntry(ctx context.Context, symbol string) error 
 		return nil
 	}
 	expired, err := m.expirePlanEntry(ctx, planSymbol, logger)
-	if err != nil || expired {
-		return err
+	if err != nil {
+		return &riskMonitorOpError{Op: "expire plan entry", Symbol: planSymbol, Err: err}
+	}
+	if expired {
+		return nil
 	}
 	if m.entryAlreadySubmitted(entry, logger) {
 		return nil
 	}
 	quote, triggered, err := m.fetchTriggeredEntryQuote(ctx, entry.Plan, planSymbol, logger)
-	if err != nil || !triggered {
-		return err
+	if err != nil {
+		return &riskMonitorOpError{Op: "fetch triggered entry quote", Symbol: planSymbol, Err: err}
+	}
+	if !triggered {
+		return nil
 	}
 	acct, err := m.fetchAccountState(ctx, planSymbol, logger)
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "fetch account state", Symbol: planSymbol, Err: err}
 	}
 	plan, err := m.refreshPlanSizing(entry.Plan, acct, logger)
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "refresh plan sizing", Symbol: planSymbol, Err: err}
 	}
 	if updated, ok := m.PlanCache.UpdatePlan(planSymbol, plan); ok {
 		plan = updated.Plan
@@ -458,7 +496,7 @@ func (m *RiskMonitor) handlePlanEntry(ctx context.Context, symbol string) error 
 	)
 	resp, err := m.Positions.SubmitOpenFromPlan(ctx, plan, quote.Price)
 	if err != nil {
-		return err
+		return &riskMonitorOpError{Op: "submit open from plan", Symbol: planSymbol, Err: err}
 	}
 	logger.Info("entry trigger hit",
 		zap.Float64("mark_price", quote.Price),
