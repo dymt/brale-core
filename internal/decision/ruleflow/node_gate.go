@@ -277,7 +277,16 @@ func (e *gateDecisionEvaluator) evalStructure() {
 	if e.hasAction() {
 		return
 	}
-	if !e.inputs.StructureIntegrity || e.inputs.StructureTag == "structure_broken" {
+	if e.inputs.StructureTag == "structure_broken" {
+		// divergence_reversal 场景下结构天然滞后于指标，降级为 WAIT 给指标先行留余地。
+		if e.inputs.IndicatorTag == "divergence_reversal" {
+			e.setStop("structure", "WAIT", "STRUCT_LAGGING", gatePriorityStructBreak)
+			return
+		}
+		e.setStop("structure", "VETO", "STRUCT_BREAK", gatePriorityStructBreak)
+		return
+	}
+	if !e.inputs.StructureIntegrity {
 		e.setStop("structure", "VETO", "STRUCT_BREAK", gatePriorityStructBreak)
 		return
 	}
@@ -303,7 +312,7 @@ func (e *gateDecisionEvaluator) evalIndicatorNoise() {
 	if e.hasAction() {
 		return
 	}
-	if e.inputs.MeanRevNoise || e.inputs.IndicatorTag == "noise" {
+	if e.inputs.IndicatorTag == "noise" {
 		e.setStop("indicator_noise", "WAIT", "INDICATOR_NOISE", gatePriorityIndicatorNoise)
 		return
 	}
