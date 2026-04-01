@@ -1,90 +1,154 @@
 package ruleflow
 
-type gateStopRule struct {
-	Step     string
-	Action   string
-	Code     string
-	Priority int
-	Match    func(gateInputs) bool
-}
-
-var gateStructureStopRules = []gateStopRule{
+var gateDirectionRules = []gateDecisionRule{
 	{
-		Step:     "structure",
-		Action:   "WAIT",
-		Code:     "STRUCT_LAGGING",
-		Priority: gatePriorityStructBreak,
-		Match: func(inputs gateInputs) bool {
-			return inputs.StructureTag == "structure_broken" && inputs.IndicatorTag == "divergence_reversal"
+		Step: "direction",
+		Outcome: gateDecisionOutcome{
+			Action:   "VETO",
+			Reason:   "CONSENSUS_NOT_PASSED",
+			Priority: gatePriorityConsensusFailed,
+			StopStep: "direction",
 		},
-	},
-	{
-		Step:     "structure",
-		Action:   "VETO",
-		Code:     "STRUCT_BREAK",
-		Priority: gatePriorityStructBreak,
-		Match: func(inputs gateInputs) bool {
-			return inputs.StructureTag == "structure_broken" || !inputs.StructureIntegrity
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.StructureDirection == "" || ctx.Inputs.StructureDirection == "none"
 		},
 	},
 }
 
-var gateMechanicsStopRules = []gateStopRule{
+var gateDataRules = []gateDecisionRule{
 	{
-		Step:     "mech_risk",
-		Action:   "VETO",
-		Code:     "MECH_RISK",
-		Priority: gatePriorityMechRisk,
-		Match: func(inputs gateInputs) bool {
-			return inputs.MechanicsTag == "liquidation_cascade"
+		Step: "data",
+		Outcome: gateDecisionOutcome{
+			Action:   "VETO",
+			Reason:   "DATA_MISSING",
+			Priority: gatePriorityDataMissing,
+			StopStep: "data",
 		},
-	},
-	{
-		Step:     "mech_risk",
-		Action:   "WAIT",
-		Code:     "MECH_RISK",
-		Priority: gatePriorityMechRisk,
-		Match: func(inputs gateInputs) bool {
-			return inputs.LiquidationStress && inputs.LiqConfidence != "low"
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.MissingProviders && ctx.Inputs.State != "IN_POSITION"
 		},
 	},
 }
 
-var gateNoiseStopRules = []gateStopRule{
+var gateStructureStopRules = []gateDecisionRule{
 	{
-		Step:     "indicator_noise",
-		Action:   "WAIT",
-		Code:     "INDICATOR_NOISE",
-		Priority: gatePriorityIndicatorNoise,
-		Match: func(inputs gateInputs) bool {
-			return inputs.IndicatorTag == "noise"
+		Step: "structure",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "STRUCT_LAGGING",
+			Priority: gatePriorityStructBreak,
+			StopStep: "structure",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.StructureTag == "structure_broken" && ctx.Inputs.IndicatorTag == "divergence_reversal"
 		},
 	},
 	{
-		Step:     "structure_clear",
-		Action:   "WAIT",
-		Code:     "INDICATOR_MIXED",
-		Priority: gatePriorityIndicatorMixed,
-		Match: func(inputs gateInputs) bool {
-			return !inputs.StructureClear
+		Step: "structure",
+		Outcome: gateDecisionOutcome{
+			Action:   "VETO",
+			Reason:   "STRUCT_BREAK",
+			Priority: gatePriorityStructBreak,
+			StopStep: "structure",
 		},
-	},
-	{
-		Step:     "tag_consistency",
-		Action:   "WAIT",
-		Code:     "INDICATOR_MIXED",
-		Priority: gatePriorityTagInconsistent,
-		Match: func(inputs gateInputs) bool {
-			return !resolveBoolTagConsistencyFromFlags(inputs.IndicatorTag, inputs.MomentumExpansion, inputs.Alignment, inputs.MeanRevNoise)
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.StructureTag == "structure_broken" || !ctx.Inputs.StructureIntegrity
 		},
 	},
 }
 
-func findFirstGateStopRule(rules []gateStopRule, inputs gateInputs) (gateStopRule, bool) {
-	for _, rule := range rules {
-		if rule.Match != nil && rule.Match(inputs) {
-			return rule, true
-		}
-	}
-	return gateStopRule{}, false
+var gateMechanicsStopRules = []gateDecisionRule{
+	{
+		Step: "mech_risk",
+		Outcome: gateDecisionOutcome{
+			Action:   "VETO",
+			Reason:   "MECH_RISK",
+			Priority: gatePriorityMechRisk,
+			StopStep: "mech_risk",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.MechanicsTag == "liquidation_cascade"
+		},
+	},
+	{
+		Step: "mech_risk",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "MECH_RISK",
+			Priority: gatePriorityMechRisk,
+			StopStep: "mech_risk",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.LiquidationStress && ctx.Inputs.LiqConfidence != "low"
+		},
+	},
+}
+
+var gateNoiseStopRules = []gateDecisionRule{
+	{
+		Step: "indicator_noise",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "INDICATOR_NOISE",
+			Priority: gatePriorityIndicatorNoise,
+			StopStep: "indicator_noise",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Inputs.IndicatorTag == "noise"
+		},
+	},
+	{
+		Step: "structure_clear",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "INDICATOR_MIXED",
+			Priority: gatePriorityIndicatorMixed,
+			StopStep: "structure_clear",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return !ctx.Inputs.StructureClear
+		},
+	},
+	{
+		Step: "tag_consistency",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "INDICATOR_MIXED",
+			Priority: gatePriorityTagInconsistent,
+			StopStep: "tag_consistency",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return !resolveBoolTagConsistencyFromFlags(ctx.Inputs.IndicatorTag, ctx.Inputs.MomentumExpansion, ctx.Inputs.Alignment, ctx.Inputs.MeanRevNoise)
+		},
+	},
+}
+
+var gateScriptStopRules = []gateDecisionRule{
+	{
+		Step: "script_select",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "INDICATOR_MIXED",
+			Priority: gatePriorityScriptMissing,
+			StopStep: "script_select",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			return ctx.Script == ""
+		},
+	},
+	{
+		Step: "script_allowed",
+		Outcome: gateDecisionOutcome{
+			Action:   "WAIT",
+			Reason:   "INDICATOR_MIXED",
+			Priority: gatePriorityScriptNotAllowed,
+			StopStep: "script_allowed",
+		},
+		Match: func(ctx gateDecisionContext) bool {
+			if ctx.Script == "" {
+				return false
+			}
+			return !isEntryScriptAllowed(ctx.Script, ctx.Inputs.MomentumExpansion, ctx.Inputs.Alignment, ctx.Inputs.MeanRevNoise)
+		},
+	},
 }

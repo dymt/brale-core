@@ -47,6 +47,26 @@ type gateDecision struct {
 	GateTrace  []map[string]any
 }
 
+type gateDecisionContext struct {
+	Inputs           gateInputs
+	MissingProviders bool
+	Script           string
+}
+
+type gateDecisionOutcome struct {
+	Action   string
+	Reason   string
+	Priority int
+	StopStep string
+	Grade    int
+}
+
+type gateDecisionRule struct {
+	Step    string
+	Outcome gateDecisionOutcome
+	Match   func(gateDecisionContext) bool
+}
+
 type gateDecisionEvaluator struct {
 	inputs           gateInputs
 	missingProviders bool
@@ -76,4 +96,35 @@ func (e *gateDecisionEvaluator) setStop(step string, action string, code string,
 	e.decision.StopStep = step
 	e.decision.StopReason = code
 	e.appendGateTrace(step, false, code)
+}
+
+func (e *gateDecisionEvaluator) context() gateDecisionContext {
+	return gateDecisionContext{
+		Inputs:           e.inputs,
+		MissingProviders: e.missingProviders,
+	}
+}
+
+func (e *gateDecisionEvaluator) applyOutcome(outcome gateDecisionOutcome) {
+	if strings.TrimSpace(outcome.Action) == "" {
+		return
+	}
+	e.decision.Action = outcome.Action
+	e.decision.Reason = outcome.Reason
+	e.decision.Priority = outcome.Priority
+	e.decision.StopStep = outcome.StopStep
+	e.decision.StopReason = outcome.Reason
+	if outcome.Grade > 0 {
+		e.decision.Grade = outcome.Grade
+	}
+	e.appendGateTrace(outcome.StopStep, false, outcome.Reason)
+}
+
+func findFirstGateDecisionRule(rules []gateDecisionRule, ctx gateDecisionContext) (gateDecisionRule, bool) {
+	for _, rule := range rules {
+		if rule.Match != nil && rule.Match(ctx) {
+			return rule, true
+		}
+	}
+	return gateDecisionRule{}, false
 }

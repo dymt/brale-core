@@ -10,7 +10,7 @@ type gateScriptRule struct {
 	IndicatorTag string
 	StructureTag string
 	Script       string
-	Grade        int
+	AllowOutcome gateDecisionOutcome
 	Allow        gateScriptCondition
 }
 
@@ -19,64 +19,100 @@ var gateScriptRules = []gateScriptRule{
 		IndicatorTag: "trend_surge",
 		StructureTag: "breakout_confirmed",
 		Script:       "A",
-		Grade:        gateGradeHigh,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeHigh,
+		},
 		Allow: gateScriptCondition{
-			MomentumExpansion: boolPtr(true),
-			Alignment:         boolPtr(true),
-			MeanRevNoise:      boolPtr(false),
+			MomentumExpansion: gateBoolPtr(true),
+			Alignment:         gateBoolPtr(true),
+			MeanRevNoise:      gateBoolPtr(false),
 		},
 	},
 	{
 		IndicatorTag: "pullback_entry",
 		StructureTag: "support_retest",
 		Script:       "B",
-		Grade:        gateGradeMedium,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeMedium,
+		},
 		Allow: gateScriptCondition{
-			MomentumExpansion: boolPtr(false),
-			Alignment:         boolPtr(true),
-			MeanRevNoise:      boolPtr(false),
+			MomentumExpansion: gateBoolPtr(false),
+			Alignment:         gateBoolPtr(true),
+			MeanRevNoise:      gateBoolPtr(false),
 		},
 	},
 	{
 		IndicatorTag: "divergence_reversal",
 		StructureTag: "support_retest",
 		Script:       "C",
-		Grade:        gateGradeLow,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeLow,
+		},
 		Allow: gateScriptCondition{
-			Alignment:    boolPtr(false),
-			MeanRevNoise: boolPtr(false),
+			Alignment:    gateBoolPtr(false),
+			MeanRevNoise: gateBoolPtr(false),
 		},
 	},
 	{
 		IndicatorTag: "trend_surge",
 		StructureTag: "support_retest",
 		Script:       "D",
-		Grade:        gateGradeMedium,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeMedium,
+		},
 		Allow: gateScriptCondition{
-			MomentumExpansion: boolPtr(true),
-			Alignment:         boolPtr(true),
-			MeanRevNoise:      boolPtr(false),
+			MomentumExpansion: gateBoolPtr(true),
+			Alignment:         gateBoolPtr(true),
+			MeanRevNoise:      gateBoolPtr(false),
 		},
 	},
 	{
 		IndicatorTag: "pullback_entry",
 		StructureTag: "breakout_confirmed",
 		Script:       "E",
-		Grade:        gateGradeLow,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeLow,
+		},
 		Allow: gateScriptCondition{
-			MomentumExpansion: boolPtr(false),
-			Alignment:         boolPtr(true),
-			MeanRevNoise:      boolPtr(false),
+			MomentumExpansion: gateBoolPtr(false),
+			Alignment:         gateBoolPtr(true),
+			MeanRevNoise:      gateBoolPtr(false),
 		},
 	},
 	{
 		IndicatorTag: "divergence_reversal",
 		StructureTag: "breakout_confirmed",
 		Script:       "F",
-		Grade:        gateGradeLow,
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_STRONG",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeLow,
+		},
 		Allow: gateScriptCondition{
-			Alignment:    boolPtr(false),
-			MeanRevNoise: boolPtr(false),
+			Alignment:    gateBoolPtr(false),
+			MeanRevNoise: gateBoolPtr(false),
 		},
 	},
 }
@@ -101,7 +137,15 @@ func resolveEntryGrade(script string) int {
 	if !ok {
 		return gateGradeNone
 	}
-	return rule.Grade
+	return rule.AllowOutcome.Grade
+}
+
+func resolveEntryAllowOutcome(script string) (gateDecisionOutcome, bool) {
+	rule, ok := findGateScriptRuleByScript(script)
+	if !ok {
+		return gateDecisionOutcome{}, false
+	}
+	return rule.AllowOutcome, true
 }
 
 func findGateScriptRuleByTags(indicatorTag, structureTag string) (gateScriptRule, bool) {
@@ -135,7 +179,7 @@ func (c gateScriptCondition) matches(momentumExpansion, alignment, meanRevNoise 
 	return true
 }
 
-func boolPtr(value bool) *bool {
+func gateBoolPtr(value bool) *bool {
 	v := value
 	return &v
 }
