@@ -2,15 +2,7 @@
 
 ## Deferred Cleanup
 
-1. Refactor `internal/decision/decisionfmt/formatter_translate.go`.
-   - Convert repetitive branching into table-driven formatting with small escape hatches.
-
-2. Refactor bot transports.
-   - `internal/transport/feishubot/bot.go`
-   - `internal/transport/telegrambot/bot.go`
-   - Extract command registry and callback routing.
-
-3. Refactor exchange transport readability hotspots.
+1. Refactor exchange transport readability hotspots.
    - `internal/market/binance/futures.go`
    - Split by endpoint or concern without changing wire behavior.
 
