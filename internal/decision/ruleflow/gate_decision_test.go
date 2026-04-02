@@ -43,6 +43,28 @@ func TestEvaluateGateDecisionUsesRuleTablesForStops(t *testing.T) {
 			wantStep:     "structure",
 		},
 		{
+			name: "structure break veto without continuation confirmation",
+			inputs: gateInputs{
+				StructureDirection:  "short",
+				IndicatorTag:        "trend_surge",
+				StructureTag:        "structure_broken",
+				StructureIntegrity:  false,
+				StructureClear:      false,
+				MomentumExpansion:   true,
+				Alignment:           true,
+				ConsensusScore:      -0.66,
+				ConsensusConfidence: 0.61,
+				ConsensusResonance:  0.02,
+				ConsensusResonant:   true,
+				ScoreThreshold:      0.60,
+				ConfidenceThreshold: 0.52,
+			},
+			wantAction:   "VETO",
+			wantReason:   "STRUCT_BREAK",
+			wantPriority: gatePriorityStructBreak,
+			wantStep:     "structure",
+		},
+		{
 			name: "mechanics risk veto",
 			inputs: gateInputs{
 				StructureDirection: "long",
@@ -94,6 +116,72 @@ func TestEvaluateGateDecisionUsesRuleTablesForStops(t *testing.T) {
 				t.Fatalf("stop_step=%s want %s", decision.StopStep, tc.wantStep)
 			}
 		})
+	}
+}
+
+func TestEvaluateGateDecisionAllowsStructureBreakContinuation(t *testing.T) {
+	decision := evaluateGateDecision(gateInputs{
+		State:               "FLAT",
+		StructureDirection:  "short",
+		IndicatorTag:        "trend_surge",
+		StructureTag:        "structure_broken",
+		MechanicsTag:        "neutral",
+		MomentumExpansion:   true,
+		Alignment:           true,
+		MeanRevNoise:        false,
+		StructureClear:      false,
+		StructureIntegrity:  false,
+		LiquidationStress:   false,
+		LiqConfidence:       "low",
+		ConsensusScore:      -0.66,
+		ConsensusConfidence: 0.61,
+		ConsensusAgreement:  0.89,
+		ConsensusResonance:  0.08,
+		ConsensusResonant:   true,
+		ScoreThreshold:      0.60,
+		ConfidenceThreshold: 0.52,
+	}, false)
+
+	if decision.Action != "ALLOW" {
+		t.Fatalf("action=%s want ALLOW", decision.Action)
+	}
+	if decision.Reason != "PASS_BREAK_CONTINUATION" {
+		t.Fatalf("reason=%s want PASS_BREAK_CONTINUATION", decision.Reason)
+	}
+	if decision.StopStep != "gate_allow" {
+		t.Fatalf("stop_step=%s want gate_allow", decision.StopStep)
+	}
+	if decision.Grade != gateGradeMedium {
+		t.Fatalf("grade=%d want %d", decision.Grade, gateGradeMedium)
+	}
+}
+
+func TestEvaluateGateDecisionBlocksStructureBreakContinuationBelowConfiguredThreshold(t *testing.T) {
+	decision := evaluateGateDecision(gateInputs{
+		State:               "FLAT",
+		StructureDirection:  "short",
+		IndicatorTag:        "trend_surge",
+		StructureTag:        "structure_broken",
+		MechanicsTag:        "neutral",
+		MomentumExpansion:   true,
+		Alignment:           true,
+		MeanRevNoise:        false,
+		StructureClear:      false,
+		StructureIntegrity:  false,
+		LiqConfidence:       "low",
+		ConsensusScore:      -0.44,
+		ConsensusConfidence: 0.61,
+		ConsensusResonance:  0.08,
+		ConsensusResonant:   true,
+		ScoreThreshold:      0.60,
+		ConfidenceThreshold: 0.52,
+	}, false)
+
+	if decision.Action != "VETO" {
+		t.Fatalf("action=%s want VETO", decision.Action)
+	}
+	if decision.Reason != "STRUCT_BREAK" {
+		t.Fatalf("reason=%s want STRUCT_BREAK", decision.Reason)
 	}
 }
 

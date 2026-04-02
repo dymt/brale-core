@@ -17,6 +17,23 @@ type gateScriptRule struct {
 var gateScriptRules = []gateScriptRule{
 	{
 		IndicatorTag: "trend_surge",
+		StructureTag: "structure_broken",
+		Script:       "G",
+		AllowOutcome: gateDecisionOutcome{
+			Action:   "ALLOW",
+			Reason:   "PASS_BREAK_CONTINUATION",
+			Priority: gatePriorityAllow,
+			StopStep: "gate_allow",
+			Grade:    gateGradeMedium,
+		},
+		Allow: gateScriptCondition{
+			MomentumExpansion: gateBoolPtr(true),
+			Alignment:         gateBoolPtr(true),
+			MeanRevNoise:      gateBoolPtr(false),
+		},
+	},
+	{
+		IndicatorTag: "trend_surge",
 		StructureTag: "breakout_confirmed",
 		Script:       "A",
 		AllowOutcome: gateDecisionOutcome{

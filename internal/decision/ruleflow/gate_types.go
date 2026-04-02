@@ -22,18 +22,25 @@ const (
 )
 
 type gateInputs struct {
-	State              string
-	StructureDirection string
-	IndicatorTag       string
-	StructureTag       string
-	MechanicsTag       string
-	MomentumExpansion  bool
-	Alignment          bool
-	MeanRevNoise       bool
-	StructureClear     bool
-	StructureIntegrity bool
-	LiquidationStress  bool
-	LiqConfidence      string
+	State               string
+	StructureDirection  string
+	IndicatorTag        string
+	StructureTag        string
+	MechanicsTag        string
+	MomentumExpansion   bool
+	Alignment           bool
+	MeanRevNoise        bool
+	StructureClear      bool
+	StructureIntegrity  bool
+	LiquidationStress   bool
+	LiqConfidence       string
+	ConsensusScore      float64
+	ConsensusConfidence float64
+	ConsensusAgreement  float64
+	ConsensusResonance  float64
+	ConsensusResonant   bool
+	ScoreThreshold      float64
+	ConfidenceThreshold float64
 }
 
 type gateDecision struct {

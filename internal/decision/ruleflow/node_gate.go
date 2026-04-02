@@ -55,6 +55,7 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	indicator := toMap(providers["indicator"])
 	structure := toMap(providers["structure"])
 	mechanics := toMap(providers["mechanics"])
+	consensus := toMap(root["consensus"])
 	riskMgmt := toMap(root["risk_management"])
 	binding := toMap(root["binding"])
 	state := strings.ToUpper(strings.TrimSpace(toString(root["state"])))
@@ -73,18 +74,25 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	liqConfidence := strings.ToLower(toString(toMap(mechanics["liquidation_stress"])["confidence"]))
 	crowdingAlign := (structureDirection == "long" && mechanicsTag == "crowded_long") || (structureDirection == "short" && mechanicsTag == "crowded_short")
 	inputs := gateInputs{
-		State:              state,
-		StructureDirection: structureDirection,
-		IndicatorTag:       indicatorTag,
-		StructureTag:       structureTag,
-		MechanicsTag:       mechanicsTag,
-		MomentumExpansion:  momentumExpansion,
-		Alignment:          alignment,
-		MeanRevNoise:       meanRevNoise,
-		StructureClear:     structureClear,
-		StructureIntegrity: structureIntegrity,
-		LiquidationStress:  liquidationStress,
-		LiqConfidence:      liqConfidence,
+		State:               state,
+		StructureDirection:  structureDirection,
+		IndicatorTag:        indicatorTag,
+		StructureTag:        structureTag,
+		MechanicsTag:        mechanicsTag,
+		MomentumExpansion:   momentumExpansion,
+		Alignment:           alignment,
+		MeanRevNoise:        meanRevNoise,
+		StructureClear:      structureClear,
+		StructureIntegrity:  structureIntegrity,
+		LiquidationStress:   liquidationStress,
+		LiqConfidence:       liqConfidence,
+		ConsensusScore:      toFloat(consensus["score"]),
+		ConsensusConfidence: toFloat(consensus["confidence"]),
+		ConsensusAgreement:  toFloat(consensus["agreement"]),
+		ConsensusResonance:  toFloat(consensus["resonance_bonus"]),
+		ConsensusResonant:   toBool(consensus["resonance_active"]),
+		ScoreThreshold:      toFloat(consensus["score_threshold"]),
+		ConfidenceThreshold: toFloat(consensus["confidence_threshold"]),
 	}
 	missingProviders := resolveMissingProviders(providersEnabled, indicator, structure, mechanics)
 	decision := evaluateGateDecision(inputs, missingProviders)
@@ -120,6 +128,13 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	derived["structure_tag"] = structureTag
 	derived["mechanics_tag"] = mechanicsTag
 	derived["crowding_align"] = crowdingAlign
+	derived["consensus_score"] = inputs.ConsensusScore
+	derived["consensus_confidence"] = inputs.ConsensusConfidence
+	derived["consensus_agreement"] = inputs.ConsensusAgreement
+	derived["consensus_resonance_bonus"] = inputs.ConsensusResonance
+	derived["consensus_resonant"] = inputs.ConsensusResonant
+	derived["consensus_score_threshold"] = inputs.ScoreThreshold
+	derived["consensus_confidence_threshold"] = inputs.ConfidenceThreshold
 	derived["gate_trace"] = decision.GateTrace
 	derived["gate_stop_step"] = decision.StopStep
 	derived["gate_stop_reason"] = decision.StopReason

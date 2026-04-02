@@ -1,5 +1,9 @@
 package ruleflow
 
+const (
+	breakContinuationMinResonanceBonus = 0.05
+)
+
 var gateDirectionRules = []gateDecisionRule{
 	{
 		Step: "direction",
@@ -52,6 +56,9 @@ var gateStructureStopRules = []gateDecisionRule{
 			StopStep: "structure",
 		},
 		Match: func(ctx gateDecisionContext) bool {
+			if ctx.Inputs.StructureTag == "structure_broken" && allowStructureBreakContinuation(ctx) {
+				return false
+			}
 			return ctx.Inputs.StructureTag == "structure_broken" || !ctx.Inputs.StructureIntegrity
 		},
 	},
@@ -106,6 +113,9 @@ var gateNoiseStopRules = []gateDecisionRule{
 			StopStep: "structure_clear",
 		},
 		Match: func(ctx gateDecisionContext) bool {
+			if ctx.Inputs.StructureTag == "structure_broken" && allowStructureBreakContinuation(ctx) {
+				return false
+			}
 			return !ctx.Inputs.StructureClear
 		},
 	},
@@ -121,6 +131,35 @@ var gateNoiseStopRules = []gateDecisionRule{
 			return !resolveBoolTagConsistencyFromFlags(ctx.Inputs.IndicatorTag, ctx.Inputs.MomentumExpansion, ctx.Inputs.Alignment, ctx.Inputs.MeanRevNoise)
 		},
 	},
+}
+
+func allowStructureBreakContinuation(ctx gateDecisionContext) bool {
+	if ctx.Inputs.StructureTag != "structure_broken" {
+		return false
+	}
+	if ctx.Inputs.StructureDirection != "long" && ctx.Inputs.StructureDirection != "short" {
+		return false
+	}
+	if ctx.Inputs.IndicatorTag != "trend_surge" {
+		return false
+	}
+	if !ctx.Inputs.MomentumExpansion || !ctx.Inputs.Alignment || ctx.Inputs.MeanRevNoise {
+		return false
+	}
+	if !ctx.Inputs.ConsensusResonant || ctx.Inputs.ConsensusResonance < breakContinuationMinResonanceBonus {
+		return false
+	}
+	if ctx.Inputs.ScoreThreshold <= 0 || ctx.Inputs.ConfidenceThreshold <= 0 {
+		return false
+	}
+	return absGateScore(ctx.Inputs.ConsensusScore) >= ctx.Inputs.ScoreThreshold && ctx.Inputs.ConsensusConfidence >= ctx.Inputs.ConfidenceThreshold
+}
+
+func absGateScore(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 var gateScriptStopRules = []gateDecisionRule{
