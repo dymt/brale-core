@@ -193,7 +193,7 @@ var llmKeyLabels = map[string]string{
 	"momentum_expansion":    "动能扩张",
 	"mean_rev_noise":        "均值回归噪音",
 	"clear_structure":       "结构清晰",
-	"integrity":             "结构完整性",
+	"integrity":             "结构叙事有效性",
 	"momentum_sustaining":   "动能维持",
 	"divergence_detected":   "背离",
 	"adverse_liquidation":   "反向清算风险",

@@ -13,7 +13,7 @@ type boolPhrase struct {
 }
 
 var boolPhraseMap = map[string]boolPhrase{
-	"integrity":           {True: "目前结构完整", False: "目前结构不完整"},
+	"integrity":           {True: "结构叙事仍成立", False: "结构叙事已失效"},
 	"clear_structure":     {True: "结构清晰", False: "结构不清晰"},
 	"momentum_expansion":  {True: "动能扩张", False: "动能未扩张"},
 	"alignment":           {True: "指标一致", False: "指标不一致"},

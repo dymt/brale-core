@@ -61,3 +61,14 @@ CLAUDE.md
 env_old
 flow.md
 webui/og-card-demo/ethusdt-og-card.png
+
+# Local-only configs/assets to keep out of commits
+configs/freqtrade/config.base.json
+configs/symbols-index.toml
+configs/symbols/ETHUSDT.toml
+configs/symbols/STOUSDT.toml
+configs/strategies/STOUSDT.toml
+internal/onboarding/templates/freqtrade-config.base.json
+onboarding
+webui/brale-icon-only.png
+规则说明.txt

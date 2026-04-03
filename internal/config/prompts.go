@@ -94,14 +94,14 @@ const defaultProviderStructurePrompt = "" +
 	"判断边界：只能基于摘要输入中的 regime/quality/last_break/pattern/volume_action/candle_reaction 以及上下文做判断；禁止编造结构事件或额外背景。\n" +
 	"判断原则：\n" +
 	"- 若结构清晰、趋势或区间状态明确、关键事件可辨认，可将 clear_structure 判断为 true。\n" +
-	"- 若结构没有明显被破坏、突破/回踩/反应逻辑基本连贯，可将 integrity 判断为 true；若结构混乱、关键事件不明确、或价格反应与结构叙事冲突，integrity 应偏向 false。\n" +
+	"- 若结构没有明显被破坏、突破/回踩/反应逻辑基本连贯，可将 integrity 判断为 true。注意：如果价格短暂突破关键位但随后回收（假突破），只要原方向的结构叙事仍然成立，integrity 应为 true；只有当结构叙事本身已失效、方向逻辑不再成立时才输出 false。若结构混乱、关键事件不明确、或价格反应与结构叙事冲突，integrity 应偏向 false。\n" +
 	"- signal_tag 需要综合结构状态给出：突破清晰且确认度高时可考虑 breakout_confirmed；结构仍完整但更像突破后的回踩、确认或续势时可考虑 support_retest；价格对关键位更像拒绝、假突破或失败确认时可考虑 fakeout_rejection；结构本身已明显受损、失真或方向叙事失效时输出 structure_broken。\n" +
 	"- reason 必须尽量引用至少 2 个输入字段名（可写 field=value）；仅当所有相关字段都缺失/为空/为“数据不足”时，才允许写“数据不足”。"
 
 const defaultInPosStructurePrompt = "" +
 	"输出要求：只输出一个 JSON 对象，且仅包含字段（禁止新增/缺失）：integrity(bool), threat_level(none/low/medium/high/critical), monitor_tag(keep/tighten/exit), reason(string<=1句)。\n" +
 	"约束：禁止生成新的连续数值/阈值；reason 尽量引用输入字段名或 field=value；两份输入都无法引用时才写“数据不足”。\n" +
-	"判断原则：若原持仓方向对应的结构仍成立、关键位未被破坏、价格行为与原叙事一致，可将 integrity 判断为 true；若出现反向 break、结构质量恶化、趋势/区间判断失真、或原持仓叙事被削弱，integrity 应偏向 false。\n" +
+	"判断原则：若原持仓方向对应的结构仍成立、关键位未被破坏、价格行为与原叙事一致，可将 integrity 判断为 true。注意：如果价格短暂突破关键位但随后回收（假突破），只要原持仓方向的结构叙事仍然成立，integrity 应为 true；只有当结构叙事本身失效、原持仓逻辑不再成立时才输出 false。若出现反向 break、结构质量恶化、趋势/区间判断失真、或原持仓叙事被削弱，integrity 应偏向 false。\n" +
 	"threat_level 表示当前结构层面对持仓的威胁程度：none/low 表示结构基本健康；medium 表示出现一定破坏或不确定性；high 表示结构明显受损、继续持有风险较高；critical 表示原持仓结构逻辑已明显失效或处于高风险区间。\n" +
 	"monitor_tag 需要综合 integrity、threat_level 与仓位状态判断：结构仍完整时优先 keep；威胁上升但未完全失效时优先 tighten；结构明显失效或威胁达到 critical 时输出 exit。\n" +
 	"当结构信号与仓位状态存在冲突时，优先保守，不要勉强给出过强结论。"

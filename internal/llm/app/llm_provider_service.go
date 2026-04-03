@@ -452,7 +452,7 @@ func describeIndicator(out provider.IndicatorProviderOut) string {
 
 func describeStructure(out provider.StructureProviderOut) string {
 	return fmt.Sprintf(
-		"clear_structure 结构清晰: %t; integrity 完整性: %t; reason 理由: %s",
+		"clear_structure 结构清晰: %t; integrity 叙事有效: %t; reason 理由: %s",
 		out.ClearStructure,
 		out.Integrity,
 		out.Reason,
@@ -479,7 +479,7 @@ func describeInPositionIndicator(out provider.InPositionIndicatorOut) string {
 
 func describeInPositionStructure(out provider.InPositionStructureOut) string {
 	return fmt.Sprintf(
-		"integrity 结构完整: %t; threat_level 威胁等级: %s; reason 理由: %s",
+		"integrity 叙事有效: %t; threat_level 威胁等级: %s; reason 理由: %s",
 		out.Integrity,
 		string(out.ThreatLevel),
 		out.Reason,

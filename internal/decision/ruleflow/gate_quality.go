@@ -9,9 +9,7 @@ func computeSetupQuality(structureClear, structureIntegrity, alignment, momentum
 		0.15*boolToFloat(momentumExpansion) +
 		0.10*scriptBonus -
 		0.20*boolToFloat(meanRevNoise)
-	if !resolveIndicatorTagConsistency(indicatorTag, momentumExpansion, alignment, meanRevNoise) {
-		score -= 0.25
-	}
+	score -= resolveConsistencyPenalty(indicatorTag, momentumExpansion, alignment, meanRevNoise)
 	return clampGateFloat(score, 0, 1)
 }
 
@@ -31,6 +29,10 @@ func resolveScriptBonus(indicatorTag, structureTag string) (bonus float64, scrip
 		return 0.3, "F"
 	case indicatorTag == "trend_surge" && structureTag == "structure_broken":
 		return 0.2, "G"
+	case structureTag == "fakeout_rejection":
+		return 0, "FR"
+	case indicatorTag == "momentum_weak":
+		return 0, "MW"
 	default:
 		return 0, ""
 	}
@@ -83,8 +85,47 @@ func resolveIndicatorTagConsistency(indicatorTag string, momentumExpansion, alig
 		return !alignment && !meanRevNoise
 	case "noise":
 		return meanRevNoise
+	case "momentum_weak":
+		return true
 	default:
 		return true
+	}
+}
+
+const (
+	consistencyPenaltyHard = 0.25
+	consistencyPenaltySoft = 0.10
+)
+
+func resolveConsistencyPenalty(indicatorTag string, momentumExpansion, alignment, meanRevNoise bool) float64 {
+	if resolveIndicatorTagConsistency(indicatorTag, momentumExpansion, alignment, meanRevNoise) {
+		return 0
+	}
+	switch indicatorTag {
+	case "trend_surge":
+		// trend_surge + mean_rev_noise or !alignment = narrative contradiction
+		if meanRevNoise || !alignment {
+			return consistencyPenaltyHard
+		}
+		// trend_surge + !momentumExpansion only = weaker conflict
+		return consistencyPenaltySoft
+	case "pullback_entry":
+		// pullback with expansion is a soft mismatch, could be transition
+		if momentumExpansion {
+			return consistencyPenaltySoft
+		}
+		return consistencyPenaltyHard
+	case "divergence_reversal":
+		// divergence + alignment = possibly converging, not a hard conflict
+		if alignment {
+			return consistencyPenaltySoft
+		}
+		return consistencyPenaltyHard
+	case "noise":
+		// noise tag but no mean_rev_noise = classification mismatch
+		return consistencyPenaltySoft
+	default:
+		return 0
 	}
 }
 

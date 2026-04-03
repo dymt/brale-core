@@ -140,6 +140,43 @@ func TestGateTagInconsistencyPenaltyCanTriggerWait(t *testing.T) {
 	}
 }
 
+func TestGateFakeoutRejectionWithIntegrityTrueAllowed(t *testing.T) {
+	// With new prompt contract: fakeout_rejection where thesis held → integrity=true.
+	// Gate should NOT veto this — structure was tested but recovered.
+	decision := evaluateGateDecision(gateInputs{
+		StructureDirection: "long",
+		StructureClear:     true,
+		StructureIntegrity: true, // new contract: fakeout recovery = thesis still valid
+		StructureTag:       "fakeout_rejection",
+		IndicatorTag:       "pullback_entry",
+		Alignment:          true,
+		ConsensusScore:     0.50,
+		QualityThreshold:   0.35,
+		EdgeThreshold:      0.10,
+	}, false)
+	if decision.Action == "VETO" {
+		t.Fatalf("fakeout_rejection with integrity=true should not be vetoed, got action=%s reason=%s", decision.Action, decision.Reason)
+	}
+}
+
+func TestGateFakeoutRejectionWithIntegrityFalseVetoed(t *testing.T) {
+	// fakeout_rejection but thesis actually broken → integrity=false → should veto.
+	decision := evaluateGateDecision(gateInputs{
+		StructureDirection: "long",
+		StructureClear:     true,
+		StructureIntegrity: false, // thesis failed despite fakeout tag
+		StructureTag:       "fakeout_rejection",
+		IndicatorTag:       "pullback_entry",
+		Alignment:          true,
+		ConsensusScore:     0.50,
+		QualityThreshold:   0.35,
+		EdgeThreshold:      0.10,
+	}, false)
+	if decision.Action != "VETO" {
+		t.Fatalf("fakeout_rejection with integrity=false should veto, got action=%s", decision.Action)
+	}
+}
+
 func TestGateAllowsStructureBreakContinuation(t *testing.T) {
 	decision := evaluateGateDecision(gateInputs{
 		State:               "FLAT",
