@@ -107,6 +107,12 @@ func ApplyStrategyDefaults(cfg *StrategyConfig, defaults StrategyConfig) {
 	if len(cfg.RiskManagement.InitialExit.Params) == 0 {
 		cfg.RiskManagement.InitialExit.Params = cloneMapAny(defaults.RiskManagement.InitialExit.Params)
 	}
+	if cfg.RiskManagement.Gate.QualityThreshold == 0 {
+		cfg.RiskManagement.Gate.QualityThreshold = defaults.RiskManagement.Gate.QualityThreshold
+	}
+	if cfg.RiskManagement.Gate.EdgeThreshold == 0 {
+		cfg.RiskManagement.Gate.EdgeThreshold = defaults.RiskManagement.Gate.EdgeThreshold
+	}
 }
 
 func applyCooldownDefaults(cfg *CooldownConfig, defaults CooldownConfig) {
@@ -148,6 +154,10 @@ func DefaultStrategyConfig(symbol string) StrategyConfig {
 			TightenATR: TightenATRConfig{
 				StructureThreatened:  0.5,
 				MinUpdateIntervalSec: 300,
+			},
+			Gate: GateConfig{
+				QualityThreshold: 0.35,
+				EdgeThreshold:    0.10,
 			},
 			Sieve: RiskManagementSieveConfig{
 				MinSizeFactor:     0.1,

@@ -106,10 +106,7 @@ func TestParseResultIncludesPlanSource(t *testing.T) {
 
 func TestPlanBuilderWaitDoesNotBuildPlan(t *testing.T) {
 	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
-		mechanics: provider.MechanicsProviderOut{
-			LiquidationStress: provider.SemanticSignal{Value: true, Confidence: provider.ConfidenceHigh, Reason: "stress"},
-			SignalTag:         "crowded_long",
-		},
+		consensusScore: 0.05,
 	})
 	if result.Gate.DecisionAction != "WAIT" {
 		t.Fatalf("gate action=%s want WAIT", result.Gate.DecisionAction)
@@ -174,11 +171,15 @@ func evaluateFlatPlanForRiskMode(t *testing.T, mode string) Result {
 			},
 			Enabled: fund.ProviderEnabled{Indicator: true, Structure: true, Mechanics: true},
 		},
-		StructureDirection: "long",
-		State:              fsm.StateFlat,
-		BuildPlan:          true,
-		Account:            execution.AccountState{Equity: 10000, Available: 10000},
-		Risk:               execution.RiskParams{RiskPerTradePct: 0.01},
+		StructureDirection:  "long",
+		ConsensusScore:      0.7,
+		ConsensusConfidence: 0.8,
+		ScoreThreshold:      0.35,
+		ConfidenceThreshold: 0.52,
+		State:               fsm.StateFlat,
+		BuildPlan:           true,
+		Account:             execution.AccountState{Equity: 10000, Available: 10000},
+		Risk:                execution.RiskParams{RiskPerTradePct: 0.01},
 		Binding: strategy.StrategyBinding{
 			Symbol: "BTCUSDT",
 			RiskManagement: config.RiskManagementConfig{
@@ -191,6 +192,10 @@ func evaluateFlatPlanForRiskMode(t *testing.T, mode string) Result {
 				EntryOffsetATR:  0,
 				EntryMode:       "market",
 				RiskStrategy:    config.RiskStrategyConfig{Mode: mode},
+				Gate: config.GateConfig{
+					QualityThreshold: 0.35,
+					EdgeThreshold:    0.10,
+				},
 				InitialExit: config.InitialExitConfig{
 					Policy:            "atr_structure_v1",
 					StructureInterval: "1h",

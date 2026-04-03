@@ -177,7 +177,13 @@ type RiskManagementConfig struct {
 	RiskStrategy      RiskStrategyConfig        `mapstructure:"risk_strategy"`
 	InitialExit       InitialExitConfig         `mapstructure:"initial_exit"`
 	TightenATR        TightenATRConfig          `mapstructure:"tighten_atr"`
+	Gate              GateConfig                `mapstructure:"gate"`
 	Sieve             RiskManagementSieveConfig `mapstructure:"sieve"`
+}
+
+type GateConfig struct {
+	QualityThreshold float64 `mapstructure:"quality_threshold"`
+	EdgeThreshold    float64 `mapstructure:"edge_threshold"`
 }
 
 type RiskStrategyConfig struct {

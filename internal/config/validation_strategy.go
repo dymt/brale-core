@@ -38,6 +38,9 @@ func validateRiskManagement(cfg RiskManagementConfig) error {
 	if err := validateRiskManagementTighten(cfg); err != nil {
 		return err
 	}
+	if err := validateGateConfig(cfg.Gate); err != nil {
+		return err
+	}
 	return validateSieveConfig(cfg.Sieve)
 }
 
@@ -141,6 +144,16 @@ func validateRiskManagementInitialExit(cfg RiskManagementConfig) error {
 	}
 	if err := initialExitPolicyValidator(policy, cfg.InitialExit.Params); err != nil {
 		return validationErrorf("risk_management.initial_exit invalid: %v", err)
+	}
+	return nil
+}
+
+func validateGateConfig(gate GateConfig) error {
+	if gate.QualityThreshold < 0 || gate.QualityThreshold > 1 {
+		return validationErrorf("risk_management.gate.quality_threshold must be in [0,1]")
+	}
+	if gate.EdgeThreshold < 0 || gate.EdgeThreshold > 1 {
+		return validationErrorf("risk_management.gate.edge_threshold must be in [0,1]")
 	}
 	return nil
 }

@@ -90,7 +90,8 @@ func appendRuleAndStopHTMLMetrics(metrics []string, report DecisionReport) []str
 }
 
 func appendConsensusHTMLMetrics(metrics []string, report DecisionReport, consensus *directionConsensusMetrics) []string {
-	if !strings.EqualFold(strings.TrimSpace(report.Gate.Overall.ReasonCode), "CONSENSUS_NOT_PASSED") || consensus == nil {
+	reasonCode := strings.TrimSpace(report.Gate.Overall.ReasonCode)
+	if !(strings.EqualFold(reasonCode, "CONSENSUS_NOT_PASSED") || strings.EqualFold(reasonCode, "DIRECTION_UNCLEAR")) || consensus == nil {
 		return metrics
 	}
 	sourceScores := make([]string, 0, 3)

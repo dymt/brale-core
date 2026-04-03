@@ -15,11 +15,16 @@ func (e *gateDecisionEvaluator) evaluate() {
 	e.evalDirection()
 	e.evalData()
 	e.evalStructure()
-	e.evalMechRisk()
-	e.evalIndicatorNoise()
-	e.evalStructureClear()
-	e.evalTagConsistency()
-	e.evalScript()
+	e.evalLiquidationCascade()
+	if e.hasAction() {
+		return
+	}
+	e.computeScores()
+	e.evalQuality()
+	e.evalEdge()
+	if !e.hasAction() {
+		e.allow()
+	}
 }
 
 func (e *gateDecisionEvaluator) evalDirection() {
@@ -28,6 +33,7 @@ func (e *gateDecisionEvaluator) evalDirection() {
 	}
 	if rule, ok := findFirstGateDecisionRule(gateDirectionRules, e.context()); ok {
 		e.decision.Direction = "none"
+		e.decision.ReasonCategory = gateCategoryDirection
 		e.applyOutcome(rule.Outcome)
 		return
 	}
@@ -39,6 +45,7 @@ func (e *gateDecisionEvaluator) evalData() {
 		return
 	}
 	if rule, ok := findFirstGateDecisionRule(gateDataRules, e.context()); ok {
+		e.decision.ReasonCategory = gateCategoryData
 		e.applyOutcome(rule.Outcome)
 		return
 	}
@@ -50,80 +57,105 @@ func (e *gateDecisionEvaluator) evalStructure() {
 		return
 	}
 	if rule, ok := findFirstGateDecisionRule(gateStructureStopRules, e.context()); ok {
+		e.decision.ReasonCategory = gateCategoryStructure
 		e.applyOutcome(rule.Outcome)
 		return
 	}
 	e.appendGateTrace("structure", true, "")
 }
 
-func (e *gateDecisionEvaluator) evalMechRisk() {
+func (e *gateDecisionEvaluator) evalLiquidationCascade() {
 	if e.hasAction() {
 		return
 	}
-	if rule, ok := findFirstGateDecisionRule(gateMechanicsStopRules, e.context()); ok {
-		e.applyOutcome(rule.Outcome)
+	if e.inputs.MechanicsTag == "liquidation_cascade" {
+		e.decision.Action = "VETO"
+		e.decision.Reason = gateReasonLiquidationCascade
+		e.decision.ReasonCategory = gateCategoryRisk
+		e.decision.Priority = gatePriorityLiquidationCascade
+		e.decision.StopStep = "liquidation_cascade"
+		e.decision.StopReason = gateReasonLiquidationCascade
+		e.appendGateTrace("liquidation_cascade", false, gateReasonLiquidationCascade)
 		return
 	}
-	e.appendGateTrace("mech_risk", true, "")
+	e.appendGateTrace("liquidation_cascade", true, "")
 }
 
-func (e *gateDecisionEvaluator) evalIndicatorNoise() {
-	if e.hasAction() {
-		return
-	}
-	if rule, ok := findFirstGateDecisionRule(gateNoiseStopRules[:1], e.context()); ok {
-		e.applyOutcome(rule.Outcome)
-		return
-	}
-	e.appendGateTrace("indicator_noise", true, "")
+func (e *gateDecisionEvaluator) computeScores() {
+	scriptBonus, scriptName := resolveScriptBonus(e.inputs.IndicatorTag, e.inputs.StructureTag)
+	e.decision.ScriptBonus = scriptBonus
+	e.decision.ScriptName = scriptName
+	e.decision.SetupQuality = computeSetupQuality(
+		e.inputs.StructureClear,
+		e.inputs.StructureIntegrity,
+		e.inputs.Alignment,
+		e.inputs.MomentumExpansion,
+		e.inputs.MeanRevNoise,
+		scriptBonus,
+		e.inputs.IndicatorTag,
+	)
+	e.decision.RiskPenalty = computeRiskPenalty(
+		e.inputs.MechanicsTag,
+		e.inputs.LiquidationStress,
+		e.inputs.LiqConfidence,
+		e.inputs.CrowdingAlign,
+	)
+	e.decision.EntryEdge = computeEntryEdge(
+		e.inputs.ConsensusScore,
+		e.decision.SetupQuality,
+		e.decision.RiskPenalty,
+	)
 }
 
-func (e *gateDecisionEvaluator) evalStructureClear() {
+func (e *gateDecisionEvaluator) evalQuality() {
 	if e.hasAction() {
 		return
 	}
-	if rule, ok := findFirstGateDecisionRule(gateNoiseStopRules[1:2], e.context()); ok {
-		e.applyOutcome(rule.Outcome)
+	threshold := e.inputs.QualityThreshold
+	if threshold <= 0 {
+		threshold = 0.35
+	}
+	if e.decision.SetupQuality < threshold {
+		e.decision.Action = "WAIT"
+		e.decision.Reason = gateReasonQualityTooLow
+		e.decision.ReasonCategory = gateCategoryQuality
+		e.decision.Priority = gatePriorityQualityTooLow
+		e.decision.StopStep = "quality"
+		e.decision.StopReason = gateReasonQualityTooLow
+		e.appendGateTrace("quality", false, gateReasonQualityTooLow)
 		return
 	}
-	e.appendGateTrace("structure_clear", true, "")
+	e.appendGateTrace("quality", true, "")
 }
 
-func (e *gateDecisionEvaluator) evalTagConsistency() {
+func (e *gateDecisionEvaluator) evalEdge() {
 	if e.hasAction() {
 		return
 	}
-	if rule, ok := findFirstGateDecisionRule(gateNoiseStopRules[2:], e.context()); ok {
-		e.applyOutcome(rule.Outcome)
+	threshold := e.inputs.EdgeThreshold
+	if threshold <= 0 {
+		threshold = 0.10
+	}
+	if e.decision.EntryEdge < threshold {
+		e.decision.Action = "WAIT"
+		e.decision.Reason = gateReasonEdgeTooLow
+		e.decision.ReasonCategory = gateCategoryQuality
+		e.decision.Priority = gatePriorityEdgeTooLow
+		e.decision.StopStep = "edge"
+		e.decision.StopReason = gateReasonEdgeTooLow
+		e.appendGateTrace("edge", false, gateReasonEdgeTooLow)
 		return
 	}
-	e.appendGateTrace("tag_consistency", true, "")
+	e.appendGateTrace("edge", true, "")
 }
 
-func (e *gateDecisionEvaluator) evalScript() {
-	if e.hasAction() {
-		return
-	}
-	ctx := e.context()
-	ctx.Script = resolveEntryScript(e.inputs.IndicatorTag, e.inputs.StructureTag)
-	if rule, ok := findFirstGateDecisionRule(gateScriptStopRules[:1], ctx); ok {
-		e.applyOutcome(rule.Outcome)
-		return
-	}
-	e.appendGateTrace("script_select", true, "")
-	if rule, ok := findFirstGateDecisionRule(gateScriptStopRules[1:], ctx); ok {
-		e.applyOutcome(rule.Outcome)
-		return
-	}
-	e.appendGateTrace("script_allowed", true, "")
-	outcome, ok := resolveEntryAllowOutcome(ctx.Script)
-	if !ok {
-		return
-	}
-	e.decision.Action = outcome.Action
-	e.decision.Reason = outcome.Reason
-	e.decision.Grade = outcome.Grade
-	e.decision.Priority = outcome.Priority
-	e.decision.StopStep = outcome.StopStep
-	e.decision.StopReason = outcome.Reason
+func (e *gateDecisionEvaluator) allow() {
+	e.decision.Action = "ALLOW"
+	e.decision.Reason = gateReasonAllow
+	e.decision.ReasonCategory = gateCategoryAllow
+	e.decision.Priority = gatePriorityAllow
+	e.decision.Grade = resolveGradeFromQuality(e.decision.SetupQuality)
+	e.decision.StopStep = "gate_allow"
+	e.decision.StopReason = gateReasonAllow
+	e.appendGateTrace("gate_allow", true, gateReasonAllow)
 }

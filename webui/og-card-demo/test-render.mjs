@@ -88,6 +88,9 @@ async function renderScenario({ tmpDir, name, input }) {
 async function main() {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'og-card-demo-'));
   const sampleOutputPath = path.join(tmpDir, 'sample-output.png');
+  const renderSource = await fs.readFile(new URL('./render.mjs', import.meta.url), 'utf8');
+
+  assert.match(renderSource, /'\.\/brale-icon-only\.png'/, 'card header logo should use local brale-icon-only.png');
 
   const shortInput = createInput();
   const shortModel = buildModel(shortInput);

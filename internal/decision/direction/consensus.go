@@ -20,6 +20,7 @@ type Consensus struct {
 	Score      float64
 	Confidence float64
 	Agreement  float64
+	Coverage   float64
 	Direction  string
 	Resonance  Resonance
 }
@@ -133,7 +134,7 @@ func ComputeConsensusWithThresholds(ind Evidence, st Evidence, mech Evidence, sc
 	}
 
 	if sumW <= 0 || sumBase <= 0 {
-		return Consensus{Score: 0, Confidence: 0, Agreement: 0, Direction: "none"}
+		return Consensus{Score: 0, Confidence: 0, Agreement: 0, Coverage: 0, Direction: "none"}
 	}
 
 	score := clamp(sumWS/sumW, -1, 1)
@@ -156,6 +157,7 @@ func ComputeConsensusWithThresholds(ind Evidence, st Evidence, mech Evidence, sc
 		Score:      score,
 		Confidence: confidence,
 		Agreement:  agreement,
+		Coverage:   coverage,
 		Direction:  direction,
 		Resonance:  resonance,
 	}

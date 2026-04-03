@@ -8,17 +8,28 @@ const (
 	gateGradeMedium = 2
 	gateGradeHigh   = 3
 
-	gatePriorityConsensusFailed  = 0
-	gatePriorityDataMissing      = 1
-	gatePriorityStructBreak      = 1
-	gatePriorityMechRisk         = 2
-	gatePriorityIndicatorNoise   = 3
-	gatePriorityIndicatorMixed   = 4
-	gatePriorityTagInconsistent  = 5
-	gatePriorityScriptMissing    = 6
-	gatePriorityScriptNotAllowed = 7
-	gatePrioritySieveOverride    = 8
-	gatePriorityAllow            = 10
+	gatePriorityDirection           = 0
+	gatePriorityDataMissing         = 1
+	gatePriorityStructInvalidation  = 2
+	gatePriorityLiquidationCascade  = 3
+	gatePriorityQualityTooLow       = 4
+	gatePriorityEdgeTooLow          = 5
+	gatePriorityAllow               = 10
+
+	gateReasonDirectionUnclear   = "DIRECTION_UNCLEAR"
+	gateReasonDataMissing        = "DATA_MISSING"
+	gateReasonStructInvalidation = "STRUCT_HARD_INVALIDATION"
+	gateReasonLiquidationCascade = "LIQUIDATION_CASCADE"
+	gateReasonQualityTooLow      = "QUALITY_TOO_LOW"
+	gateReasonEdgeTooLow         = "EDGE_TOO_LOW"
+	gateReasonAllow              = "ALLOW"
+
+	gateCategoryDirection = "direction"
+	gateCategoryData      = "data"
+	gateCategoryStructure = "structure"
+	gateCategoryRisk      = "risk"
+	gateCategoryQuality   = "quality"
+	gateCategoryAllow     = "allow"
 )
 
 type gateInputs struct {
@@ -34,6 +45,7 @@ type gateInputs struct {
 	StructureIntegrity  bool
 	LiquidationStress   bool
 	LiqConfidence       string
+	CrowdingAlign       bool
 	ConsensusScore      float64
 	ConsensusConfidence float64
 	ConsensusAgreement  float64
@@ -41,23 +53,30 @@ type gateInputs struct {
 	ConsensusResonant   bool
 	ScoreThreshold      float64
 	ConfidenceThreshold float64
+	QualityThreshold    float64
+	EdgeThreshold       float64
 }
 
 type gateDecision struct {
-	Action     string
-	Reason     string
-	Direction  string
-	Grade      int
-	Priority   int
-	StopStep   string
-	StopReason string
-	GateTrace  []map[string]any
+	Action         string
+	Reason         string
+	ReasonCategory string
+	Direction      string
+	Grade          int
+	Priority       int
+	StopStep       string
+	StopReason     string
+	GateTrace      []map[string]any
+	SetupQuality   float64
+	RiskPenalty    float64
+	EntryEdge      float64
+	ScriptName     string
+	ScriptBonus    float64
 }
 
 type gateDecisionContext struct {
 	Inputs           gateInputs
 	MissingProviders bool
-	Script           string
 }
 
 type gateDecisionOutcome struct {

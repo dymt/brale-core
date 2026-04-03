@@ -232,6 +232,7 @@ func applyDirectionConsensus(res *SymbolResult, enabled AgentEnabled, scoreThres
 	res.ConsensusAgreement = consensus.Agreement
 	res.ConsensusResonance = consensus.Resonance.Bonus
 	res.ConsensusResonant = consensus.Resonance.Active
+	res.ConsensusCoverage = consensus.Coverage
 }
 
 func applyRuleflowResult(res *SymbolResult, rfResult ruleflow.Result, comp features.CompressionResult, symbol string, enabled AgentEnabled, scoreThreshold, confThreshold float64, llmRiskMode bool) {

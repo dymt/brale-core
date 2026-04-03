@@ -51,6 +51,10 @@ type Detail struct {
 	ConsensusScorePassed         *bool
 	ConsensusConfidencePassed    *bool
 	ConsensusPassed              *bool
+	SetupQuality                 *float64
+	RiskPenalty                  *float64
+	EntryEdge                    *float64
+	GateCategory                 string
 	Providers                    []string
 	Agents                       []string
 	Tighten                      *dashboard.DecisionTightenDetail

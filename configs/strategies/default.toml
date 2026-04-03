@@ -3,258 +3,198 @@ rule_chain = "configs/rules/default.json"
 
 symbol = "DEFAULT"
 [risk_management]
-# ==============================
+# ======================================================================
 # A. 基础风险参数（Base Risk）
-# ==============================
-# 单笔风险占比（账户权益占比）
+# ======================================================================
+
+# 单笔风险占比（占账户权益的百分比）
+# 例：0.1 = 每笔最多承担 10% 账户权益风险
 risk_per_trade_pct = 0.1
 
 # 最大可用资金占比
+# 例：1 = 使用全部资金
 max_invest_pct = 1
 
-# 最大有效杠杆
+# 最大有效杠杆倍数
 max_leverage = 10
 
-# 信号评分映射（Grade -> 风险系数）
+# 信号质量与风险系数的映射
+# Grade 由 setup_quality 自动评定：
+#   Grade 3 = quality >= 0.75 → factor 1.00
+#   Grade 2 = quality >= 0.55 → factor 0.70
+#   Grade 1 = quality >= 0.35 → factor 0.40
+#   Grade 0 = quality < 0.35  → 不开仓
 grade_3_factor = 1.0
 grade_2_factor = 0.70
 grade_1_factor = 0.40
 
-# ==============================
+# ======================================================================
 # B. 入场模式（Entry Mode）
-# ==============================
-# entry_mode 可选：
-# - orderbook: 用订单簿第 N 档价格；必配 orderbook_depth
-#   若订单簿不可用，会回退到 atr_offset 逻辑（会使用 entry_offset_atr）
-# - atr_offset: ATR 偏移入场；必配 entry_offset_atr
-# - market: 直接用 close 入场（entry_offset_atr/orderbook_depth 不生效）
+# ======================================================================
+
+# 入场价格确定方式：orderbook / atr_offset / market
 entry_mode = "orderbook"
 
-# orderbook 模式必配：第 N 档深度（推荐 5/10/20/50/100/500/1000）
+# orderbook 模式：第几档深度
 orderbook_depth = 5
 
-# atr_offset 模式必配：ATR 偏移倍数（>=0）
+# atr_offset 模式：ATR 偏移倍数
 entry_offset_atr = 0.1
 
-# ==============================
+# ======================================================================
 # C. 出场模式（Exit / TP-SL）
-# ==============================
-# TP1 后保本使用的手续费偏移
+# ======================================================================
+
+# TP1 后保本手续费补偿（0 = 不补偿）
 breakeven_fee_pct = 0.0
 
+# 止损滑点缓冲比例
+slippage_buffer_pct = 0.0005
+
+# 风险策略模式：llm / native
 [risk_management.risk_strategy]
 mode = "llm"
 
-# ------------------------------
-# C1. 初始止盈止损（Initial TP/SL）
-# ------------------------------
+# 初始止盈止损
 [risk_management.initial_exit]
-# policy 必配，可选：
-# - atr_structure_v1:
-#   stop_distance = max(structure_distance, ATR*stop_atr_multiplier, entry*stop_min_distance_pct)
-#   take_profit 按 take_profit_rr 计算
-#   字段解释：
-#   - stop_distance: 最终止损距离（用于 stop_loss 与仓位计算）
-#   - structure_distance: 结构位到入场价的距离（来自 trend.structure_candidates）
-#   - ATR: 当前周期 ATR（来自 indicator.atr）
-#   - stop_atr_multiplier: ATR 止损倍数（参数）
-#   - entry: 最终入场价（由 entry_mode 决定）
-#   - stop_min_distance_pct: 最小止损距离百分比（参数）
-#   - take_profit_rr: 止盈 R 倍数数组（参数）
-# - fixed_rr_v1:
-#   stop_distance = max(ATR*stop_atr_multiplier, entry*stop_min_distance_pct)
-#   不使用 structure_distance
-#   字段解释：
-#   - stop_distance: 最终止损距离
-#   - ATR: 当前周期 ATR（来自 indicator.atr）
-#   - stop_atr_multiplier: ATR 止损倍数（参数）
-#   - entry: 最终入场价
-#   - stop_min_distance_pct: 最小止损距离百分比（参数）
-# - structure_tp_v1:
-#   stop_distance 与 atr_structure_v1 相同；
-#   先按 take_profit_rr 算固定 TP，再尝试用结构位替换为更保守 TP（受 structure_buffer_pct 影响）
-#   字段解释：
-#   - 固定 TP: entry ± stop_distance * take_profit_rr[i]
-#   - structure_level: 入场与固定 TP 之间可用的结构位价格
-#   - structure_buffer_pct: 结构位缓冲百分比，避免 TP 贴着结构位
+# atr_structure_v1 / fixed_rr_v1 / structure_tp_v1
 policy = "atr_structure_v1"
-# structure_interval: 结构位来源周期。
-# - auto: 自动使用 symbols.<symbol>.intervals 中的最小周期
-# - 或指定具体周期（如 "1h"/"4h"），且必须存在于该币种 intervals
-# - 当 policy=fixed_rr_v1 时，该字段可忽略
+# 结构位来源周期：auto 或指定周期
 structure_interval = "auto"
 
 [risk_management.initial_exit.params]
-# [必配] 所有 policy 均需：
-# - stop_atr_multiplier (>0)
-# - stop_min_distance_pct (>0)
-# - take_profit_rr (每项>0，至少 1 项)
-# 注意：若不显式配置，系统会用默认值；建议显式写出，便于审计与调参
-# ATR 止损倍数。例：2.0 表示 ATR*2 作为候选止损距离
+# ATR 止损倍数
 stop_atr_multiplier = 2.0
-# 最小止损距离百分比。例：0.005 = 入场价的 0.5%
+# 最小止损距离百分比
 stop_min_distance_pct = 0.005
-# 止盈 R 倍数数组。例：[1.5, 3.0] => TP1=1.5R, TP2=3.0R
+# 止盈 R 倍数
 take_profit_rr = [1.5, 3.0]
-# [可选] 分批止盈比例，长度需与 take_profit_rr 一致；会自动归一化
-# 例：[0.5, 0.5] => 两档各平 50%
+# 分批止盈比例
 take_profit_ratios = [0.5, 0.5]
-# [仅 structure_tp_v1] 可选结构位缓冲
-# long: TP = structure_level*(1-buffer)；short: TP = structure_level*(1+buffer)
-# 字段解释：
-# - structure_level: 选中的结构位价格
-# - buffer: 即 structure_buffer_pct（例如 0.001=0.1%）
-#structure_buffer_pct = 0.001
 
-# ------------------------------
-# C2. 执行保护（Execution Guard）
-# ------------------------------
-# 止损执行滑点缓冲比例
-slippage_buffer_pct = 0.0005
-
-# ------------------------------
-# C3. 持仓收紧（Tighten）
-# ------------------------------
+# 持仓收紧
 [risk_management.tighten_atr]
-# 结构受损/支撑测试 -> 0.5 ATR
 structure_threatened = 0.5
 tp1_atr = 0.0
 tp2_atr = 0.0
 min_tp_distance_pct = 0.0
 min_tp_gap_pct = 0.0
-
-# 持仓风控最小更新间隔（秒）；0 表示关闭防抖
+# 收紧间隔（秒），0 = 不限制
 min_update_interval_sec = 300
 
+# ======================================================================
+# D. Gate 决策阈值
+# ======================================================================
+# Gate 决定"做不做"，通过 setup_quality 和 entry_edge 两个阈值判断。
+# 详见 ETHUSDT.toml 中的完整参数说明。
+[risk_management.gate]
+# 建仓质量阈值（0.20 激进 / 0.35 默认 / 0.55 保守）
+quality_threshold = 0.35
+# 执行价值阈值（0.05 激进 / 0.10 默认 / 0.20 保守）
+edge_threshold = 0.10
+
+# ======================================================================
+# E. Sieve 仓位缩放
+# ======================================================================
+# 默认策略（DEFAULT）为观察模式，所有行 size_factor = 0.0
+# 表示不实际开仓。如需启用交易，请参考 ETHUSDT.toml 配置有意义的 size_factor。
 [risk_management.sieve]
-# 作用：Gate 已放行(ALLOW)后的二次风控与仓位缩放
-# 匹配规则：rows 为 AND 过滤；字段留空=通配
-# 选择规则：当前配置模型仅支持按已声明字段匹配，命中多行时按“匹配字段更多者优先；再按配置顺序”
-# 当前配置支持字段：mechanics_tag / liq_confidence / crowding_align / gate_action / size_factor / reason_code
-# gate_action：ALLOW/WAIT/VETO（WAIT=观望，VETO=硬拒绝）
-# size_factor：仅对 ALLOW 生效；<=0 时使用 default_size_factor，再受 min_size_factor 下限约束
-# reason_code：命中理由回写到 gate 派生信息，便于审计
-# default_gate_action/default_size_factor：未命中任何行时的兜底（建议 WAIT + 0.0 做白名单）
-# min_size_factor：最小仓位比例（仅对 ALLOW 生效）
 min_size_factor = 0.0
-# 未命中任何行时默认动作与比例
-default_gate_action = "WAIT"
-default_size_factor = 0.0
-# 字段含义说明：
-# mechanics_tag：力学场景标签（来自 mechanics.signal_tag）
-#   - fuel_ready：杠杆与资金健康、未见显著风险，作为可启动的场景
-#   - neutral：无显著异常，但证据一般
-#   - crowded_long / crowded_short：拥挤与风险折扣，通常更适合缩仓/等待确认，而非等价于硬拒绝
-#   - liquidation_cascade：连锁清算主导盘面的极端机制风险（硬风险）
-# liq_confidence：对 liquidation_stress.value 判断的证据质量（high=显著影响入场条件，low=更像预警/折扣）
-# crowding_align：是否同向拥挤（true=方向与拥挤一致，风险偏高；false=反向拥挤，风险较低）
-# gate_action：本行命中后是否允许交易（ALLOW/WAIT/VETO）
-# size_factor：仓位比例因子（仅对 ALLOW 生效）
+default_gate_action = "ALLOW"
+default_size_factor = 1.0
 
 [[risk_management.sieve.rows]]
-# fuel_ready + high + 不同向拥挤
 mechanics_tag = "fuel_ready"
 liq_confidence = "high"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "FUEL_HIGH"
 
 [[risk_management.sieve.rows]]
-# fuel_ready + low + 不同向拥挤
 mechanics_tag = "fuel_ready"
 liq_confidence = "low"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "FUEL_LOW"
 
 [[risk_management.sieve.rows]]
-# neutral + high + 不同向拥挤
 mechanics_tag = "neutral"
 liq_confidence = "high"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "NEUTRAL_HIGH"
 
 [[risk_management.sieve.rows]]
-# neutral + low + 不同向拥挤
 mechanics_tag = "neutral"
 liq_confidence = "low"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "NEUTRAL_LOW"
 
 [[risk_management.sieve.rows]]
-# crowded_long + high + 同向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "high"
 crowding_align = true
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_LONG_ALIGN_HIGH"
 
 [[risk_management.sieve.rows]]
-# crowded_long + low + 同向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "low"
 crowding_align = true
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_LONG_ALIGN_LOW"
 
 [[risk_management.sieve.rows]]
-# crowded_short + high + 同向拥挤
 mechanics_tag = "crowded_short"
 liq_confidence = "high"
 crowding_align = true
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_SHORT_ALIGN_HIGH"
 
 [[risk_management.sieve.rows]]
-# crowded_short + low + 同向拥挤
 mechanics_tag = "crowded_short"
 liq_confidence = "low"
 crowding_align = true
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_SHORT_ALIGN_LOW"
 
 [[risk_management.sieve.rows]]
-# crowded_long + high + 反向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "high"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_LONG_COUNTER_HIGH"
 
 [[risk_management.sieve.rows]]
-# crowded_long + low + 反向拥挤
 mechanics_tag = "crowded_long"
 liq_confidence = "low"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_LONG_COUNTER_LOW"
 
 [[risk_management.sieve.rows]]
-# crowded_short + high + 反向拥挤
 mechanics_tag = "crowded_short"
 liq_confidence = "high"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_SHORT_COUNTER_HIGH"
 
 [[risk_management.sieve.rows]]
-# crowded_short + low + 反向拥挤
 mechanics_tag = "crowded_short"
 liq_confidence = "low"
 crowding_align = false
-gate_action = "WAIT"
+gate_action = "ALLOW"
 size_factor = 0.0
 reason_code = "CROWD_SHORT_COUNTER_LOW"

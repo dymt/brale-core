@@ -3,9 +3,11 @@ id = "default-observe"
 rule_chain = "configs/rules/default.json"
 
 [risk_management]
+# 默认观察策略 — 所有 sieve rows 的 size_factor = 0，不实际开仓
 risk_per_trade_pct = 0.1
 max_invest_pct = 1
 max_leverage = 10
+# Grade → 风险系数（Grade 由 setup_quality 自动评定）
 grade_3_factor = 1.0
 grade_2_factor = 0.70
 grade_1_factor = 0.40
@@ -36,7 +38,13 @@ min_tp_distance_pct = 0.006
 min_tp_gap_pct = 0.005
 min_update_interval_sec = 300
 
+# Gate 决策阈值
+[risk_management.gate]
+quality_threshold = 0.35
+edge_threshold = 0.10
+
+# Sieve（观察模式：所有 size_factor = 0，不开仓）
 [risk_management.sieve]
 min_size_factor = 0.0
-default_gate_action = "WAIT"
-default_size_factor = 0.0
+default_gate_action = "ALLOW"
+default_size_factor = 1.0

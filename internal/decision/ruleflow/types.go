@@ -30,6 +30,7 @@ type Input struct {
 	ConsensusScore      float64
 	ConsensusConfidence float64
 	ConsensusAgreement  float64
+	ConsensusCoverage   float64
 	ConsensusResonance  float64
 	ConsensusResonant   bool
 	ScoreThreshold      float64

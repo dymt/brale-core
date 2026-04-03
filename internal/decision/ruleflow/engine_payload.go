@@ -60,6 +60,7 @@ func buildInputPayload(ctx context.Context, input Input) (string, error) {
 			"score":                input.ConsensusScore,
 			"confidence":           input.ConsensusConfidence,
 			"agreement":            input.ConsensusAgreement,
+			"coverage":             input.ConsensusCoverage,
 			"resonance_bonus":      input.ConsensusResonance,
 			"resonance_active":     input.ConsensusResonant,
 			"score_threshold":      input.ScoreThreshold,
@@ -89,6 +90,10 @@ func buildInputPayload(ctx context.Context, input Input) (string, error) {
 				"policy":             input.Binding.RiskManagement.InitialExit.Policy,
 				"structure_interval": input.Binding.RiskManagement.InitialExit.StructureInterval,
 				"params":             input.Binding.RiskManagement.InitialExit.Params,
+			},
+			"gate": map[string]any{
+				"quality_threshold": input.Binding.RiskManagement.Gate.QualityThreshold,
+				"edge_threshold":    input.Binding.RiskManagement.Gate.EdgeThreshold,
 			},
 			"sieve": map[string]any{
 				"min_size_factor":     input.Binding.RiskManagement.Sieve.MinSizeFactor,

@@ -129,6 +129,9 @@ func ExtractConsensusMetrics(raw json.RawMessage) ConsensusMetrics {
 	if confidenceThreshold, ok := parseutil.FloatOK(consensus["confidence_threshold"]); ok {
 		out.ConfidenceThreshold = &confidenceThreshold
 	}
+	if coverage, ok := parseutil.FloatOK(consensus["coverage"]); ok {
+		out.Coverage = &coverage
+	}
 	if scorePassed, ok := parseConsensusBool(consensus["score_passed"]); ok {
 		out.ScorePassed = boolPtr(scorePassed)
 	} else if out.Score != nil && out.ScoreThreshold != nil {

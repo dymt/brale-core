@@ -40,6 +40,7 @@ type ConsensusMetrics struct {
 	ScorePassed         *bool
 	ConfidencePassed    *bool
 	Passed              *bool
+	Coverage            *float64
 }
 
 type DecisionTightenDetail struct {

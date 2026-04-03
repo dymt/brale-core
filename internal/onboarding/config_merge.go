@@ -264,8 +264,10 @@ func defaultStrategyObserveRegistry() []tomlUpdate {
 		{Path: []string{"risk_management", "grade_3_factor"}, Value: "1.0"},
 		{Path: []string{"risk_management", "grade_2_factor"}, Value: "0.70"},
 		{Path: []string{"risk_management", "grade_1_factor"}, Value: "0.40"},
+		{Path: []string{"risk_management", "gate", "quality_threshold"}, Value: "0.35"},
+		{Path: []string{"risk_management", "gate", "edge_threshold"}, Value: "0.10"},
 		{Path: []string{"risk_management", "sieve", "min_size_factor"}, Value: "0.0"},
-		{Path: []string{"risk_management", "sieve", "default_gate_action"}, Value: tomlQuoted("WAIT")},
-		{Path: []string{"risk_management", "sieve", "default_size_factor"}, Value: "0.0"},
+		{Path: []string{"risk_management", "sieve", "default_gate_action"}, Value: tomlQuoted("ALLOW")},
+		{Path: []string{"risk_management", "sieve", "default_size_factor"}, Value: "1.0"},
 	}
 }

@@ -13,7 +13,7 @@ const DEFAULT_INPUT = path.resolve(__dirname, './sample-input.json');
 const DEFAULT_OUTPUT = path.resolve(__dirname, 'ethusdt-og-card.png');
 const CONFIG_PATH = path.resolve(__dirname, '../../configs/system.toml');
 const AUTHOR_AVATAR_PATH = path.resolve(__dirname, 'auth.jpg');
-const BRALE_LOGO_PATH = path.resolve(__dirname, '../dashboard/favicon-mask.svg');
+const BRALE_LOGO_PATH = path.resolve(__dirname, './brale-icon-only.png');
 const CARD_WIDTH = 640;
 const CANVAS_WIDTH = CARD_WIDTH;
 const DEFAULT_OUTPUT_WIDTH = 2048;
@@ -32,18 +32,27 @@ const valueMap = new Map([
   ['veto', '否决'],
   ['none', '无方向'],
   ['CONSENSUS_NOT_PASSED', '三路共识未通过'],
+  ['DIRECTION_UNCLEAR', '方向不明确'],
   ['DIRECTION_MISSING', '方向缺失'],
   ['DATA_MISSING', '数据不足'],
   ['STRUCT_BREAK', '结构失效'],
+  ['STRUCT_HARD_INVALIDATION', '结构硬失效'],
   ['MECH_RISK', '清算风险过高'],
+  ['LIQUIDATION_CASCADE', '连锁清算风险'],
   ['INDICATOR_NOISE', '指标噪音'],
   ['INDICATOR_MIXED', '指标混乱'],
+  ['QUALITY_TOO_LOW', '建仓质量不足'],
+  ['EDGE_TOO_LOW', '执行价值不足'],
+  ['ALLOW', '通过'],
   ['PASS_STRONG', '强通过'],
   ['SIEVE_POLICY', '风控覆写'],
   ['GATE_MISSING', 'Gate 事件缺失'],
   ['direction', '方向'],
   ['data', '数据完整性'],
   ['structure', '结构完整性'],
+  ['liquidation_cascade', '清算风险检查'],
+  ['quality', '建仓质量'],
+  ['edge', '执行价值'],
   ['mech_risk', '清算风险检查'],
   ['indicator_noise', '指标噪音'],
   ['structure_clear', '结构清晰度'],
@@ -428,35 +437,40 @@ export function buildModel(raw) {
     },
   ];
 
-  const structureCurrent = parseNumber(structure.movement_confidence, 0);
-  const structureTarget = 0.6;
-  const mechanicsCurrent = parseNumber(mechanics.movement_confidence, 0);
-  const mechanicsTarget = 0.6;
+  const setupQuality = parseNumber(gate.setup_quality, 0);
+  const entryEdge = parseNumber(gate.entry_edge, 0);
+  const qualityThreshold = parseNumber(gate.quality_threshold, 0.35);
+  const edgeThreshold = parseNumber(gate.edge_threshold, 0.10);
+
+  const qualityRate = qualityThreshold > 0 ? setupQuality / qualityThreshold : 1;
+  const edgeRate = edgeThreshold > 0 ? entryEdge / edgeThreshold : 1;
+  const qualityPassed = setupQuality >= qualityThreshold;
+  const edgePassed = entryEdge >= edgeThreshold;
 
   const evidenceCards = [
     {
-      key: 'structure',
-      title: '结构判断',
-      value: `regime ${emptyDash(mapValue(structure.regime))} • quality ${emptyDash(mapValue(structure.quality))} • 可靠度 ${structureCurrent.toFixed(3)}`,
-      progressPct: ratioToPercent(structureCurrent),
-      thresholdPct: ratioToPercent(structureTarget),
-      thresholdLabel: '可靠度阈值',
-      thresholdText: structureTarget.toFixed(2),
-      status: structureCurrent >= structureTarget ? '可靠度足够' : '可靠度不足',
-      tone: structureCurrent >= structureTarget ? 'emerald' : 'amber',
-      isSuccess: structureCurrent >= structureTarget,
+      key: 'setup_quality',
+      title: '建仓质量',
+      value: `当前 ${setupQuality.toFixed(3)} / 达成率 ${withPercent(qualityRate)}`,
+      progressPct: ratioToPercent(setupQuality),
+      thresholdPct: ratioToPercent(qualityThreshold),
+      thresholdLabel: '质量阈值',
+      thresholdText: qualityThreshold.toFixed(2),
+      status: qualityPassed ? '达到质量门槛' : '质量不足',
+      tone: qualityPassed ? 'emerald' : 'amber',
+      isSuccess: qualityPassed,
     },
     {
-      key: 'mechanics',
-      title: '清算风险判断',
-      value: `risk ${emptyDash(mapValue(mechanics.risk_level))} • crowding ${emptyDash(mapValue(mechanics.crowding))} • 可靠度 ${mechanicsCurrent.toFixed(3)}`,
-      progressPct: ratioToPercent(mechanicsCurrent),
-      thresholdPct: ratioToPercent(mechanicsTarget),
-      thresholdLabel: '可靠度阈值',
-      thresholdText: mechanicsTarget.toFixed(2),
-      status: mechanicsCurrent >= mechanicsTarget ? '可靠度足够' : '可靠度不足',
-      tone: mechanicsCurrent >= mechanicsTarget ? 'emerald' : 'amber',
-      isSuccess: mechanicsCurrent >= mechanicsTarget,
+      key: 'entry_edge',
+      title: '执行价值',
+      value: `当前 ${entryEdge.toFixed(3)} / 达成率 ${withPercent(edgeRate)}`,
+      progressPct: ratioToPercent(entryEdge),
+      thresholdPct: ratioToPercent(edgeThreshold),
+      thresholdLabel: '执行阈值',
+      thresholdText: edgeThreshold.toFixed(2),
+      status: edgePassed ? '达到执行门槛' : '执行价值不足',
+      tone: edgePassed ? 'emerald' : 'amber',
+      isSuccess: edgePassed,
     },
   ];
 
@@ -1423,7 +1437,7 @@ async function loadBraleLogo() {
   try {
     await fs.access(BRALE_LOGO_PATH);
     const raw = await fs.readFile(BRALE_LOGO_PATH);
-    return `data:image/svg+xml;base64,${raw.toString('base64')}`;
+    return `data:image/png;base64,${raw.toString('base64')}`;
   } catch {
     return '';
   }

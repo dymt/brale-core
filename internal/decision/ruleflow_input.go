@@ -30,6 +30,7 @@ func buildRuleflowInput(symbol string, res SymbolResult, bind strategy.StrategyB
 		ConsensusScore:      res.ConsensusScore,
 		ConsensusConfidence: res.ConsensusConfidence,
 		ConsensusAgreement:  res.ConsensusAgreement,
+		ConsensusCoverage:   res.ConsensusCoverage,
 		ConsensusResonance:  res.ConsensusResonance,
 		ConsensusResonant:   res.ConsensusResonant,
 		ScoreThreshold:      scoreThreshold,

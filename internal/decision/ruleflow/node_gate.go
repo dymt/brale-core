@@ -57,6 +57,7 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	mechanics := toMap(providers["mechanics"])
 	consensus := toMap(root["consensus"])
 	riskMgmt := toMap(root["risk_management"])
+	gateConfig := toMap(riskMgmt["gate"])
 	binding := toMap(root["binding"])
 	state := strings.ToUpper(strings.TrimSpace(toString(root["state"])))
 	structureDirection := strings.ToLower(toString(toMap(root["structure"])["direction"]))
@@ -86,6 +87,7 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		StructureIntegrity:  structureIntegrity,
 		LiquidationStress:   liquidationStress,
 		LiqConfidence:       liqConfidence,
+		CrowdingAlign:       crowdingAlign,
 		ConsensusScore:      toFloat(consensus["score"]),
 		ConsensusConfidence: toFloat(consensus["confidence"]),
 		ConsensusAgreement:  toFloat(consensus["agreement"]),
@@ -93,6 +95,8 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		ConsensusResonant:   toBool(consensus["resonance_active"]),
 		ScoreThreshold:      toFloat(consensus["score_threshold"]),
 		ConfidenceThreshold: toFloat(consensus["confidence_threshold"]),
+		QualityThreshold:    toFloat(gateConfig["quality_threshold"]),
+		EdgeThreshold:       toFloat(gateConfig["edge_threshold"]),
 	}
 	missingProviders := resolveMissingProviders(providersEnabled, indicator, structure, mechanics)
 	decision := evaluateGateDecision(inputs, missingProviders)
@@ -101,13 +105,13 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	var sieveDecision sieveDecision
 	if decision.Action == "ALLOW" {
 		sieveDecision = resolveSieveDecision(riskMgmt, mechanicsTag, liqConfidence, crowdingAlign)
-		if sieveDecision.Hit {
-			decision.Reason = "SIEVE_POLICY"
-			decision.Priority = gatePrioritySieveOverride
-		}
-		if sieveDecision.Action != "" && sieveDecision.Action != "ALLOW" {
-			decision.Action = sieveDecision.Action
+		if sieveAction := strings.ToUpper(strings.TrimSpace(sieveDecision.Action)); sieveAction != "" && sieveAction != "ALLOW" {
+			decision.Action = sieveAction
 			decision.Grade = gateGradeNone
+			decision.ReasonCategory = gateCategoryRisk
+			if reason := strings.TrimSpace(sieveDecision.Reason); reason != "" {
+				decision.Reason = reason
+			}
 		}
 	}
 
@@ -138,6 +142,15 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	derived["gate_trace"] = decision.GateTrace
 	derived["gate_stop_step"] = decision.StopStep
 	derived["gate_stop_reason"] = decision.StopReason
+	derived["setup_quality"] = decision.SetupQuality
+	derived["risk_penalty"] = decision.RiskPenalty
+	derived["entry_edge"] = decision.EntryEdge
+	derived["gate_reason_category"] = decision.ReasonCategory
+	derived["gate_reason_code"] = decision.Reason
+	derived["script_name"] = decision.ScriptName
+	derived["script_bonus"] = decision.ScriptBonus
+	derived["quality_threshold"] = inputs.QualityThreshold
+	derived["edge_threshold"] = inputs.EdgeThreshold
 	derived["gate_action_before_sieve"] = gateActionBeforeSieve
 	derived["sieve_action"] = sieveDecision.Action
 	derived["sieve_size_factor"] = sieveDecision.SizeFactor
@@ -165,21 +178,6 @@ func resolveMissingProviders(providersEnabled, indicator, structure, mechanics m
 		return !toBool(providersEnabled["indicator"]) || !toBool(providersEnabled["structure"]) || !toBool(providersEnabled["mechanics"])
 	}
 	return len(indicator) == 0 || len(structure) == 0 || len(mechanics) == 0
-}
-
-func resolveBoolTagConsistencyFromFlags(indicatorTag string, momentumExpansion, alignment, meanRevNoise bool) bool {
-	switch indicatorTag {
-	case "trend_surge":
-		return momentumExpansion && alignment && !meanRevNoise
-	case "pullback_entry":
-		return !momentumExpansion && alignment && !meanRevNoise
-	case "divergence_reversal":
-		return !alignment && !meanRevNoise
-	case "noise":
-		return meanRevNoise
-	default:
-		return true
-	}
 }
 
 type sieveDecision struct {

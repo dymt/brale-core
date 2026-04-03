@@ -172,7 +172,7 @@ func BuildDetail(ctx context.Context, st HistoryStore, cfg SymbolConfig, symbol 
 	tighten := dashboard.BuildDecisionTightenDetail(json.RawMessage(selected.DerivedJSON))
 	planSource := normalizePlanSource(resolvePlanSource(selected, tighten))
 
-	return &Detail{
+	detail := &Detail{
 		SnapshotID:                   selected.SnapshotID,
 		Action:                       strings.ToUpper(strings.TrimSpace(selected.DecisionAction)),
 		Reason:                       DisplayReason(strings.ToUpper(strings.TrimSpace(selected.DecisionAction)), strings.TrimSpace(selected.GateReason), tighten),
@@ -192,7 +192,29 @@ func BuildDetail(ctx context.Context, st HistoryStore, cfg SymbolConfig, symbol 
 		Sieve:                        BuildSieveDetail(json.RawMessage(selected.DerivedJSON), cfg),
 		ReportMarkdown:               prependDecisionHeader("🚦 决策报告", formatter.RenderDecisionMarkdown(report)),
 		DecisionViewURL:              fmt.Sprintf("/decision-view/?symbol=%s&snapshot_id=%d", symbol, snapshotID),
-	}, nil
+	}
+	applyDerivedDecisionMetrics(detail, json.RawMessage(selected.DerivedJSON))
+	return detail, nil
+}
+
+func applyDerivedDecisionMetrics(detail *Detail, raw json.RawMessage) {
+	if detail == nil || len(raw) == 0 {
+		return
+	}
+	var derived map[string]any
+	if err := json.Unmarshal(raw, &derived); err != nil {
+		return
+	}
+	if sq, ok := parseutil.FloatOK(derived["setup_quality"]); ok {
+		detail.SetupQuality = &sq
+	}
+	if rp, ok := parseutil.FloatOK(derived["risk_penalty"]); ok {
+		detail.RiskPenalty = &rp
+	}
+	if ee, ok := parseutil.FloatOK(derived["entry_edge"]); ok {
+		detail.EntryEdge = &ee
+	}
+	detail.GateCategory = strings.TrimSpace(fmt.Sprint(derived["gate_reason_category"]))
 }
 
 func BuildPlanContext(cfg SymbolConfig, planSource string) *PlanContext {

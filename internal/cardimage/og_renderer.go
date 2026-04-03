@@ -55,6 +55,14 @@ type ogGate struct {
 	Execution      map[string]any        `json:"execution,omitempty"`
 	Consensus      *ogDirectionConsensus `json:"direction_consensus,omitempty"`
 	Trace          []ogGateTraceStep     `json:"trace,omitempty"`
+	SetupQuality   float64               `json:"setup_quality,omitempty"`
+	RiskPenalty    float64               `json:"risk_penalty,omitempty"`
+	EntryEdge      float64               `json:"entry_edge,omitempty"`
+	QualityThreshold float64             `json:"quality_threshold,omitempty"`
+	EdgeThreshold    float64             `json:"edge_threshold,omitempty"`
+	ScriptName     string                `json:"script_name,omitempty"`
+	ScriptBonus    float64               `json:"script_bonus,omitempty"`
+	ReasonCategory string                `json:"reason_category,omitempty"`
 }
 
 type ogGateTraceStep struct {
@@ -246,6 +254,14 @@ func buildPayload(input decisionfmt.DecisionInput, report decisionfmt.DecisionRe
 	payload.RawBlocks.Gate.SieveReason = readDerivedString(report.Gate.Derived, "sieve_reason")
 	payload.RawBlocks.Gate.Execution = readDerivedMap(report.Gate.Derived, "execution")
 	payload.RawBlocks.Gate.Trace = parseGateTrace(report.Gate.Derived)
+	payload.RawBlocks.Gate.SetupQuality = readDerivedFloat(report.Gate.Derived, "setup_quality")
+	payload.RawBlocks.Gate.RiskPenalty = readDerivedFloat(report.Gate.Derived, "risk_penalty")
+	payload.RawBlocks.Gate.EntryEdge = readDerivedFloat(report.Gate.Derived, "entry_edge")
+	payload.RawBlocks.Gate.QualityThreshold = readDerivedFloat(report.Gate.Derived, "quality_threshold")
+	payload.RawBlocks.Gate.EdgeThreshold = readDerivedFloat(report.Gate.Derived, "edge_threshold")
+	payload.RawBlocks.Gate.ScriptName = readDerivedString(report.Gate.Derived, "script_name")
+	payload.RawBlocks.Gate.ScriptBonus = readDerivedFloat(report.Gate.Derived, "script_bonus")
+	payload.RawBlocks.Gate.ReasonCategory = readDerivedString(report.Gate.Derived, "gate_reason_category")
 	if report.Gate.RuleHit != nil {
 		payload.RawBlocks.Gate.RuleName = strings.TrimSpace(report.Gate.RuleHit.Name)
 	}
