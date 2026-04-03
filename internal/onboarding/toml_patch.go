@@ -27,6 +27,33 @@ func applyTomlUpdates(content string, updates []tomlUpdate) (string, error) {
 	return out, nil
 }
 
+func RewriteSymbolConfig(base, targetSymbol string) (string, error) {
+	out, err := applyTomlUpdates(base, []tomlUpdate{
+		{Path: []string{"symbol"}, Value: tomlQuoted(targetSymbol)},
+	})
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out, nil
+}
+
+func RewriteStrategyConfig(base, targetSymbol string) (string, error) {
+	out, err := applyTomlUpdates(base, []tomlUpdate{
+		{Path: []string{"symbol"}, Value: tomlQuoted(targetSymbol)},
+		{Path: []string{"id"}, Value: tomlQuoted("default-" + strings.ToLower(targetSymbol))},
+	})
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out, nil
+}
+
 func applyTomlUpdate(content string, path []string, value string) (string, error) {
 	doc, err := tomledit.Parse(strings.NewReader(content))
 	if err != nil {

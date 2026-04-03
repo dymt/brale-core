@@ -17,13 +17,16 @@ ONBOARDING_URL ?= http://$(ONBOARDING_ADDR)
 ONBOARDING_PID_FILE ?= $(BRALE_DATA_ROOT)/onboarding.pid
 ONBOARDING_LOG_FILE ?= $(FREQTRADE_RUNTIME_ROOT)/logs/onboarding.log
 ONBOARDING_BIN ?= $(BRALE_DATA_ROOT)/bin/onboarding
+BRALECTL_BIN ?= $(BRALE_DATA_ROOT)/bin/bralectl
+BRALECTL_DOCKER_IMAGE ?= brale-core-go-builder
+TEMPLATE_SYMBOL ?=
 
 COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
 INIT_COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
 STACK_ENV = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" HOST_REPO_ROOT="$(HOST_REPO_ROOT)" BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
 ONBOARDING_PREPARE = $(STACK_ENV) $(COMPOSE) run --rm --no-deps onboarding prepare-stack
 
-.PHONY: init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale stop-freqtrade stop-brale stop restart rebuild down status logs
+.PHONY: init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale stop-freqtrade stop-brale stop restart rebuild down status logs bralectl-build bralectl-builder-image add-symbol
 
 init:
 	@set -e; \
@@ -208,3 +211,45 @@ status:
 
 logs:
 	@$(STACK_ENV) $(COMPOSE) logs -f --tail=200 freqtrade brale
+
+bralectl-build:
+	@if ! command -v go >/dev/null 2>&1; then \
+		echo "[ERR] go command not found"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(dir $(BRALECTL_BIN))"
+	go build -o "$(BRALECTL_BIN)" ./cmd/bralectl
+
+bralectl-builder-image:
+	@docker build --target builder -f "$(CURDIR)/Dockerfile" -t "$(BRALECTL_DOCKER_IMAGE)" "$(CURDIR)"
+
+add-symbol:
+	@if [ -z "$(SYMBOL)" ]; then \
+		echo "[ERR] SYMBOL is required. Usage: make add-symbol SYMBOL=XAGUSDT [TEMPLATE_SYMBOL=ETHUSDT] [DRY_RUN=1]"; \
+		exit 1; \
+	fi
+	@set -e; \
+	extra_args=""; \
+	if [ -n "$(TEMPLATE_SYMBOL)" ]; then \
+		extra_args="$$extra_args --template-symbol $(TEMPLATE_SYMBOL)"; \
+	fi; \
+	if [ -n "$(DRY_RUN)" ]; then \
+		extra_args="$$extra_args --dry-run"; \
+	fi; \
+	if command -v go >/dev/null 2>&1; then \
+		mkdir -p "$(dir $(BRALECTL_BIN))"; \
+		go build -o "$(BRALECTL_BIN)" ./cmd/bralectl; \
+		"$(BRALECTL_BIN)" add-symbol "$(SYMBOL)" --repo "$(CURDIR)" $$extra_args; \
+	else \
+		tty_args="-i"; \
+		if [ -t 0 ] && [ -t 1 ]; then tty_args="-it"; fi; \
+		echo "[INFO] go not found, running bralectl in Docker"; \
+		docker build --target builder -f "$(CURDIR)/Dockerfile" -t "$(BRALECTL_DOCKER_IMAGE)" "$(CURDIR)"; \
+		docker run --rm $$tty_args \
+			-e GOPROXY="${GOPROXY}" \
+			-e GOSUMDB="${GOSUMDB}" \
+			-v "$(CURDIR):/src" \
+			-w /src \
+			"$(BRALECTL_DOCKER_IMAGE)" \
+			go run ./cmd/bralectl add-symbol "$(SYMBOL)" --repo /src $$extra_args; \
+	fi
