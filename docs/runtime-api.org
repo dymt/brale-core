@@ -1,0 +1,145 @@
+#+TITLE: 运行时 API 与服务 / Runtime API & Services
+
+* 中文版
+
+** Docker 服务
+
+docker-compose.yml 默认编排 3 个服务：
+
+| 服务 | 默认端口 | 说明 |
+|------+----------+------|
+| onboarding | 127.0.0.1:9992 | 初始化引导页 |
+| freqtrade | 127.0.0.1:8080 | 交易执行系统 API |
+| brale | 127.0.0.1:9991 | 运行时 API / 健康检查 / webhook |
+
+** Runtime API
+
+路由定义在 =internal/transport/runtimeapi/server.go=。
+
+*** 调度控制
+
+| 路径 | 说明 |
+|------+------|
+| =/api/runtime/schedule/enable= | 开启定时决策 |
+| =/api/runtime/schedule/disable= | 关闭定时决策 |
+| =/api/runtime/schedule/symbol= | 设置单币种调度模式 |
+| =/api/runtime/schedule/status= | 查看调度状态 |
+
+*** 监控与仓位
+
+| 路径 | 说明 |
+|------+------|
+| =/api/runtime/monitor/status= | 监控状态 |
+| =/api/runtime/position/status= | 当前仓位 |
+| =/api/runtime/position/history= | 交易历史 |
+| =/api/runtime/decision/latest= | 最新决策 |
+
+*** 观察任务
+
+| 路径 | 说明 |
+|------+------|
+| =/api/observe/run= | 手动触发观察 |
+| =/api/observe/report= | 查看观察结果 |
+
+*** 调试
+
+| 路径 | 说明 |
+|------+------|
+| =/api/debug/plan/inject= | 注入调试计划 |
+| =/api/debug/plan/status= | 查看调试计划状态 |
+| =/api/debug/plan/clear= | 清理调试计划 |
+
+** Webhook 与健康检查
+
+当 =enable_scheduled_decision=true= 且 =[webhook].enabled=true= 时，以下路由挂载到顶层：
+
+- =/healthz= — 健康检查
+- =/api/live/freqtrade/webhook= — Freqtrade 回调接收
+
+** 通知
+
+支持两个消息渠道：
+
+- Telegram Bot
+- 飞书 Bot
+
+系统启动后会自动拉起已配置的 Bot，启动通知由 =startup_notify_enabled= 控制。
+
+** 数据存储
+
+| 路径 | 内容 |
+|------+------|
+| =data/brale/= | Brale 运行时数据（SQLite 等） |
+| =data/freqtrade/user_data/= | Freqtrade 运行数据 |
+
+* English Version
+
+** Docker Services
+
+docker-compose.yml defines three services by default:
+
+| Service | Default Port | Description |
+|---------+--------------+-------------|
+| onboarding | 127.0.0.1:9992 | Setup and onboarding UI |
+| freqtrade | 127.0.0.1:8080 | Trading execution system API |
+| brale | 127.0.0.1:9991 | Runtime API / health check / webhook |
+
+** Runtime API
+
+Routes are defined in =internal/transport/runtimeapi/server.go=.
+
+*** Schedule Control
+
+| Path | Description |
+|------+-------------|
+| =/api/runtime/schedule/enable= | Enable scheduled decisions |
+| =/api/runtime/schedule/disable= | Disable scheduled decisions |
+| =/api/runtime/schedule/symbol= | Set scheduling mode for a symbol |
+| =/api/runtime/schedule/status= | View scheduling status |
+
+*** Monitoring & Positions
+
+| Path | Description |
+|------+-------------|
+| =/api/runtime/monitor/status= | Monitor status |
+| =/api/runtime/position/status= | Current position |
+| =/api/runtime/position/history= | Trade history |
+| =/api/runtime/decision/latest= | Latest decision |
+
+*** Observe Tasks
+
+| Path | Description |
+|------+-------------|
+| =/api/observe/run= | Manually trigger observe |
+| =/api/observe/report= | View observe results |
+
+*** Debug
+
+| Path | Description |
+|------+-------------|
+| =/api/debug/plan/inject= | Inject a debug plan |
+| =/api/debug/plan/status= | View debug plan status |
+| =/api/debug/plan/clear= | Clear debug plan |
+
+** Webhook & Health Checks
+
+When =enable_scheduled_decision=true= and =[webhook].enabled=true=, these routes are mounted at the top level:
+
+- =/healthz= — health check
+- =/api/live/freqtrade/webhook= — Freqtrade callback receiver
+
+** Notifications
+
+Two messaging channels are supported:
+
+- Telegram Bot
+- Feishu Bot
+
+Configured bots start automatically on launch. Startup notifications are controlled by =startup_notify_enabled=.
+
+** Data Storage
+
+| Path | Contents |
+|------+----------|
+| =data/brale/= | Brale runtime data (SQLite, etc.) |
+| =data/freqtrade/user_data/= | Freqtrade runtime data |

@@ -1,0 +1,221 @@
+#+TITLE: 交易逻辑 / Trading Logic
+
+* 中文版
+
+** 入场价怎么确定
+
+入场价由 =risk_management.entry_mode= 决定，支持三种模式：
+
+*** orderbook
+
+- 多单取 bids 第 =orderbook_depth= 档价格
+- 空单取 asks 第 =orderbook_depth= 档价格
+- 订单簿数据不可用时，自动回退到 atr_offset
+
+=orderbook_depth= 允许的值：5 / 10 / 20 / 50 / 100 / 500 / 1000
+
+*** atr_offset
+
+- 多单：以 close 或 prevLow 为基准，减去 ATR * =entry_offset_atr=
+- 空单：以 prevHigh 或 close 为基准，加上 ATR * =entry_offset_atr=
+
+=entry_offset_atr= 必须 >= 0
+
+*** market
+
+直接使用当前 close 作为入场价。
+
+** 止盈止损的两种模式
+
+通过 =risk_management.risk_strategy.mode= 切换，只接受两个值：
+
+*** native 模式
+
+在 plan builder 阶段直接用内置策略生成止损、止盈，同时计算仓位和杠杆。一步到位，确定性强。
+
+*** llm 模式（默认）
+
+plan builder 先生成基础计划（方向、入场价、风险比例等），然后交给 LLM 风险服务返回止盈止损方案。返回后代码会重新做仓位缩放、杠杆计算和止损合法性校验。
+
+简单说：LLM 决定止盈止损结构，Go 代码负责校验和兜底。
+
+** native 模式内置策略
+
+通过 =risk_management.initial_exit.policy= 选择，当前内置 3 种：
+
+*** atr_structure_v1（默认）
+
+止损距离取三者最大值：
+- ATR * =stop_atr_multiplier=
+- 最近结构位到入场价的距离
+- entry * =stop_min_distance_pct=
+
+止盈按 =take_profit_rr= 数组的风险回报比生成（默认 [1.5, 3.0]）。
+
+适合想让止损跟随波动率、又兼顾结构位的场景。
+
+*** fixed_rr_v1
+
+止损距离来自 ATR 和最小距离，不参考结构位。止盈按固定风险回报比计算（默认 [1.0, 2.0]）。
+
+适合追求出场逻辑完全机械化的场景。
+
+*** structure_tp_v1
+
+止损逻辑和 atr_structure_v1 一致。止盈在 RR 基础上，尝试向最近的结构位（支撑/阻力）收拢，用 =structure_buffer_pct= 留出缓冲。
+
+适合想让止盈贴合真实支撑/阻力位的场景。
+
+** llm 模式的工作流程
+
+1. plan builder 生成基础计划，不产出止盈止损
+2. 调用 LLM 风险服务，要求返回 entry / stop_loss / take_profits / take_profit_ratios / reason
+3. 代码强校验：
+   - 多单：stop < entry < tp1 < tp2 ...
+   - 空单：stop > entry > tp1 > tp2 ...
+   - take_profit_ratios 总和必须为 1
+4. 校验通过后，重新计算 position_size、leverage、liquidation_price
+
+** 仓位计算
+
+按「单笔最大可承受亏损」倒推仓位大小：
+
+#+begin_example
+position_size = risk_amount / risk_distance
+risk_amount   = base_balance * risk_pct
+risk_distance = abs(entry - stop_loss)
+#+end_example
+
+- =base_balance=：优先取 account.available，回退到 account.equity
+- =risk_pct=：由 =risk_per_trade_pct= 与 grade factor、sieve size factor 叠加得出
+
+目标：止损触发时，亏损控制在预设比例内。
+
+** 开仓前的约束检查
+
+理论仓位算出后还要过几道关卡：
+
+1. =max_invest_pct= 限制最大资金占用
+2. =max_leverage= 限制最大杠杆
+3. 计算清算价——如果止损已越过清算价，直接拒绝
+4. 真正下单前，基于最新账户余额再刷新一次仓位
+
+整个流程可以概括为：
+
+#+begin_example
+确定入场价
+-> 确定止损/止盈（native 或 llm）
+-> 根据（可承受亏损 / 止损距离）算仓位
+-> 检查资金占用 / 杠杆 / 清算安全距离
+-> 全部合法才允许下单
+#+end_example
+
+* English Version
+
+** How the Entry Price Is Determined
+
+The entry price is set by =risk_management.entry_mode=. Three modes are supported:
+
+*** orderbook
+
+- Longs take the price from bids at the =orderbook_depth= level
+- Shorts take the price from asks at the =orderbook_depth= level
+- Falls back to atr_offset if orderbook data is unavailable
+
+Allowed =orderbook_depth= values: 5 / 10 / 20 / 50 / 100 / 500 / 1000
+
+*** atr_offset
+
+- Long: use close or prevLow as the base, subtract ATR * =entry_offset_atr=
+- Short: use prevHigh or close as the base, add ATR * =entry_offset_atr=
+
+=entry_offset_atr= must be >= 0
+
+*** market
+
+Uses the current close directly as the entry price.
+
+** Two Take-Profit / Stop-Loss Modes
+
+Controlled by =risk_management.risk_strategy.mode=, which accepts two values:
+
+*** native mode
+
+The plan builder generates stop-loss, take-profit, position size, and leverage in one pass using built-in strategies. Deterministic and self-contained.
+
+*** llm mode (default)
+
+The plan builder creates a base plan (direction, entry, risk percentage, etc.), then hands it to the LLM risk service for a TP/SL proposal. After receiving the response, Go code re-validates sizing, leverage, and stop-loss legality.
+
+In short: the LLM decides the TP/SL structure; Go code validates and enforces guardrails.
+
+** Built-in Strategies for Native Mode
+
+Selected via =risk_management.initial_exit.policy=. Three policies are available:
+
+*** atr_structure_v1 (default)
+
+Stop distance is the maximum of:
+- ATR * =stop_atr_multiplier=
+- distance from the nearest structural level to entry
+- entry * =stop_min_distance_pct=
+
+Take-profit levels are generated from the =take_profit_rr= array (default: [1.5, 3.0]).
+
+Best when you want the stop to track volatility while respecting structural levels.
+
+*** fixed_rr_v1
+
+Stop distance comes from ATR and minimum distance, ignoring structural levels. Take profits use fixed risk-reward ratios (default: [1.0, 2.0]).
+
+Best when you want fully mechanical exit logic.
+
+*** structure_tp_v1
+
+Stop-loss logic matches atr_structure_v1. Take-profit levels start from RR, then snap toward the nearest structural level (support/resistance), with =structure_buffer_pct= as a buffer.
+
+Best when you want take profits aligned with real support/resistance levels.
+
+** How LLM Mode Works
+
+1. Plan builder generates a base plan without TP/SL
+2. Calls the LLM risk service, expecting: entry / stop_loss / take_profits / take_profit_ratios / reason
+3. Strict validation:
+   - Longs: stop < entry < tp1 < tp2 ...
+   - Shorts: stop > entry > tp1 > tp2 ...
+   - take_profit_ratios must sum to 1
+4. After validation, position_size, leverage, and liquidation_price are recalculated
+
+** Position Sizing
+
+Position size is derived from the maximum acceptable loss per trade:
+
+#+begin_example
+position_size = risk_amount / risk_distance
+risk_amount   = base_balance * risk_pct
+risk_distance = abs(entry - stop_loss)
+#+end_example
+
+- =base_balance=: prefers account.available, falls back to account.equity
+- =risk_pct=: derived from =risk_per_trade_pct=, adjusted by grade factor and sieve size factor
+
+Goal: if the stop-loss is hit, the loss stays within the predefined risk percentage.
+
+** Pre-Entry Constraint Checks
+
+After theoretical sizing, several guardrails apply:
+
+1. =max_invest_pct= caps maximum capital usage
+2. =max_leverage= caps maximum leverage
+3. Liquidation price is calculated — if stop-loss is beyond liquidation, the plan is rejected
+4. Before the actual order, position size is refreshed against the latest account balance
+
+The full flow:
+
+#+begin_example
+Determine entry price
+-> Determine stop / TP (native or llm)
+-> Calculate position size from (risk amount / stop distance)
+-> Check capital usage / leverage / liquidation safety
+-> Only place the order if everything checks out
+#+end_example
