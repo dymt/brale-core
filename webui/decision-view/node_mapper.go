@@ -127,6 +127,9 @@ func addLLMRiskTraceNodes(acc *roundAccumulator, logger *zap.Logger, symbol stri
 		return
 	}
 	for _, gate := range gates {
+		if !gate.GlobalTradeable {
+			continue
+		}
 		trace := llmRiskTraceFromGate(gate)
 		if trace == nil {
 			continue
