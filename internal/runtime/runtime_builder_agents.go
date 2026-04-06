@@ -35,7 +35,12 @@ func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig) (
 		Structure: newLLMClient(sys, symbolCfg.LLM.Provider.Structure),
 		Mechanics: newLLMClient(sys, symbolCfg.LLM.Provider.Mechanics),
 	}
-	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker}, tracker
+	decisionInterval := ""
+	if len(symbolCfg.Intervals) > 0 {
+		// Use the shortest configured interval as the immediate decision window reference.
+		decisionInterval = symbolCfg.Intervals[0]
+	}
+	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker, DecisionInterval: decisionInterval}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker}, tracker
 }
 
 func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {

@@ -2,6 +2,7 @@ package decision
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"brale-core/internal/config"
@@ -57,6 +58,9 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 		if len(input.Plan.TakeProfitRatios) != 0 {
 			t.Fatalf("llm mode should not precompute take_profit_ratios, got %v", input.Plan.TakeProfitRatios)
 		}
+		if _, ok := input.StructureAnchors["nearest_below_entry"]; !ok {
+			t.Fatalf("structure_anchors=%v", input.StructureAnchors)
+		}
 		return &initexit.BuildPatch{
 			Entry:            &entry,
 			StopLoss:         &stop,
@@ -76,7 +80,7 @@ func TestRunnerFlatRiskInitSetsPlanSourceLLM(t *testing.T) {
 	result := runner.runSymbol(
 		context.Background(),
 		symbol,
-		features.CompressionResult{},
+		compressionForFlatRiskAnchorTests(t, symbol),
 		execution.AccountState{Equity: 10000, Available: 10000},
 		execution.RiskParams{},
 		RunOptions{BuildPlan: true, RiskStrategyModeBySymbol: map[string]string{symbol: execution.PlanSourceLLM}},
@@ -316,3 +320,43 @@ type staticRuleflowEvaluator struct {
 func (s staticRuleflowEvaluator) Evaluate(context.Context, string, ruleflow.Input) (ruleflow.Result, error) {
 	return s.result, s.err
 }
+
+func compressionForFlatRiskAnchorTests(t *testing.T, symbol string) features.CompressionResult {
+	t.Helper()
+	raw, err := json.Marshal(features.TrendCompressedInput{
+		Meta: features.TrendCompressedMeta{Symbol: symbol, Interval: "1h", Timestamp: "2026-04-06T00:00:00Z"},
+		GlobalContext: features.TrendGlobalContext{
+			EMA20: refFloatFlatRisk(99),
+			EMA50: refFloatFlatRisk(97),
+		},
+		KeyLevels: &features.TrendKeyLevels{
+			LastSwingHigh: &features.TrendKeyLevel{Price: 104, Idx: 90},
+			LastSwingLow:  &features.TrendKeyLevel{Price: 96, Idx: 88},
+		},
+		StructureCandidates: []features.TrendStructureCandidate{
+			{Price: 98.5, Type: "support", Source: "fractal_low", AgeCandles: 1},
+			{Price: 103.2, Type: "resistance", Source: "fractal_high", AgeCandles: 2},
+		},
+		BreakSummary: &features.TrendBreakSummary{
+			LatestEventType:       "break_up",
+			LatestEventAge:        refIntFlatRisk(0),
+			LatestEventLevelPrice: refFloatFlatRisk(104),
+			LatestEventLevelIdx:   refIntFlatRisk(90),
+			LatestEventBarIdx:     refIntFlatRisk(99),
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal trend input: %v", err)
+	}
+	return features.CompressionResult{
+		Trends: map[string]map[string]features.TrendJSON{
+			symbol: {
+				"1h": {Symbol: symbol, Interval: "1h", RawJSON: raw},
+			},
+		},
+	}
+}
+
+func refFloatFlatRisk(v float64) *float64 { return &v }
+
+func refIntFlatRisk(v int) *int { return &v }

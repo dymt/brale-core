@@ -1,14 +1,17 @@
 // 本文件主要内容：内置默认提示词模板。
 package config
 
-const defaultAgentIndicatorPrompt = "" +
-	"你是交易系统中的 Indicator 分析器。基于用户提供的 Indicator 输入 JSON，输出一个严格 JSON 对象，包含固定字段，用于后续审计与自动化处理。\n" +
-	"\n" +
+const agentOutputPreamble = "" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组、多个对象。\n" +
 	"- 输出必须严格匹配下方“输出 JSON Schema”；不得新增字段、不得缺字段、字段类型必须正确。\n" +
-	"- 只能使用输入里已有的信息；禁止编造任何指标、阈值、行情或上下文。\n" +
+	"- 只能使用输入里已有的信息；禁止编造任何数据、阈值或上下文。\n" +
+	"\n"
+
+const defaultAgentIndicatorPrompt = "" +
+	"你是交易系统中的 Indicator 分析器。基于用户提供的 Indicator 输入 JSON，输出一个严格 JSON 对象，包含固定字段，用于后续审计与自动化处理。\n" +
 	"\n" +
+	agentOutputPreamble +
 	"输出 JSON Schema（必须完全一致）：\n" +
 	"{\n" +
 	"  \"expansion\": \"expanding|contracting|stable|mixed|unknown\",\n" +
@@ -24,9 +27,17 @@ const defaultAgentIndicatorPrompt = "" +
 	"- expansion/alignment/noise：只允许取枚举值。\n" +
 	"- momentum_detail：用中文简要列出关键证据，尽量引用输入字段名或 field=value\n" +
 	"- conflict_detail：用中文描述冲突；若无明显冲突，写“未观察到明显冲突”\n" +
-	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“价格上行倾向 vs 下行倾向”的相对偏向：+1 强烈偏向上行，0 无方向性/不确定，-1 强烈偏向下行。\n" +
+	"- movement_score：数值范围 [-1, 1]，表示在当前决策窗口（参见用户输入中的“决策窗口”字段）内“价格上行倾向 vs 下行倾向”的相对偏向：+1 强烈偏向上行，0 无方向性/不确定，-1 强烈偏向下行。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示你对 movement_score 的证据充分度/可靠度。\n" +
 	"- 当证据不足、噪声大、或冲突明显时：movement_score 应靠近 0，movement_confidence 应偏低。\n" +
+	"校准锚点（必须参考）：\n" +
+	"- ±0.7~1.0：多维度证据强烈一致，方向清晰且无显著对立信号\n" +
+	"- ±0.3~0.7：有方向倾向但存在矛盾、噪声、或部分信号不支持\n" +
+	"- 0~±0.3：证据不足、中性、噪声主导、或正反信号势均力敌\n" +
+	"对应地，movement_confidence 也应同步校准：\n" +
+	"- 0.7~1.0：多个独立证据相互印证，数据完整\n" +
+	"- 0.3~0.7：证据有限或解释空间较大\n" +
+	"- 0~0.3：数据严重不足或信号高度矛盾\n" +
 	"\n" +
 	"重要约束：\n" +
 	"- 不要输出任何交易动作或建议（例如开仓/平仓/做多/做空/买入/卖出等）。只输出分析结论分数与证据描述。"
@@ -57,11 +68,7 @@ const defaultInPosIndicatorPrompt = "" +
 const defaultAgentStructurePrompt = "" +
 	"你是交易系统中的 Market Structure 分析器。基于输入的 Trend/Structure  JSON，输出一个严格 JSON 对象，用于后续审计与自动化处理。\n" +
 	"\n" +
-	"硬性输出规则：\n" +
-	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组、多个对象。\n" +
-	"- 输出必须严格匹配下方“输出 JSON Schema”；不得新增字段、不得缺字段、字段类型必须正确。\n" +
-	"- 只能使用输入里已有的信息；禁止编造任何形态、结构事件或上下文。\n" +
-	"\n" +
+	agentOutputPreamble +
 	"输出 JSON Schema（必须完全一致）：\n" +
 	"{\n" +
 	"  \"regime\": \"trend_up|trend_down|range|mixed|unclear\",\n" +
@@ -78,9 +85,20 @@ const defaultAgentStructurePrompt = "" +
 	"- regime/last_break/quality/pattern：只允许取枚举值。\n" +
 	"- volume_action：用中文简要描述证据，尽量引用输入字段名或 field=value，不要编造\n" +
 	"- candle_reaction：描述价格对关键位/突破后的反应（例如回踩/拒绝/延续），同样只引用输入信息。使用中文输出结果\n" +
-	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“结构层面偏上行 vs 偏下行”的相对倾向。\n" +
+	"- movement_score：数值范围 [-1, 1]，表示在当前决策窗口（参见用户输入中的“决策窗口”字段）内“结构层面偏上行 vs 偏下行”的相对倾向。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示该倾向的可靠度（结构是否清晰、事件是否明确、质量是否稳定）。\n" +
 	"- 当 regime 为 range/mixed/unclear，或 last_break 为 none/unknown，或 quality 为 messy/unclear 时：movement_score 靠近 0，movement_confidence 偏低。\n" +
+	"校准锚点（必须参考）：\n" +
+	"- ±0.7~1.0：多维度证据强烈一致，方向清晰且无显著对立信号\n" +
+	"- ±0.3~0.7：有方向倾向但存在矛盾、噪声、或部分信号不支持\n" +
+	"- 0~±0.3：证据不足、中性、噪声主导、或正反信号势均力敌\n" +
+	"对应地，movement_confidence 也应同步校准：\n" +
+	"- 0.7~1.0：多个独立证据相互印证，数据完整\n" +
+	"- 0.3~0.7：证据有限或解释空间较大\n" +
+	"- 0~0.3：数据严重不足或信号高度矛盾\n" +
+	"- 多周期 blocks 从短周期到长周期排列；同一 block 内 idx 越小越早，idx 越大越晚。\n" +
+	"- recent_candles 与 structure_points 都按 idx 从小到大排列；level_idx 表示被突破的关键位来自哪根历史K线，bar_idx 表示突破发生在哪根K线上，bar_age=0 表示最新K线就是突破K线。\n" +
+	"- idx 只用于表达前后关系，不应单独决定结论。\n" +
 	"\n" +
 	"重要约束（防止行动泄漏）：\n" +
 	"- 不要输出任何交易动作或建议（例如做多/做空/开仓等）。只输出结构判断与分数。"
@@ -110,11 +128,7 @@ const defaultInPosStructurePrompt = "" +
 const defaultAgentMechanicsPrompt = "" +
 	"你是交易系统中的 Market Mechanics 分析器。基于提供的 Mechanics 输入 JSON，输出一个严格 JSON 对象，用于后续审计与自动化处理。\n" +
 	"\n" +
-	"硬性输出规则：\n" +
-	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组、多个对象。\n" +
-	"- 输出必须严格匹配下方“输出 JSON Schema”；不得新增字段、不得缺字段、字段类型必须正确。\n" +
-	"- 只能使用输入里已有的信息；禁止编造资金费率、OI 变化、异常事件等。\n" +
-	"\n" +
+	agentOutputPreamble +
 	"输出 JSON Schema（必须完全一致）：\n" +
 	"{\n" +
 	"  \"leverage_state\": \"increasing|stable|overheated|unknown\",\n" +
@@ -131,8 +145,16 @@ const defaultAgentMechanicsPrompt = "" +
 	"- open_interest_context：用中文概述你依赖的 OI/资金费率/拥挤等事实依据（引用输入字段）。\n" +
 	"- anomaly_detail：用中文概述异常/压力/拥挤反转等迹象（引用输入字段）。\n" +
 	"- 若输入包含 liquidations_by_window，可作为异常或压力证据；在有意义时请在 anomaly_detail 或 open_interest_context 中引用该字段。\n" +
-	"- movement_score：数值范围 [-1, 1]，表示在下一次决策窗口内“机制层面对上行/下行的偏向”。证据不足时分数应靠近 0。\n" +
+	"- movement_score：数值范围 [-1, 1]，表示在当前决策窗口（参见用户输入中的“决策窗口”字段）内“机制层面对上行/下行的偏向”。证据不足时分数应靠近 0。\n" +
 	"- movement_confidence：数值范围 [0, 1]，表示你对该偏向的可靠度；当风险高、信息弱或矛盾时应偏低。\n" +
+	"校准锚点（必须参考）：\n" +
+	"- ±0.7~1.0：多维度证据强烈一致，方向清晰且无显著对立信号\n" +
+	"- ±0.3~0.7：有方向倾向但存在矛盾、噪声、或部分信号不支持\n" +
+	"- 0~±0.3：证据不足、中性、噪声主导、或正反信号势均力敌\n" +
+	"对应地，movement_confidence 也应同步校准：\n" +
+	"- 0.7~1.0：多个独立证据相互印证，数据完整\n" +
+	"- 0.3~0.7：证据有限或解释空间较大\n" +
+	"- 0~0.3：数据严重不足或信号高度矛盾\n" +
 	"\n" +
 	"重要约束（防止行动泄漏）：\n" +
 	"- 不要输出任何交易动作或建议（例如做多/做空/开仓等）。只输出机制判断与分数。"
@@ -158,7 +180,7 @@ const defaultInPosMechanicsPrompt = "" +
 	"不要因为单一异常点就直接判定 exit；只有在机制性风险足够明确时才这样做。"
 
 const defaultRiskFlatInitPrompt = "" +
-	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、计划摘要、共识摘要、结构摘要与其他 Provider 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
+	"你是交易系统中的 Flat 风控初始化规划器。你的任务是：基于用户提供的交易上下文、计划摘要、结构锚点摘要与三个 Agent 摘要，输出一个严格 JSON 对象，完整生成可落地的 stop_loss 与 take_profits 初始方案。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -176,17 +198,21 @@ const defaultRiskFlatInitPrompt = "" +
 	"\n" +
 	"约束（必须满足）：\n" +
 	"- direction 是输入上下文条件，不得出现在输出 JSON 中。输出字段只能是：entry, stop_loss, take_profits, take_profit_ratios, reason。\n" +
-	"- 若输出包含 direction、symbol、risk_pct、consensus、structure、provider_summary 或任何其他额外字段，均视为错误。\n" +
-	"- 必须同时参考计划摘要中的 atr/max_leverage/max_invest_pct/liq_price（若给出）与结构摘要/其他 Provider 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
+	"- 若输出包含 direction、symbol、risk_pct、indicator、structure、mechanics 或任何其他额外字段，均视为错误。\n" +
+	"- 必须同时参考计划摘要中的 atr/max_leverage/max_invest_pct/liq_price（若给出）、结构锚点摘要与三个 Agent 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
+	"- 结构锚点摘要中的 nearest_below_entry / nearest_above_entry 是相对 entry 的方向中性锚点：direction=long 时通常分别更接近止损/止盈参考；direction=short 时通常分别更接近止盈/止损参考。\n" +
 	"- direction=long：stop_loss 必须 < entry，take_profits 必须严格递增且全部 > entry。\n" +
 	"- direction=short：stop_loss 必须 > entry，take_profits 必须严格递减且全部 < entry。\n" +
+	"- stop_loss 距 entry 的距离建议在 0.5~3.0 倍 ATR 范围内（ATR 从计划摘要中获取）；若超出需在 reason 中说明。\n" +
+	"- 首个 take_profit 与 entry 的距离应 >= stop_loss 与 entry 的距离（即首档风险回报比 >= 1:1）。\n" +
+	"- 计划摘要中的预设 stop_loss 与 take_profits 仅供参考；必须基于当前 Agent 摘要与结构锚点独立判断，不得原样照搬。\n" +
 	"- 必须从输入上下文独立生成完整 entry/stop_loss/take_profits/take_profit_ratios；禁止依赖或引用任何既有 TP/SL 基线。\n" +
 	"- take_profit_ratios 长度必须与 take_profits 完全一致。\n" +
 	"- take_profit_ratios 每项必须 > 0，且总和必须精确等于 1.0。\n" +
 	"- reason 必须是中文、简短（建议 1-2 句），并明确引用输入字段名\n"
 
 const defaultRiskTightenUpdatePrompt = "" +
-	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、Gate 摘要与 In-position 评估，输出一个严格 JSON 对象，生成可执行的新止损与止盈列表。\n" +
+	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、结构锚点摘要与三个 Agent 摘要，输出一个严格 JSON 对象，生成可执行的新止损与止盈列表。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -200,6 +226,11 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"}\n" +
 	"\n" +
 	"约束（必须满足）：\n" +
+	"- 必须同时参考仓位风控上下文、结构锚点摘要与三个 Agent 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
+	"- 结构锚点摘要中的 nearest_below_entry / nearest_above_entry 是相对 entry 的方向中性锚点：direction=long 时通常分别更接近止损/止盈参考；direction=short 时通常分别更接近止盈/止损参考。\n" +
+	"- 仓位风控上下文中 unrealized_pnl_pct 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离。\n" +
+	"- 刚入场微利（unrealized_pnl_pct 接近 0 且 position_age_minutes 较短）时 tighten 应保守；浮盈较大时可更积极保护利润。\n" +
+	"- tp1_hit=true 时止盈列表长度应减少（已触发的不再包含）。\n" +
 	"- direction=long：stop_loss 必须 > current_stop_loss 且 < mark_price；take_profits 必须严格递增。\n" +
 	"- direction=short：stop_loss 必须 < current_stop_loss 且 > mark_price；take_profits 必须严格递减。\n" +
 	"- 禁止返回与当前完全相同的 stop_loss 与 take_profits。\n"

@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"brale-core/internal/decision"
+	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/fund"
-	"brale-core/internal/decision/provider"
 	"brale-core/internal/execution"
 )
 
@@ -83,9 +83,13 @@ func TestDecodeFlatRiskPatchIgnoresNonWhitelistedFields(t *testing.T) {
 
 func TestBuildFlatRiskPromptInputIncludesPlanSummary(t *testing.T) {
 	input := decision.FlatRiskInitInput{
-		Symbol: "btcusdt",
-		Gate:   fundGateForRiskTests(),
-		Plan:   executionPlanForRiskTests(),
+		Symbol:           "btcusdt",
+		Gate:             fundGateForRiskTests(),
+		Plan:             executionPlanForRiskTests(),
+		AgentIndicator:   agentIndicatorForRiskTests(),
+		AgentStructure:   agentStructureForRiskTests(),
+		AgentMechanics:   agentMechanicsForRiskTests(),
+		StructureAnchors: structureAnchorsForRiskTests(),
 	}
 	got, err := buildFlatRiskPromptInput(input)
 	if err != nil {
@@ -103,6 +107,18 @@ func TestBuildFlatRiskPromptInputIncludesPlanSummary(t *testing.T) {
 	if got.PlanSummary["stop_loss"] != 0.0 {
 		t.Fatalf("plan_summary.stop_loss=%v", got.PlanSummary["stop_loss"])
 	}
+	if got.AgentIndicator.Expansion != agent.ExpansionExpanding {
+		t.Fatalf("agent_indicator.expansion=%q", got.AgentIndicator.Expansion)
+	}
+	if got.AgentStructure.Regime != agent.RegimeTrendUp {
+		t.Fatalf("agent_structure.regime=%q", got.AgentStructure.Regime)
+	}
+	if got.AgentMechanics.RiskLevel != agent.RiskLevelLow {
+		t.Fatalf("agent_mechanics.risk_level=%q", got.AgentMechanics.RiskLevel)
+	}
+	if _, ok := got.StructureAnchors["nearest_below_entry"]; !ok {
+		t.Fatalf("structure_anchors=%v", got.StructureAnchors)
+	}
 }
 
 func TestLLMRiskServiceFlatRiskInitLLMUsesStatelessCall(t *testing.T) {
@@ -112,14 +128,30 @@ func TestLLMRiskServiceFlatRiskInitLLMUsesStatelessCall(t *testing.T) {
 		Prompts:  LLMPromptBuilder{RiskFlatInitSystem: "risk-system", RiskTightenSystem: "risk-tighten-system"},
 	}
 	initFn := svc.FlatRiskInitLLM()
-	_, err := initFn(context.Background(), decision.FlatRiskInitInput{Symbol: "BTCUSDT", Gate: fundGateForRiskTests(), Plan: executionPlanForRiskTests()})
+	_, err := initFn(context.Background(), decision.FlatRiskInitInput{
+		Symbol:           "BTCUSDT",
+		Gate:             fundGateForRiskTests(),
+		Plan:             executionPlanForRiskTests(),
+		AgentIndicator:   agentIndicatorForRiskTests(),
+		AgentStructure:   agentStructureForRiskTests(),
+		AgentMechanics:   agentMechanicsForRiskTests(),
+		StructureAnchors: structureAnchorsForRiskTests(),
+	})
 	if err != nil {
 		t.Fatalf("flat risk init: %v", err)
 	}
 	if providerStub.callCount != 1 {
 		t.Fatalf("stateless call_count=%d, want 1", providerStub.callCount)
 	}
-	patch, err := initFn(context.Background(), decision.FlatRiskInitInput{Symbol: "BTCUSDT", Gate: fundGateForRiskTests(), Plan: executionPlanForRiskTests()})
+	patch, err := initFn(context.Background(), decision.FlatRiskInitInput{
+		Symbol:           "BTCUSDT",
+		Gate:             fundGateForRiskTests(),
+		Plan:             executionPlanForRiskTests(),
+		AgentIndicator:   agentIndicatorForRiskTests(),
+		AgentStructure:   agentStructureForRiskTests(),
+		AgentMechanics:   agentMechanicsForRiskTests(),
+		StructureAnchors: structureAnchorsForRiskTests(),
+	})
 	if err != nil {
 		t.Fatalf("flat risk init: %v", err)
 	}
@@ -135,11 +167,16 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 		Entry:              100,
 		MarkPrice:          105,
 		ATR:                2,
+		UnrealizedPnlPct:   0.05,
+		PositionAgeMin:     45,
+		TP1Hit:             true,
+		DistanceToLiqPct:   0.18,
 		CurrentStopLoss:    95,
 		CurrentTakeProfits: []float64{108, 112},
-		InPositionIndicator: provider.InPositionIndicatorOut{
-			MonitorTag: "tighten",
-		},
+		AgentIndicator:     agentIndicatorForRiskTests(),
+		AgentStructure:     agentStructureForRiskTests(),
+		AgentMechanics:     agentMechanicsForRiskTests(),
+		StructureAnchors:   structureAnchorsForRiskTests(),
 	}
 	got, err := buildTightenRiskPromptInput(input)
 	if err != nil {
@@ -153,6 +190,30 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 	}
 	if len(got.CurrentTakeProfits) != 2 {
 		t.Fatalf("current_take_profits=%v", got.CurrentTakeProfits)
+	}
+	if got.UnrealizedPnlPct != 0.05 {
+		t.Fatalf("unrealized_pnl_pct=%v", got.UnrealizedPnlPct)
+	}
+	if got.PositionAgeMin != 45 {
+		t.Fatalf("position_age_min=%d", got.PositionAgeMin)
+	}
+	if !got.TP1Hit {
+		t.Fatalf("tp1_hit=%v, want true", got.TP1Hit)
+	}
+	if got.DistanceToLiqPct != 0.18 {
+		t.Fatalf("distance_to_liq_pct=%v", got.DistanceToLiqPct)
+	}
+	if got.AgentIndicator.Alignment != agent.AlignmentAligned {
+		t.Fatalf("agent_indicator.alignment=%q", got.AgentIndicator.Alignment)
+	}
+	if got.AgentStructure.Quality != agent.QualityClean {
+		t.Fatalf("agent_structure.quality=%q", got.AgentStructure.Quality)
+	}
+	if got.AgentMechanics.Crowding != agent.CrowdingBalanced {
+		t.Fatalf("agent_mechanics.crowding=%q", got.AgentMechanics.Crowding)
+	}
+	if _, ok := got.StructureAnchors["nearest_above_entry"]; !ok {
+		t.Fatalf("structure_anchors=%v", got.StructureAnchors)
 	}
 }
 
@@ -213,8 +274,70 @@ func tightenInputForRiskTests() decision.TightenRiskUpdateInput {
 		Entry:              100,
 		MarkPrice:          105,
 		ATR:                2,
+		UnrealizedPnlPct:   0.05,
+		PositionAgeMin:     45,
+		TP1Hit:             true,
+		DistanceToLiqPct:   0.18,
 		CurrentStopLoss:    99,
 		CurrentTakeProfits: []float64{108, 112},
 		Gate:               fundGateForRiskTests(),
+		AgentIndicator:     agentIndicatorForRiskTests(),
+		AgentStructure:     agentStructureForRiskTests(),
+		AgentMechanics:     agentMechanicsForRiskTests(),
+		StructureAnchors:   structureAnchorsForRiskTests(),
+	}
+}
+
+func structureAnchorsForRiskTests() map[string]any {
+	return map[string]any{
+		"nearest_below_entry": map[string]any{
+			"price":    98.5,
+			"interval": "1h",
+			"source":   "fractal_low",
+			"type":     "support",
+		},
+		"nearest_above_entry": map[string]any{
+			"price":    104.2,
+			"interval": "4h",
+			"source":   "fractal_high",
+			"type":     "resistance",
+		},
+	}
+}
+
+func agentIndicatorForRiskTests() decision.IndicatorSummary {
+	return decision.IndicatorSummary{
+		Expansion:          agent.ExpansionExpanding,
+		Alignment:          agent.AlignmentAligned,
+		Noise:              agent.NoiseLow,
+		MomentumDetail:     "momentum steady",
+		ConflictDetail:     "none",
+		MovementScore:      0.9,
+		MovementConfidence: 0.8,
+	}
+}
+
+func agentStructureForRiskTests() decision.StructureSummary {
+	return decision.StructureSummary{
+		Regime:             agent.RegimeTrendUp,
+		LastBreak:          agent.LastBreakBosUp,
+		Quality:            agent.QualityClean,
+		Pattern:            agent.PatternFlag,
+		VolumeAction:       "supportive",
+		CandleReaction:     "follow-through",
+		MovementScore:      0.85,
+		MovementConfidence: 0.75,
+	}
+}
+
+func agentMechanicsForRiskTests() decision.MechanicsSummary {
+	return decision.MechanicsSummary{
+		LeverageState:       agent.LeverageStateStable,
+		Crowding:            agent.CrowdingBalanced,
+		RiskLevel:           agent.RiskLevelLow,
+		OpenInterestContext: "stable",
+		AnomalyDetail:       "none",
+		MovementScore:       0.7,
+		MovementConfidence:  0.65,
 	}
 }

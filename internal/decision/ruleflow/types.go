@@ -15,7 +15,9 @@ import (
 type Input struct {
 	Symbol              string
 	Providers           fund.ProviderBundle
+	AgentIndicator      agent.IndicatorSummary
 	AgentStructure      agent.StructureSummary
+	AgentMechanics      agent.MechanicsSummary
 	InPosition          InPositionOutputs
 	Position            HardGuardPosition
 	State               fsm.PositionState

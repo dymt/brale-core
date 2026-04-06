@@ -14,7 +14,6 @@ import (
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/features"
-	"brale-core/internal/decision/fund"
 	"brale-core/internal/decision/provider"
 	"brale-core/internal/prompt/positionprompt"
 )
@@ -35,28 +34,33 @@ type LLMPromptBuilder struct {
 }
 
 type FlatRiskPromptInput struct {
-	Symbol               string
-	Direction            string
-	Entry                float64
-	RiskPct              float64
-	PlanSummary          map[string]any
-	Consensus            map[string]any
-	Structure            map[string]any
-	OtherProviderSummary map[string]any
+	Symbol           string
+	Direction        string
+	Entry            float64
+	RiskPct          float64
+	PlanSummary      map[string]any
+	StructureAnchors map[string]any
+	AgentIndicator   agent.IndicatorSummary
+	AgentStructure   agent.StructureSummary
+	AgentMechanics   agent.MechanicsSummary
 }
 
 type TightenRiskPromptInput struct {
-	Symbol              string
-	Direction           string
-	Entry               float64
-	MarkPrice           float64
-	ATR                 float64
-	CurrentStopLoss     float64
-	CurrentTakeProfits  []float64
-	Gate                fund.GateDecision
-	InPositionIndicator provider.InPositionIndicatorOut
-	InPositionStructure provider.InPositionStructureOut
-	InPositionMechanics provider.InPositionMechanicsOut
+	Symbol             string
+	Direction          string
+	Entry              float64
+	MarkPrice          float64
+	ATR                float64
+	UnrealizedPnlPct   float64
+	PositionAgeMin     int64
+	TP1Hit             bool
+	DistanceToLiqPct   float64
+	CurrentStopLoss    float64
+	CurrentTakeProfits []float64
+	StructureAnchors   map[string]any
+	AgentIndicator     agent.IndicatorSummary
+	AgentStructure     agent.StructureSummary
+	AgentMechanics     agent.MechanicsSummary
 }
 
 func (b LLMPromptBuilder) FlatRiskInitPrompt(input FlatRiskPromptInput) (string, string, error) {
@@ -74,16 +78,18 @@ func (b LLMPromptBuilder) FlatRiskInitPrompt(input FlatRiskPromptInput) (string,
 		"risk_pct":  input.RiskPct,
 	})
 	planRaw, _ := json.Marshal(input.PlanSummary)
-	consensusRaw, _ := json.Marshal(input.Consensus)
-	structureRaw, _ := json.Marshal(input.Structure)
-	providerRaw, _ := json.Marshal(input.OtherProviderSummary)
+	anchorsRaw, _ := json.Marshal(input.StructureAnchors)
+	indicatorRaw, _ := json.Marshal(input.AgentIndicator)
+	structureRaw, _ := json.Marshal(input.AgentStructure)
+	mechanicsRaw, _ := json.Marshal(input.AgentMechanics)
 	user := formatPayloads(
 		b.UserFormat,
 		payloadBlock{label: "交易上下文(必填):", payload: string(contextRaw)},
 		payloadBlock{label: "计划摘要(必填):", payload: string(planRaw)},
-		payloadBlock{label: "共识摘要(必填):", payload: string(consensusRaw)},
-		payloadBlock{label: "结构摘要(必填):", payload: string(structureRaw)},
-		payloadBlock{label: "其他 Provider 摘要(必填):", payload: string(providerRaw)},
+		payloadBlock{label: "结构锚点摘要(必填):", payload: string(anchorsRaw)},
+		payloadBlock{label: "Indicator Agent 摘要(必填):", payload: string(indicatorRaw)},
+		payloadBlock{label: "Structure Agent 摘要(必填):", payload: string(structureRaw)},
+		payloadBlock{label: "Mechanics Agent 摘要(必填):", payload: string(mechanicsRaw)},
 	)
 	return system, user, nil
 }
@@ -102,52 +108,65 @@ func (b LLMPromptBuilder) TightenRiskUpdatePrompt(input TightenRiskPromptInput) 
 		"entry":                input.Entry,
 		"mark_price":           input.MarkPrice,
 		"atr":                  input.ATR,
+		"unrealized_pnl_pct":   input.UnrealizedPnlPct,
+		"position_age_minutes": input.PositionAgeMin,
+		"tp1_hit":              input.TP1Hit,
+		"distance_to_liq_pct":  input.DistanceToLiqPct,
 		"current_stop_loss":    input.CurrentStopLoss,
 		"current_take_profits": append([]float64(nil), input.CurrentTakeProfits...),
 	})
-	gateRaw, _ := json.Marshal(input.Gate)
-	inPosRaw, _ := json.Marshal(map[string]any{
-		"indicator": input.InPositionIndicator,
-		"structure": input.InPositionStructure,
-		"mechanics": input.InPositionMechanics,
-	})
+	anchorsRaw, _ := json.Marshal(input.StructureAnchors)
+	indicatorRaw, _ := json.Marshal(input.AgentIndicator)
+	structureRaw, _ := json.Marshal(input.AgentStructure)
+	mechanicsRaw, _ := json.Marshal(input.AgentMechanics)
 	user := formatPayloads(
 		b.UserFormat,
 		payloadBlock{label: "仓位风控上下文(必填):", payload: string(contextRaw)},
-		payloadBlock{label: "Gate 摘要(必填):", payload: string(gateRaw)},
-		payloadBlock{label: "In-position 评估(必填):", payload: string(inPosRaw)},
+		payloadBlock{label: "结构锚点摘要(必填):", payload: string(anchorsRaw)},
+		payloadBlock{label: "Indicator Agent 摘要(必填):", payload: string(indicatorRaw)},
+		payloadBlock{label: "Structure Agent 摘要(必填):", payload: string(structureRaw)},
+		payloadBlock{label: "Mechanics Agent 摘要(必填):", payload: string(mechanicsRaw)},
 		payloadBlock{label: "输出要求:", payload: `{"stop_loss":0.0,"take_profits":[0.0]}。必须输出完整新止损与止盈列表，不允许省略任一字段。`},
 	)
 	return system, user, nil
 }
 
-func (b LLMPromptBuilder) AgentIndicatorPrompt(ind features.IndicatorJSON) (string, string, error) {
+func (b LLMPromptBuilder) AgentIndicatorPrompt(ind features.IndicatorJSON, decisionInterval string) (string, string, error) {
 	system, err := requirePrompt("prompts.agent.indicator", b.AgentIndicatorSystem)
 	if err != nil {
 		return "", "", err
 	}
-	user := formatPayloads(b.UserFormat, payloadBlock{label: "Indicator 输入", payload: string(ind.RawJSON)})
+	blocks := []payloadBlock{{label: "Indicator 输入", payload: string(ind.RawJSON)}}
+	if interval := strings.TrimSpace(decisionInterval); interval != "" {
+		blocks = append(blocks, payloadBlock{label: "决策窗口:", payload: interval})
+	}
+	user := formatPayloads(b.UserFormat, blocks...)
 	return system, user, nil
 }
 
-func (b LLMPromptBuilder) AgentStructurePrompt(tr features.TrendJSON) (string, string, error) {
+func (b LLMPromptBuilder) AgentStructurePrompt(tr features.TrendJSON, decisionInterval string) (string, string, error) {
 	system, err := requirePrompt("prompts.agent.structure", b.AgentStructureSystem)
 	if err != nil {
 		return "", "", err
 	}
-	user := formatPayloads(
-		b.UserFormat,
-		payloadBlock{label: "Trend 输入", payload: string(tr.RawJSON)},
-	)
+	blocks := []payloadBlock{{label: "Trend 输入", payload: string(tr.RawJSON)}}
+	if interval := strings.TrimSpace(decisionInterval); interval != "" {
+		blocks = append(blocks, payloadBlock{label: "决策窗口:", payload: interval})
+	}
+	user := formatPayloads(b.UserFormat, blocks...)
 	return system, user, nil
 }
 
-func (b LLMPromptBuilder) AgentMechanicsPrompt(mech features.MechanicsSnapshot) (string, string, error) {
+func (b LLMPromptBuilder) AgentMechanicsPrompt(mech features.MechanicsSnapshot, decisionInterval string) (string, string, error) {
 	system, err := requirePrompt("prompts.agent.mechanics", b.AgentMechanicsSystem)
 	if err != nil {
 		return "", "", err
 	}
-	user := formatPayloads(b.UserFormat, payloadBlock{label: "Mechanics 输入", payload: string(mech.RawJSON)})
+	blocks := []payloadBlock{{label: "Mechanics 输入", payload: string(mech.RawJSON)}}
+	if interval := strings.TrimSpace(decisionInterval); interval != "" {
+		blocks = append(blocks, payloadBlock{label: "决策窗口:", payload: interval})
+	}
+	user := formatPayloads(b.UserFormat, blocks...)
 	return system, user, nil
 }
 
@@ -358,7 +377,7 @@ func providerExampleIndicator() string {
 		MomentumExpansion: false,
 		Alignment:         false,
 		MeanRevNoise:      false,
-		SignalTag:         "example_tag",
+		SignalTag:         "noise",
 	}
 
 	raw, _ := json.Marshal(ex)
@@ -370,7 +389,7 @@ func providerExampleStructure() string {
 		ClearStructure: true,
 		Integrity:      true,
 		Reason:         "引用本轮输入中的关键字段作为依据并说明判断逻辑（示例占位，禁止直接引用）",
-		SignalTag:      "example_tag",
+		SignalTag:      "support_retest",
 	}
 
 	raw, _ := json.Marshal(ex)
@@ -384,7 +403,7 @@ func providerExampleMechanics() string {
 			Confidence: provider.ConfidenceLow,
 			Reason:     "引用本轮输入中的关键字段作为依据并说明判断逻辑（示例占位，禁止直接引用）",
 		},
-		SignalTag: "example_tag",
+		SignalTag: "neutral",
 	}
 
 	raw, _ := json.Marshal(ex)
@@ -396,7 +415,7 @@ func providerExampleInPositionIndicator() string {
 		MomentumSustaining: true,
 		DivergenceDetected: false,
 		Reason:             "引用本轮输入中的关键字段作为依据并说明判断逻辑（示例占位，禁止直接引用）",
-		MonitorTag:         "example_monitor_tag",
+		MonitorTag:         "keep",
 	}
 	raw, _ := json.Marshal(ex)
 	return string(raw)
@@ -407,7 +426,7 @@ func providerExampleInPositionStructure() string {
 		Integrity:   true,
 		ThreatLevel: provider.ThreatLevelNone,
 		Reason:      "引用本轮输入中的关键字段作为依据并说明判断逻辑（示例占位，禁止直接引用）",
-		MonitorTag:  "example_monitor_tag",
+		MonitorTag:  "keep",
 	}
 	raw, _ := json.Marshal(ex)
 	return string(raw)
@@ -449,13 +468,7 @@ func validateFlatRiskPromptInput(input FlatRiskPromptInput) error {
 	if err := requireNonEmptyMap("flat_risk.plan_summary", input.PlanSummary); err != nil {
 		return err
 	}
-	if err := requireNonEmptyMap("flat_risk.consensus", input.Consensus); err != nil {
-		return err
-	}
-	if err := requireNonEmptyMap("flat_risk.structure", input.Structure); err != nil {
-		return err
-	}
-	if err := requireNonEmptyMap("flat_risk.other_provider_summary", input.OtherProviderSummary); err != nil {
+	if err := requireNonEmptyMap("flat_risk.structure_anchors", input.StructureAnchors); err != nil {
 		return err
 	}
 	return nil
@@ -483,6 +496,9 @@ func validateTightenRiskPromptInput(input TightenRiskPromptInput) error {
 	}
 	if len(input.CurrentTakeProfits) == 0 {
 		return fmt.Errorf("tighten_risk.current_take_profits is required")
+	}
+	if err := requireNonEmptyMap("tighten_risk.structure_anchors", input.StructureAnchors); err != nil {
+		return err
 	}
 	return nil
 }

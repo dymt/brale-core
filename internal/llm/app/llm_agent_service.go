@@ -21,10 +21,11 @@ import (
 )
 
 type LLMAgentService struct {
-	Runner  *agent.Runner
-	Prompts LLMPromptBuilder
-	Cache   *LLMStageCache
-	Tracker *LLMRunTracker
+	Runner           *agent.Runner
+	Prompts          LLMPromptBuilder
+	Cache            *LLMStageCache
+	Tracker          *LLMRunTracker
+	DecisionInterval string
 }
 
 func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, error) {
@@ -295,7 +296,7 @@ func sortedTrendIntervals(m map[string]features.TrendJSON) []string {
 }
 
 func (s LLMAgentService) runIndicatorStage(ctx context.Context, symbol string, indJSON features.IndicatorJSON) (agent.IndicatorSummary, decision.LLMStagePrompt, error) {
-	sysInd, userInd, err := s.Prompts.AgentIndicatorPrompt(indJSON)
+	sysInd, userInd, err := s.Prompts.AgentIndicatorPrompt(indJSON, s.DecisionInterval)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "indicator", err)
 		return agent.IndicatorSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr
@@ -321,7 +322,7 @@ func (s LLMAgentService) runStructureStage(ctx context.Context, symbol string, t
 	trInput := normalizeTrendInput(trJSON.RawJSON)
 	trPrompt := trJSON
 	trPrompt.RawJSON = trInput
-	sysSt, userSt, err := s.Prompts.AgentStructurePrompt(trPrompt)
+	sysSt, userSt, err := s.Prompts.AgentStructurePrompt(trPrompt, s.DecisionInterval)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "structure", err)
 		return agent.StructureSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr
@@ -442,7 +443,7 @@ func (s LLMAgentService) runMechanicsStage(ctx context.Context, symbol string, m
 	mechInput := normalizeMechanicsInput(mechJSON.RawJSON)
 	mechPrompt := mechJSON
 	mechPrompt.RawJSON = mechInput
-	sysMech, userMech, err := s.Prompts.AgentMechanicsPrompt(mechPrompt)
+	sysMech, userMech, err := s.Prompts.AgentMechanicsPrompt(mechPrompt, s.DecisionInterval)
 	if err != nil {
 		stageErr := s.logStageError(ctx, "mechanics", err)
 		return agent.MechanicsSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr

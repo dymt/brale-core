@@ -14,14 +14,14 @@ import (
 	"brale-core/internal/strategy"
 )
 
-func (r *Runner) completeFlatExecutionPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, actions []fsm.Action, bind strategy.StrategyBinding, acct execution.AccountState, llmRiskMode bool) (*execution.ExecutionPlan, error) {
+func (r *Runner) completeFlatExecutionPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, actions []fsm.Action, ind IndicatorSummary, st StructureSummary, mech MechanicsSummary, structureAnchors map[string]any, bind strategy.StrategyBinding, acct execution.AccountState, llmRiskMode bool) (*execution.ExecutionPlan, error) {
 	if plan == nil {
 		return nil, nil
 	}
 	if !llmRiskMode || !shouldCompleteExecutableFlatPlan(gate, plan, actions) {
 		return plan, nil
 	}
-	return r.buildFlatLLMPlan(ctx, symbol, gate, plan, bind, acct)
+	return r.buildFlatLLMPlan(ctx, symbol, gate, plan, ind, st, mech, structureAnchors, bind, acct)
 }
 
 func shouldCompleteExecutableFlatPlan(gate fund.GateDecision, plan *execution.ExecutionPlan, actions []fsm.Action) bool {
@@ -31,7 +31,7 @@ func shouldCompleteExecutableFlatPlan(gate fund.GateDecision, plan *execution.Ex
 	return hasFSMAction(actions, fsm.ActionOpen)
 }
 
-func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, bind strategy.StrategyBinding, acct execution.AccountState) (*execution.ExecutionPlan, error) {
+func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.GateDecision, plan *execution.ExecutionPlan, ind IndicatorSummary, st StructureSummary, mech MechanicsSummary, structureAnchors map[string]any, bind strategy.StrategyBinding, acct execution.AccountState) (*execution.ExecutionPlan, error) {
 	if plan == nil {
 		return nil, nil
 	}
@@ -39,7 +39,15 @@ func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.
 		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, fmt.Errorf("flat risk init llm callback is required"))
 	}
 	resolved := *plan
-	patch, err := r.FlatRiskInitLLM(ctx, FlatRiskInitInput{Symbol: symbol, Gate: gate, Plan: resolved})
+	patch, err := r.FlatRiskInitLLM(ctx, FlatRiskInitInput{
+		Symbol:           symbol,
+		Gate:             gate,
+		Plan:             resolved,
+		AgentIndicator:   ind,
+		AgentStructure:   st,
+		AgentMechanics:   mech,
+		StructureAnchors: structureAnchors,
+	})
 	if err != nil {
 		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, err)
 	}

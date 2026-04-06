@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"brale-core/internal/decision"
-	"brale-core/internal/decision/fund"
 	"brale-core/internal/execution"
 	"brale-core/internal/llm"
 	"brale-core/internal/pkg/llmclean"
@@ -124,7 +123,6 @@ func buildFlatRiskPromptInput(input decision.FlatRiskInitInput) (FlatRiskPromptI
 	if input.Plan.Entry <= 0 {
 		return FlatRiskPromptInput{}, fmt.Errorf("plan entry is required")
 	}
-	consensus, structureSummary, otherProviderSummary := deriveRiskPromptSummaries(input.Gate)
 	planSummary := map[string]any{
 		"entry":          input.Plan.Entry,
 		"risk_pct":       input.Plan.RiskPct,
@@ -137,14 +135,15 @@ func buildFlatRiskPromptInput(input decision.FlatRiskInitInput) (FlatRiskPromptI
 		"liq_price":      input.Plan.RiskAnnotations.LiqPrice,
 	}
 	return FlatRiskPromptInput{
-		Symbol:               strings.ToUpper(strings.TrimSpace(input.Symbol)),
-		Direction:            strings.ToLower(strings.TrimSpace(input.Plan.Direction)),
-		Entry:                input.Plan.Entry,
-		RiskPct:              input.Plan.RiskPct,
-		PlanSummary:          planSummary,
-		Consensus:            consensus,
-		Structure:            structureSummary,
-		OtherProviderSummary: otherProviderSummary,
+		Symbol:           strings.ToUpper(strings.TrimSpace(input.Symbol)),
+		Direction:        strings.ToLower(strings.TrimSpace(input.Plan.Direction)),
+		Entry:            input.Plan.Entry,
+		RiskPct:          input.Plan.RiskPct,
+		PlanSummary:      planSummary,
+		StructureAnchors: cloneAnyMap(input.StructureAnchors),
+		AgentIndicator:   input.AgentIndicator,
+		AgentStructure:   input.AgentStructure,
+		AgentMechanics:   input.AgentMechanics,
 	}, nil
 }
 
@@ -171,66 +170,33 @@ func buildTightenRiskPromptInput(input decision.TightenRiskUpdateInput) (Tighten
 		return TightenRiskPromptInput{}, fmt.Errorf("current_take_profits is required")
 	}
 	return TightenRiskPromptInput{
-		Symbol:              strings.ToUpper(strings.TrimSpace(input.Symbol)),
-		Direction:           strings.ToLower(strings.TrimSpace(input.Side)),
-		Entry:               input.Entry,
-		MarkPrice:           input.MarkPrice,
-		ATR:                 input.ATR,
-		CurrentStopLoss:     input.CurrentStopLoss,
-		CurrentTakeProfits:  append([]float64(nil), input.CurrentTakeProfits...),
-		Gate:                input.Gate,
-		InPositionIndicator: input.InPositionIndicator,
-		InPositionStructure: input.InPositionStructure,
-		InPositionMechanics: input.InPositionMechanics,
+		Symbol:             strings.ToUpper(strings.TrimSpace(input.Symbol)),
+		Direction:          strings.ToLower(strings.TrimSpace(input.Side)),
+		Entry:              input.Entry,
+		MarkPrice:          input.MarkPrice,
+		ATR:                input.ATR,
+		UnrealizedPnlPct:   input.UnrealizedPnlPct,
+		PositionAgeMin:     input.PositionAgeMin,
+		TP1Hit:             input.TP1Hit,
+		DistanceToLiqPct:   input.DistanceToLiqPct,
+		CurrentStopLoss:    input.CurrentStopLoss,
+		CurrentTakeProfits: append([]float64(nil), input.CurrentTakeProfits...),
+		StructureAnchors:   cloneAnyMap(input.StructureAnchors),
+		AgentIndicator:     input.AgentIndicator,
+		AgentStructure:     input.AgentStructure,
+		AgentMechanics:     input.AgentMechanics,
 	}, nil
 }
 
-func deriveRiskPromptSummaries(gate fund.GateDecision) (map[string]any, map[string]any, map[string]any) {
-	consensus := pickDerivedMap(gate.Derived, "direction_consensus", "consensus")
-	if len(consensus) == 0 {
-		consensus = map[string]any{
-			"direction":   strings.ToLower(strings.TrimSpace(gate.Direction)),
-			"grade":       gate.Grade,
-			"gate_reason": strings.TrimSpace(gate.GateReason),
-		}
+func cloneAnyMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
 	}
-	structureSummary := pickDerivedMap(gate.Derived, "provider_structure", "structure_summary", "structure")
-	if len(structureSummary) == 0 {
-		structureSummary = map[string]any{"gate_reason": strings.TrimSpace(gate.GateReason)}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
 	}
-	otherProviderSummary := pickDerivedMap(gate.Derived, "providers", "provider_summary", "other_provider_summary")
-	if len(otherProviderSummary) == 0 {
-		otherProviderSummary = map[string]any{
-			"decision_action": strings.TrimSpace(gate.DecisionAction),
-			"gate_reason":     strings.TrimSpace(gate.GateReason),
-		}
-	}
-	return consensus, structureSummary, otherProviderSummary
-}
-
-func pickDerivedMap(derived map[string]any, keys ...string) map[string]any {
-	for _, key := range keys {
-		candidate, ok := mapFromAny(derived[key])
-		if ok && len(candidate) > 0 {
-			return candidate
-		}
-	}
-	return map[string]any{}
-}
-
-func mapFromAny(value any) (map[string]any, bool) {
-	if value == nil {
-		return nil, false
-	}
-	m, ok := value.(map[string]any)
-	if !ok || len(m) == 0 {
-		return nil, false
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out, true
+	return out
 }
 
 type flatRiskPatchPayload struct {

@@ -2,13 +2,21 @@ package ruleflow
 
 import "math"
 
-func computeSetupQuality(structureClear, structureIntegrity, alignment, momentumExpansion, meanRevNoise bool, scriptBonus float64, indicatorTag string) float64 {
-	score := 0.30*boolToFloat(structureClear) +
-		0.25*boolToFloat(structureIntegrity) +
-		0.20*boolToFloat(alignment) +
-		0.15*boolToFloat(momentumExpansion) +
+func computeSetupQuality(structureClear, structureIntegrity, alignment, momentumExpansion, meanRevNoise bool, scriptBonus float64, indicatorTag string, indConf, stConf float64) float64 {
+	indWeight := 1.0
+	if indConf > 0 {
+		indWeight = clampGateFloat(indConf, 0.3, 1.0)
+	}
+	stWeight := 1.0
+	if stConf > 0 {
+		stWeight = clampGateFloat(stConf, 0.3, 1.0)
+	}
+	score := 0.30*boolToFloat(structureClear)*stWeight +
+		0.25*boolToFloat(structureIntegrity)*stWeight +
+		0.20*boolToFloat(alignment)*indWeight +
+		0.15*boolToFloat(momentumExpansion)*indWeight +
 		0.10*scriptBonus -
-		0.20*boolToFloat(meanRevNoise)
+		0.20*boolToFloat(meanRevNoise)*indWeight
 	score -= resolveConsistencyPenalty(indicatorTag, momentumExpansion, alignment, meanRevNoise)
 	return clampGateFloat(score, 0, 1)
 }
@@ -38,21 +46,25 @@ func resolveScriptBonus(indicatorTag, structureTag string) (bonus float64, scrip
 	}
 }
 
-func computeRiskPenalty(mechanicsTag string, liquidationStress bool, liqConfidence string, crowdingAlign bool) float64 {
+func computeRiskPenalty(mechanicsTag string, liquidationStress bool, liqConfidence string, crowdingAlign bool, mechanicsConf float64) float64 {
 	if mechanicsTag == "liquidation_cascade" {
 		return 1.0
 	}
+	weight := 1.0
+	if mechanicsConf > 0 {
+		weight = clampGateFloat(mechanicsConf, 0.3, 1.0)
+	}
 	if liquidationStress && liqConfidence == "high" {
-		return 0.60
+		return 0.60 * weight
 	}
 	if liquidationStress && liqConfidence == "low" {
-		return 0.35
+		return 0.35 * weight
 	}
 	if crowdingAlign {
-		return 0.25
+		return 0.25 * weight
 	}
 	if mechanicsTag == "crowded_long" || mechanicsTag == "crowded_short" {
-		return 0.10
+		return 0.10 * weight
 	}
 	return 0
 }

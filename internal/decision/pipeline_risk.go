@@ -36,7 +36,7 @@ func (p *Pipeline) applyRiskPlanUpdate(ctx context.Context, res SymbolResult, co
 		exec.addBlocked(tightenBlockDebounce)
 		return exec, nil
 	}
-	updateCtx, reason, err := p.buildTightenContext(ctx, res, comp, exec)
+	updateCtx, reason, err := p.buildTightenContext(ctx, res, comp, exec, pos.AvgEntry)
 	if err != nil {
 		if reason != "" {
 			exec.addBlocked(reason)
@@ -65,20 +65,24 @@ func (p *Pipeline) applyRiskPlanUpdate(ctx context.Context, res SymbolResult, co
 }
 
 type tightenContext struct {
-	Binding        strategy.StrategyBinding
-	Gate           fund.GateDecision
-	InPosIndicator provider.InPositionIndicatorOut
-	InPosStructure provider.InPositionStructureOut
-	InPosMechanics provider.InPositionMechanicsOut
-	MarkPrice      float64
-	ATR            float64
-	ATRChangePct   float64
-	ATRChangePctOK bool
-	GateSatisfied  bool
-	ScoreBreakdown []RiskPlanUpdateScoreItem
-	ScoreTotal     float64
-	ScoreParseOK   bool
-	CriticalExit   bool
+	Binding          strategy.StrategyBinding
+	Gate             fund.GateDecision
+	AgentIndicator   IndicatorSummary
+	AgentStructure   StructureSummary
+	AgentMechanics   MechanicsSummary
+	StructureAnchors map[string]any
+	InPosIndicator   provider.InPositionIndicatorOut
+	InPosStructure   provider.InPositionStructureOut
+	InPosMechanics   provider.InPositionMechanicsOut
+	MarkPrice        float64
+	ATR              float64
+	ATRChangePct     float64
+	ATRChangePctOK   bool
+	GateSatisfied    bool
+	ScoreBreakdown   []RiskPlanUpdateScoreItem
+	ScoreTotal       float64
+	ScoreParseOK     bool
+	CriticalExit     bool
 }
 
 type tightenExecution struct {

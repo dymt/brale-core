@@ -40,9 +40,13 @@ type RunOptions struct {
 }
 
 type FlatRiskInitInput struct {
-	Symbol string
-	Gate   fund.GateDecision
-	Plan   execution.ExecutionPlan
+	Symbol           string
+	Gate             fund.GateDecision
+	Plan             execution.ExecutionPlan
+	AgentIndicator   IndicatorSummary
+	AgentStructure   StructureSummary
+	AgentMechanics   MechanicsSummary
+	StructureAnchors map[string]any
 }
 
 type FlatRiskInitLLM func(ctx context.Context, input FlatRiskInitInput) (*initexit.BuildPatch, error)
@@ -54,8 +58,16 @@ type TightenRiskUpdateInput struct {
 	Entry               float64
 	MarkPrice           float64
 	ATR                 float64
+	UnrealizedPnlPct    float64
+	PositionAgeMin      int64
+	TP1Hit              bool
+	DistanceToLiqPct    float64
 	CurrentStopLoss     float64
 	CurrentTakeProfits  []float64
+	AgentIndicator      IndicatorSummary
+	AgentStructure      StructureSummary
+	AgentMechanics      MechanicsSummary
+	StructureAnchors    map[string]any
 	InPositionIndicator provider.InPositionIndicatorOut
 	InPositionStructure provider.InPositionStructureOut
 	InPositionMechanics provider.InPositionMechanicsOut
@@ -105,6 +117,7 @@ func appendPlanDerived(gate *fund.GateDecision, plan *execution.ExecutionPlan) {
 		"leverage":           plan.Leverage,
 		"take_profits":       append([]float64(nil), plan.TakeProfits...),
 		"take_profit_ratios": append([]float64(nil), plan.TakeProfitRatios...),
+		"liquidation_price":  plan.RiskAnnotations.LiqPrice,
 		"plan_source":        planSource,
 	}
 	if trace := llmRiskTraceMap(plan.LLMRiskTrace); trace != nil {

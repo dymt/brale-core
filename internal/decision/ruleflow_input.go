@@ -15,7 +15,9 @@ func buildRuleflowInput(symbol string, res SymbolResult, bind strategy.StrategyB
 	return ruleflow.Input{
 		Symbol:              symbol,
 		Providers:           res.Providers,
+		AgentIndicator:      res.AgentIndicator,
 		AgentStructure:      res.AgentStructure,
+		AgentMechanics:      res.AgentMechanics,
 		InPosition:          inPos,
 		Position:            position,
 		State:               state,

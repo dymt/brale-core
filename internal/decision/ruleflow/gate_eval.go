@@ -93,12 +93,15 @@ func (e *gateDecisionEvaluator) computeScores() {
 		e.inputs.MeanRevNoise,
 		scriptBonus,
 		e.inputs.IndicatorTag,
+		e.inputs.AgentIndicatorConfidence,
+		e.inputs.AgentStructureConfidence,
 	)
 	e.decision.RiskPenalty = computeRiskPenalty(
 		e.inputs.MechanicsTag,
 		e.inputs.LiquidationStress,
 		e.inputs.LiqConfidence,
 		e.inputs.CrowdingAlign,
+		e.inputs.AgentMechanicsConfidence,
 	)
 	e.decision.EntryEdge = computeEntryEdge(
 		e.inputs.ConsensusScore,

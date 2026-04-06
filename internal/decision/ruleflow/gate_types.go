@@ -8,13 +8,13 @@ const (
 	gateGradeMedium = 2
 	gateGradeHigh   = 3
 
-	gatePriorityDirection           = 0
-	gatePriorityDataMissing         = 1
-	gatePriorityStructInvalidation  = 2
-	gatePriorityLiquidationCascade  = 3
-	gatePriorityQualityTooLow       = 4
-	gatePriorityEdgeTooLow          = 5
-	gatePriorityAllow               = 10
+	gatePriorityDirection          = 0
+	gatePriorityDataMissing        = 1
+	gatePriorityStructInvalidation = 2
+	gatePriorityLiquidationCascade = 3
+	gatePriorityQualityTooLow      = 4
+	gatePriorityEdgeTooLow         = 5
+	gatePriorityAllow              = 10
 
 	gateReasonDirectionUnclear   = "DIRECTION_UNCLEAR"
 	gateReasonDataMissing        = "DATA_MISSING"
@@ -33,28 +33,31 @@ const (
 )
 
 type gateInputs struct {
-	State               string
-	StructureDirection  string
-	IndicatorTag        string
-	StructureTag        string
-	MechanicsTag        string
-	MomentumExpansion   bool
-	Alignment           bool
-	MeanRevNoise        bool
-	StructureClear      bool
-	StructureIntegrity  bool
-	LiquidationStress   bool
-	LiqConfidence       string
-	CrowdingAlign       bool
-	ConsensusScore      float64
-	ConsensusConfidence float64
-	ConsensusAgreement  float64
-	ConsensusResonance  float64
-	ConsensusResonant   bool
-	ScoreThreshold      float64
-	ConfidenceThreshold float64
-	QualityThreshold    float64
-	EdgeThreshold       float64
+	State                    string
+	StructureDirection       string
+	IndicatorTag             string
+	StructureTag             string
+	MechanicsTag             string
+	MomentumExpansion        bool
+	Alignment                bool
+	MeanRevNoise             bool
+	StructureClear           bool
+	StructureIntegrity       bool
+	LiquidationStress        bool
+	LiqConfidence            string
+	CrowdingAlign            bool
+	AgentIndicatorConfidence float64
+	AgentStructureConfidence float64
+	AgentMechanicsConfidence float64
+	ConsensusScore           float64
+	ConsensusConfidence      float64
+	ConsensusAgreement       float64
+	ConsensusResonance       float64
+	ConsensusResonant        bool
+	ScoreThreshold           float64
+	ConfidenceThreshold      float64
+	QualityThreshold         float64
+	EdgeThreshold            float64
 }
 
 type gateDecision struct {

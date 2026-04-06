@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"testing"
+	"time"
 
 	"brale-core/internal/config"
 	"brale-core/internal/decision/decisionfmt"
@@ -49,6 +50,18 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 			if input.Symbol != "BTCUSDT" {
 				t.Fatalf("symbol=%q, want BTCUSDT", input.Symbol)
 			}
+			if input.UnrealizedPnlPct != 0.05 {
+				t.Fatalf("unrealized_pnl_pct=%v, want 0.05", input.UnrealizedPnlPct)
+			}
+			if input.PositionAgeMin < 30 || input.PositionAgeMin > 31 {
+				t.Fatalf("position_age_min=%d, want [30,31]", input.PositionAgeMin)
+			}
+			if !input.TP1Hit {
+				t.Fatalf("tp1_hit=%v, want true", input.TP1Hit)
+			}
+			if input.DistanceToLiqPct != 0 {
+				t.Fatalf("distance_to_liq_pct=%v, want 0", input.DistanceToLiqPct)
+			}
 			return &TightenRiskUpdatePatch{
 				StopLoss:    &stop,
 				TakeProfits: []float64{106.5, 109.5},
@@ -66,11 +79,11 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 	plan := risk.RiskPlan{
 		StopPrice: 95,
 		TPLevels: []risk.TPLevel{
-			{LevelID: "tp-1", Price: 110, QtyPct: 0.5},
+			{LevelID: "tp-1", Price: 110, QtyPct: 0.5, Hit: true},
 			{LevelID: "tp-2", Price: 120, QtyPct: 0.5},
 		},
 	}
-	pos := store.PositionRecord{Symbol: "BTCUSDT", Side: "long", AvgEntry: 100}
+	pos := store.PositionRecord{Symbol: "BTCUSDT", Side: "long", AvgEntry: 100, CreatedAt: time.Now().Add(-30 * time.Minute)}
 	updateCtx := tightenContext{
 		Binding:   strategy.StrategyBinding{RiskManagement: config.RiskManagementConfig{RiskStrategy: config.RiskStrategyConfig{Mode: "llm"}, TightenATR: config.TightenATRConfig{TP1ATR: 0.5, TP2ATR: 1.0}}},
 		MarkPrice: 105,

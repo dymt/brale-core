@@ -3,12 +3,15 @@ package decision
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
+	"brale-core/internal/decision/fund"
 	"brale-core/internal/execution"
 	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
+	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/risk"
 	"brale-core/internal/store"
 
@@ -119,8 +122,16 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 			Entry:               pos.AvgEntry,
 			MarkPrice:           updateCtx.MarkPrice,
 			ATR:                 updateCtx.ATR,
+			UnrealizedPnlPct:    computeUnrealizedPnlPct(pos.Side, pos.AvgEntry, updateCtx.MarkPrice),
+			PositionAgeMin:      computePositionAgeMin(pos.CreatedAt),
+			TP1Hit:              tp1Hit(plan),
+			DistanceToLiqPct:    computeDistanceToLiqPct(updateCtx.Gate, updateCtx.MarkPrice),
 			CurrentStopLoss:     plan.StopPrice,
 			CurrentTakeProfits:  riskPlanTakeProfits(plan),
+			AgentIndicator:      updateCtx.AgentIndicator,
+			AgentStructure:      updateCtx.AgentStructure,
+			AgentMechanics:      updateCtx.AgentMechanics,
+			StructureAnchors:    updateCtx.StructureAnchors,
 			InPositionIndicator: updateCtx.InPosIndicator,
 			InPositionStructure: updateCtx.InPosStructure,
 			InPositionMechanics: updateCtx.InPosMechanics,
@@ -142,6 +153,50 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 		updateCtx.Binding.RiskManagement.TightenATR.MinTPGapPct,
 	)
 	return tightenPlan, tpTightened, nil, nil
+}
+
+func computeUnrealizedPnlPct(side string, entry, markPrice float64) float64 {
+	if entry <= 0 || markPrice <= 0 {
+		return 0
+	}
+	directionSign := 1.0
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		directionSign = -1
+	}
+	return ((markPrice - entry) / entry) * directionSign
+}
+
+func computePositionAgeMin(createdAt time.Time) int64 {
+	if createdAt.IsZero() {
+		return 0
+	}
+	age := int64(time.Since(createdAt).Minutes())
+	if age < 0 {
+		return 0
+	}
+	return age
+}
+
+func computeDistanceToLiqPct(gate fund.GateDecision, markPrice float64) float64 {
+	if markPrice <= 0 {
+		return 0
+	}
+	liqPrice := extractLiquidationPrice(gate)
+	if liqPrice <= 0 {
+		return 0
+	}
+	return math.Abs(markPrice-liqPrice) / markPrice
+}
+
+func extractLiquidationPrice(gate fund.GateDecision) float64 {
+	if len(gate.Derived) == 0 {
+		return 0
+	}
+	planMap, ok := gate.Derived["plan"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	return parseutil.Float(planMap["liquidation_price"])
 }
 
 func (p *Pipeline) applyWatermarkUpdate(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, source string, updated bool) error {

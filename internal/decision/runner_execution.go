@@ -156,7 +156,28 @@ func (r *Runner) evaluateRuleflowAndFinalize(ctx context.Context, symbol string,
 	}
 	inputs.Logger.Debug("ruleflow complete", zap.Duration("latency", time.Since(rfStart)))
 	if inputs.State == fsm.StateFlat {
-		plan, err := r.completeFlatExecutionPlan(ctx, symbol, rfResult.Gate, rfResult.Plan, rfResult.FSMActions, inputs.Binding, acct, inputs.LLMRiskMode)
+		var structureAnchors map[string]any
+		if rfResult.Plan != nil && inputs.LLMRiskMode {
+			structureAnchors, err = buildStructureAnchorSummary(comp, symbol, rfResult.Plan.Entry, rfResult.Plan.RiskAnnotations.ATR)
+			if err != nil {
+				inputs.Logger.Warn("build structure anchors failed", zap.Error(err))
+				structureAnchors = nil
+			}
+		}
+		plan, err := r.completeFlatExecutionPlan(
+			ctx,
+			symbol,
+			rfResult.Gate,
+			rfResult.Plan,
+			rfResult.FSMActions,
+			res.AgentIndicator,
+			res.AgentStructure,
+			res.AgentMechanics,
+			structureAnchors,
+			inputs.Binding,
+			acct,
+			inputs.LLMRiskMode,
+		)
 		if err != nil {
 			inputs.Logger.Error("flat plan completion failed", zap.Error(err))
 			res.Err = err

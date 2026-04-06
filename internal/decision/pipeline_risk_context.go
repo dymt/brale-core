@@ -9,10 +9,13 @@ import (
 
 	"brale-core/internal/decision/features"
 	"brale-core/internal/market"
+	"brale-core/internal/pkg/logging"
 	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/position"
 	"brale-core/internal/risk"
 	"brale-core/internal/store"
+
+	"go.uber.org/zap"
 )
 
 func deriveCurrentPrice(derived map[string]any) float64 {
@@ -76,7 +79,7 @@ func (p *Pipeline) isTightenDebounced(ctx context.Context, symbol string, pos st
 	return false, minIntervalSec, 0
 }
 
-func (p *Pipeline) buildTightenContext(ctx context.Context, res SymbolResult, comp features.CompressionResult, exec tightenExecution) (tightenContext, string, error) {
+func (p *Pipeline) buildTightenContext(ctx context.Context, res SymbolResult, comp features.CompressionResult, exec tightenExecution, entry float64) (tightenContext, string, error) {
 	_, atr, err := pickIndicatorValues(comp, res.Symbol)
 	if err != nil || atr <= 0 {
 		return tightenContext{}, tightenBlockATRValueMissing, nil
@@ -102,20 +105,32 @@ func (p *Pipeline) buildTightenContext(ctx context.Context, res SymbolResult, co
 	if err != nil {
 		return tightenContext{}, tightenBlockBindingMissing, err
 	}
+	structureAnchors, anchorErr := buildStructureAnchorSummary(comp, res.Symbol, entry, atr)
+	if anchorErr != nil {
+		logging.FromContext(ctx).Named("risk").Warn("structure anchors unavailable",
+			zap.String("symbol", res.Symbol),
+			zap.Error(anchorErr),
+		)
+		structureAnchors = nil
+	}
 	return tightenContext{
-		Binding:        bind,
-		Gate:           res.Gate,
-		InPosIndicator: res.InPositionIndicator,
-		InPosStructure: res.InPositionStructure,
-		InPosMechanics: res.InPositionMechanics,
-		MarkPrice:      markPrice,
-		ATR:            atr,
-		ATRChangePct:   exec.ATRChangePct,
-		ATRChangePctOK: exec.ATRChangePctOK,
-		GateSatisfied:  exec.GateSatisfied,
-		ScoreBreakdown: exec.ScoreBreakdown,
-		ScoreTotal:     exec.ScoreTotal,
-		ScoreParseOK:   exec.ScoreParseOK,
+		Binding:          bind,
+		Gate:             res.Gate,
+		AgentIndicator:   res.AgentIndicator,
+		AgentStructure:   res.AgentStructure,
+		AgentMechanics:   res.AgentMechanics,
+		StructureAnchors: structureAnchors,
+		InPosIndicator:   res.InPositionIndicator,
+		InPosStructure:   res.InPositionStructure,
+		InPosMechanics:   res.InPositionMechanics,
+		MarkPrice:        markPrice,
+		ATR:              atr,
+		ATRChangePct:     exec.ATRChangePct,
+		ATRChangePctOK:   exec.ATRChangePctOK,
+		GateSatisfied:    exec.GateSatisfied,
+		ScoreBreakdown:   exec.ScoreBreakdown,
+		ScoreTotal:       exec.ScoreTotal,
+		ScoreParseOK:     exec.ScoreParseOK,
 		CriticalExit: strings.EqualFold(strings.TrimSpace(res.InPositionStructure.MonitorTag), "exit") &&
 			strings.EqualFold(strings.TrimSpace(string(res.InPositionStructure.ThreatLevel)), "critical"),
 	}, "", nil
