@@ -53,11 +53,16 @@ func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenA
 	if modelCfg.TimeoutSec != nil {
 		timeoutSec = *modelCfg.TimeoutSec
 	}
+	structuredOutput := false
+	if modelCfg.StructuredOutput != nil {
+		structuredOutput = *modelCfg.StructuredOutput
+	}
 	return &llm.OpenAIClient{
-		Endpoint:    modelCfg.Endpoint,
-		Model:       role.Model,
-		APIKey:      modelCfg.APIKey,
-		Timeout:     time.Duration(timeoutSec) * time.Second,
-		Temperature: temp,
+		Endpoint:         modelCfg.Endpoint,
+		Model:            role.Model,
+		APIKey:           modelCfg.APIKey,
+		Timeout:          time.Duration(timeoutSec) * time.Second,
+		Temperature:      temp,
+		StructuredOutput: structuredOutput,
 	}
 }

@@ -25,10 +25,11 @@ type SystemLLMConfig struct {
 }
 
 type LLMModelConfig struct {
-	Endpoint    string `mapstructure:"endpoint"`
-	APIKey      string `mapstructure:"api_key"`
-	TimeoutSec  *int   `mapstructure:"timeout_sec"`
-	Concurrency *int   `mapstructure:"concurrency"`
+	Endpoint         string `mapstructure:"endpoint"`
+	APIKey           string `mapstructure:"api_key"`
+	TimeoutSec       *int   `mapstructure:"timeout_sec"`
+	Concurrency      *int   `mapstructure:"concurrency"`
+	StructuredOutput *bool  `mapstructure:"structured_output"`
 }
 
 type WebhookConfig struct {

@@ -9,13 +9,15 @@ import (
 
 func TestNewLLMClientFindsSystemModelConfigCaseInsensitively(t *testing.T) {
 	timeoutSec := 45
+	structuredOutput := true
 	sys := config.SystemConfig{
 		LLMModels: map[string]config.LLMModelConfig{
 			"minimax-m2.5": {
-				Endpoint:    "https://llm.example.com/v1",
-				APIKey:      "secret-key",
-				TimeoutSec:  &timeoutSec,
-				Concurrency: nil,
+				Endpoint:         "https://llm.example.com/v1",
+				APIKey:           "secret-key",
+				TimeoutSec:       &timeoutSec,
+				Concurrency:      nil,
+				StructuredOutput: &structuredOutput,
 			},
 		},
 	}
@@ -35,5 +37,8 @@ func TestNewLLMClientFindsSystemModelConfigCaseInsensitively(t *testing.T) {
 	}
 	if client.Timeout != 45*time.Second {
 		t.Fatalf("timeout=%v, want %v", client.Timeout, 45*time.Second)
+	}
+	if !client.StructuredOutput {
+		t.Fatalf("StructuredOutput=%v want true", client.StructuredOutput)
 	}
 }

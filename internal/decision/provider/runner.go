@@ -125,7 +125,7 @@ func runAndParse[T any](ctx context.Context, r *Runner, stage, system, user stri
 			zap.Error(err),
 			zap.String("output", trimForLog(raw, 1200)),
 		)
-	})
+	}, decisionutil.WithRetryOnParseFail(decisionutil.DefaultRetryPrompt))
 }
 
 func decodeIndicator(raw string) (IndicatorProviderOut, error) {

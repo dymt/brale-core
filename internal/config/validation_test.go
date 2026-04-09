@@ -184,3 +184,29 @@ func TestValidateSymbolLLMModelsMatchesCaseInsensitiveSystemKeys(t *testing.T) {
 		t.Fatalf("ValidateSymbolLLMModels() error = %v", err)
 	}
 }
+
+func TestLoadSystemConfigParsesStructuredOutputFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "system.toml")
+	data := []byte(strings.Join([]string{
+		`db_path = ":memory:"`,
+		`persist_mode = "minimal"`,
+		`execution_system = "freqtrade"`,
+		`exec_endpoint = "http://127.0.0.1:8080/api/v1"`,
+		`[llm_models."gpt-4o"]`,
+		`endpoint = "https://api.openai.com/v1"`,
+		`api_key = "secret"`,
+		`structured_output = true`,
+	}, "\n"))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write system.toml: %v", err)
+	}
+
+	cfg, err := LoadSystemConfig(path)
+	if err != nil {
+		t.Fatalf("LoadSystemConfig() error = %v", err)
+	}
+	model := cfg.LLMModels["gpt-4o"]
+	if model.StructuredOutput == nil || !*model.StructuredOutput {
+		t.Fatalf("structured_output=%v want true", model.StructuredOutput)
+	}
+}

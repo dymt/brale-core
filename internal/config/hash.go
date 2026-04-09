@@ -63,11 +63,12 @@ type systemHashInput struct {
 }
 
 type llmModelEntry struct {
-	Model       string `json:"model"`
-	Endpoint    string `json:"endpoint,omitempty"`
-	APIKey      string `json:"api_key,omitempty"`
-	TimeoutSec  *int   `json:"timeout_sec,omitempty"`
-	Concurrency *int   `json:"concurrency,omitempty"`
+	Model            string `json:"model"`
+	Endpoint         string `json:"endpoint,omitempty"`
+	APIKey           string `json:"api_key,omitempty"`
+	TimeoutSec       *int   `json:"timeout_sec,omitempty"`
+	Concurrency      *int   `json:"concurrency,omitempty"`
+	StructuredOutput bool   `json:"structured_output,omitempty"`
 }
 
 type webhookHash struct {
@@ -227,11 +228,12 @@ func sortedLLMModels(in map[string]LLMModelConfig) []llmModelEntry {
 	for _, model := range keys {
 		cfg := in[model]
 		out = append(out, llmModelEntry{
-			Model:       model,
-			Endpoint:    cfg.Endpoint,
-			APIKey:      cfg.APIKey,
-			TimeoutSec:  cfg.TimeoutSec,
-			Concurrency: cfg.Concurrency,
+			Model:            model,
+			Endpoint:         cfg.Endpoint,
+			APIKey:           cfg.APIKey,
+			TimeoutSec:       cfg.TimeoutSec,
+			Concurrency:      cfg.Concurrency,
+			StructuredOutput: boolValue(cfg.StructuredOutput),
 		})
 	}
 	return out

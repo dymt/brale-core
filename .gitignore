@@ -16,6 +16,10 @@ docs/position-flow-report.md
 docs/project_introduction_technical.md
 *_test
 *_test.go
+!internal/config/hash_test.go
+!internal/decision/decisionutil/runner_test.go
+!internal/llm/openai_test.go
+!internal/llm/schema_test.go
 AGENTS.md
 webui/og-card-demo/node_modules/*
 webui/landing-page/

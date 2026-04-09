@@ -3,6 +3,7 @@ package agent
 
 import (
 	"brale-core/internal/decision/decisionutil"
+	"brale-core/internal/llm"
 )
 
 type Expansion string
@@ -195,6 +196,85 @@ var riskLevelSet = map[string]struct{}{
 	string(RiskLevelMedium):  {},
 	string(RiskLevelHigh):    {},
 	string(RiskLevelUnknown): {},
+}
+
+func init() {
+	llm.RegisterEnum[Expansion](
+		string(ExpansionExpanding),
+		string(ExpansionContracting),
+		string(ExpansionStable),
+		string(ExpansionMixed),
+		string(ExpansionUnknown),
+	)
+	llm.RegisterEnum[Alignment](
+		string(AlignmentAligned),
+		string(AlignmentMixed),
+		string(AlignmentDivergent),
+		string(AlignmentUnknown),
+	)
+	llm.RegisterEnum[Noise](
+		string(NoiseLow),
+		string(NoiseMedium),
+		string(NoiseHigh),
+		string(NoiseMixed),
+		string(NoiseUnknown),
+	)
+	llm.RegisterEnum[Regime](
+		string(RegimeTrendUp),
+		string(RegimeTrendDown),
+		string(RegimeRange),
+		string(RegimeMixed),
+		string(RegimeUnclear),
+	)
+	llm.RegisterEnum[LastBreak](
+		string(LastBreakBosUp),
+		string(LastBreakBosDown),
+		string(LastBreakChochUp),
+		string(LastBreakChochDown),
+		string(LastBreakNone),
+		string(LastBreakUnknown),
+	)
+	llm.RegisterEnum[Quality](
+		string(QualityClean),
+		string(QualityMessy),
+		string(QualityMixed),
+		string(QualityUnclear),
+	)
+	llm.RegisterEnum[Pattern](
+		string(PatternDoubleTop),
+		string(PatternDoubleBottom),
+		string(PatternHeadShoulders),
+		string(PatternInvHeadShoulders),
+		string(PatternTriangleSym),
+		string(PatternTriangleAsc),
+		string(PatternTriangleDesc),
+		string(PatternWedgeRising),
+		string(PatternWedgeFalling),
+		string(PatternFlag),
+		string(PatternPennant),
+		string(PatternChannelUp),
+		string(PatternChannelDown),
+		string(PatternNone),
+		string(PatternUnknown),
+	)
+	llm.RegisterEnum[LeverageState](
+		string(LeverageStateIncreasing),
+		string(LeverageStateStable),
+		string(LeverageStateOverheated),
+		string(LeverageStateUnknown),
+	)
+	llm.RegisterEnum[Crowding](
+		string(CrowdingLong),
+		string(CrowdingShort),
+		string(CrowdingBalanced),
+		string(CrowdingUnknown),
+	)
+	llm.RegisterEnum[RiskLevel](
+		string(RiskLevelLow),
+		string(RiskLevelMedium),
+		string(RiskLevelHigh),
+		string(RiskLevelUnknown),
+	)
 }
 
 func (e *Expansion) UnmarshalJSON(data []byte) error {

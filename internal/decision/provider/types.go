@@ -3,6 +3,7 @@ package provider
 
 import (
 	"brale-core/internal/decision/decisionutil"
+	"brale-core/internal/llm"
 )
 
 type ConfidenceLevel string
@@ -33,6 +34,20 @@ var threatLevelSet = map[string]struct{}{
 	string(ThreatLevelMedium):   {},
 	string(ThreatLevelHigh):     {},
 	string(ThreatLevelCritical): {},
+}
+
+func init() {
+	llm.RegisterEnum[ConfidenceLevel](
+		string(ConfidenceLow),
+		string(ConfidenceHigh),
+	)
+	llm.RegisterEnum[ThreatLevel](
+		string(ThreatLevelNone),
+		string(ThreatLevelLow),
+		string(ThreatLevelMedium),
+		string(ThreatLevelHigh),
+		string(ThreatLevelCritical),
+	)
 }
 
 func (c *ConfidenceLevel) UnmarshalJSON(data []byte) error {

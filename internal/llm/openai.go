@@ -19,19 +19,21 @@ import (
 )
 
 type OpenAIClient struct {
-	Endpoint    string
-	Model       string
-	APIKey      string
-	Timeout     time.Duration
-	Temperature float64
+	Endpoint         string
+	Model            string
+	APIKey           string
+	HTTPClient       *http.Client
+	Timeout          time.Duration
+	Temperature      float64
+	StructuredOutput bool
 }
 
 type chatRequest struct {
-	Model          string            `json:"model"`
-	Messages       []chatMessage     `json:"messages"`
-	MaxTokens      int               `json:"max_tokens"`
-	ResponseFormat map[string]string `json:"response_format,omitempty"`
-	Temperature    float64           `json:"temperature"`
+	Model          string        `json:"model"`
+	Messages       []chatMessage `json:"messages"`
+	MaxTokens      int           `json:"max_tokens"`
+	ResponseFormat any           `json:"response_format,omitempty"`
+	Temperature    float64       `json:"temperature"`
 }
 
 type chatMessage struct {
@@ -48,10 +50,19 @@ type chatResponse struct {
 }
 
 func (c *OpenAIClient) Call(ctx context.Context, system, user string) (string, error) {
-	return c.callWithMessages(ctx, []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}})
+	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
+	return c.doCall(ctx, messages, jsonObjectFormat())
 }
 
-func (c *OpenAIClient) callWithMessages(ctx context.Context, messages []chatMessage) (string, error) {
+func (c *OpenAIClient) CallStructured(ctx context.Context, system, user string, schema *JSONSchema) (string, error) {
+	if !c.StructuredOutput {
+		return c.Call(ctx, system, user)
+	}
+	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
+	return c.doCall(ctx, messages, jsonSchemaFormat(schema))
+}
+
+func (c *OpenAIClient) doCall(ctx context.Context, messages []chatMessage, responseFormat any) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -77,7 +88,7 @@ func (c *OpenAIClient) callWithMessages(ctx context.Context, messages []chatMess
 		Messages:       messages,
 		MaxTokens:      4096,
 		Temperature:    c.Temperature,
-		ResponseFormat: map[string]string{"type": "json_object"},
+		ResponseFormat: responseFormat,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -113,6 +124,24 @@ func (c *OpenAIClient) callWithMessages(ctx context.Context, messages []chatMess
 	return "", lastErr
 }
 
+func jsonObjectFormat() any {
+	return map[string]string{"type": "json_object"}
+}
+
+func jsonSchemaFormat(schema *JSONSchema) any {
+	if schema == nil {
+		return jsonObjectFormat()
+	}
+	return map[string]any{
+		"type": "json_schema",
+		"json_schema": map[string]any{
+			"name":   schema.Name,
+			"strict": true,
+			"schema": schema.Schema,
+		},
+	}
+}
+
 func (c *OpenAIClient) callOnce(ctx context.Context, url string, raw []byte, timeout time.Duration) (string, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
 	if err != nil {
@@ -122,7 +151,11 @@ func (c *OpenAIClient) callOnce(ctx context.Context, url string, raw []byte, tim
 	if strings.TrimSpace(c.APIKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.APIKey))
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	client := c.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", 0, err
 	}
