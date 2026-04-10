@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"brale-core/internal/config"
 	"brale-core/internal/snapshot"
 
 	talib "github.com/markcheno/go-talib"
@@ -15,32 +16,30 @@ import (
 const indicatorCompressVersion = "indicator_compress_v1"
 
 type IndicatorCompressOptions struct {
-	EMAFast    int
-	EMAMid     int
-	EMASlow    int
-	RSIPeriod  int
-	ATRPeriod  int
-	MACDFast   int
-	MACDSlow   int
-	MACDSignal int
-	LastN      int
-	Pretty     bool
-	SkipEMA    bool
-	SkipRSI    bool
-	SkipMACD   bool
+	EMAFast   int
+	EMAMid    int
+	EMASlow   int
+	RSIPeriod int
+	ATRPeriod int
+	STCFast   int
+	STCSlow   int
+	LastN     int
+	Pretty    bool
+	SkipEMA   bool
+	SkipRSI   bool
+	SkipSTC   bool
 }
 
 func DefaultIndicatorCompressOptions() IndicatorCompressOptions {
 	return IndicatorCompressOptions{
-		EMAFast:    21,
-		EMAMid:     50,
-		EMASlow:    200,
-		RSIPeriod:  14,
-		ATRPeriod:  14,
-		MACDFast:   12,
-		MACDSlow:   26,
-		MACDSignal: 9,
-		LastN:      3,
+		EMAFast:   21,
+		EMAMid:    50,
+		EMASlow:   200,
+		RSIPeriod: 14,
+		ATRPeriod: 14,
+		STCFast:   23,
+		STCSlow:   50,
+		LastN:     3,
 	}
 }
 
@@ -66,13 +65,13 @@ type indicatorMarket struct {
 }
 
 type indicatorData struct {
-	EMAFast *emaSnapshot  `json:"ema_fast,omitempty"`
-	EMAMid  *emaSnapshot  `json:"ema_mid,omitempty"`
-	EMASlow *emaSnapshot  `json:"ema_slow,omitempty"`
-	MACD    *macdSnapshot `json:"macd,omitempty"`
-	RSI     *rsiSnapshot  `json:"rsi,omitempty"`
-	ATR     *atrSnapshot  `json:"atr,omitempty"`
-	OBV     *obvSnapshot  `json:"obv,omitempty"`
+	EMAFast *emaSnapshot `json:"ema_fast,omitempty"`
+	EMAMid  *emaSnapshot `json:"ema_mid,omitempty"`
+	EMASlow *emaSnapshot `json:"ema_slow,omitempty"`
+	RSI     *rsiSnapshot `json:"rsi,omitempty"`
+	ATR     *atrSnapshot `json:"atr,omitempty"`
+	OBV     *obvSnapshot `json:"obv,omitempty"`
+	STC     *stcSnapshot `json:"stc,omitempty"`
 }
 
 type emaSnapshot struct {
@@ -80,16 +79,6 @@ type emaSnapshot struct {
 	LastN        []float64 `json:"last_n,omitempty"`
 	DeltaToPrice float64   `json:"delta_to_price"`
 	DeltaPct     float64   `json:"delta_pct"`
-}
-
-type macdSnapshot struct {
-	DIF             float64         `json:"dif"`
-	DEA             float64         `json:"dea"`
-	Histogram       *seriesSnapshot `json:"histogram,omitempty"`
-	Slope           *float64        `json:"slope,omitempty"`
-	NormalizedSlope *float64        `json:"normalized_slope,omitempty"`
-	SlopeState      string          `json:"slope_state,omitempty"`
-	Signal          string          `json:"signal,omitempty"`
 }
 
 type rsiSnapshot struct {
@@ -106,10 +95,6 @@ type atrSnapshot struct {
 	Latest    float64   `json:"latest"`
 	LastN     []float64 `json:"last_n,omitempty"`
 	ChangePct *float64  `json:"change_pct,omitempty"`
-}
-
-type seriesSnapshot struct {
-	Last []float64 `json:"last_n,omitempty"`
 }
 
 type obvSnapshot struct {
@@ -191,50 +176,52 @@ func buildIndicatorMarket(symbol, interval string, last snapshot.Candle) indicat
 
 func buildIndicatorData(closes, highs, lows, volumes []float64, lastClose float64, opts IndicatorCompressOptions) indicatorData {
 	data := indicatorData{}
-	maxPeriod := maxIndicatorPeriod(len(closes))
-	if !opts.SkipEMA && maxPeriod > 0 {
-		if period := clampIndicatorPeriod(opts.EMAFast, maxPeriod); period > 0 {
-			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, period)), lastClose, opts.LastN); ema != nil {
+	if !opts.SkipEMA {
+		if opts.EMAFast > 0 && len(closes) >= config.EMARequiredBars(opts.EMAFast) {
+			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, opts.EMAFast)), lastClose, opts.LastN); ema != nil {
 				data.EMAFast = ema
 			}
 		}
-		if period := clampIndicatorPeriod(opts.EMAMid, maxPeriod); period > 0 {
-			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, period)), lastClose, opts.LastN); ema != nil {
+		if opts.EMAMid > 0 && len(closes) >= config.EMARequiredBars(opts.EMAMid) {
+			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, opts.EMAMid)), lastClose, opts.LastN); ema != nil {
 				data.EMAMid = ema
 			}
 		}
-		if period := clampIndicatorPeriod(opts.EMASlow, maxPeriod); period > 0 {
-			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, period)), lastClose, opts.LastN); ema != nil {
+		if opts.EMASlow > 0 && len(closes) >= config.EMARequiredBars(opts.EMASlow) {
+			if ema := buildEMASnapshot(sanitizeSeries(talib.Ema(closes, opts.EMASlow)), lastClose, opts.LastN); ema != nil {
 				data.EMASlow = ema
 			}
 		}
 	}
-	if !opts.SkipMACD && maxPeriod > 0 {
-		fast := clampIndicatorPeriod(opts.MACDFast, maxPeriod)
-		slow := clampIndicatorPeriod(opts.MACDSlow, maxPeriod)
-		signal := clampIndicatorPeriod(opts.MACDSignal, maxPeriod)
-		if fast > 0 && slow > 0 && signal > 0 {
-			if macd := buildMACDSnapshot(closes, fast, slow, signal, opts.LastN); macd != nil {
-				data.MACD = macd
-			}
-		}
-	}
-	if !opts.SkipRSI && maxPeriod > 0 {
-		if period := clampIndicatorPeriod(opts.RSIPeriod, maxPeriod); period > 0 {
-			if rsi := buildRSISnapshot(sanitizeSeries(talib.Rsi(closes, period)), opts.LastN); rsi != nil {
+	if !opts.SkipRSI {
+		if opts.RSIPeriod > 0 && len(closes) >= config.RSIRequiredBars(opts.RSIPeriod) {
+			if rsi := buildRSISnapshot(sanitizeSeries(talib.Rsi(closes, opts.RSIPeriod)), opts.LastN); rsi != nil {
 				data.RSI = rsi
 			}
 		}
 	}
-	if maxPeriod > 0 {
-		if period := clampIndicatorPeriod(opts.ATRPeriod, maxPeriod); period > 0 {
-			if atr := buildATRSnapshot(sanitizeSeries(talib.Atr(highs, lows, closes, period)), opts.LastN); atr != nil {
-				data.ATR = atr
-			}
+	if opts.ATRPeriod > 0 && len(closes) >= config.ATRRequiredBars(opts.ATRPeriod) {
+		if atr := buildATRSnapshot(sanitizeSeries(talib.Atr(highs, lows, closes, opts.ATRPeriod)), opts.LastN); atr != nil {
+			data.ATR = atr
 		}
 	}
 	if obv := buildOBVSnapshot(closes, volumes); obv != nil {
 		data.OBV = obv
+	}
+	if !opts.SkipSTC {
+		requiredBars := config.STCRequiredBars(opts.STCFast, opts.STCSlow)
+		if len(closes) >= requiredBars {
+			stcSeries := computeSTCSeries(
+				closes,
+				opts.STCFast,
+				opts.STCSlow,
+				config.DefaultSTCKPeriod,
+				config.DefaultSTCDPeriod,
+			)
+			if stc := buildSTCSnapshot(sanitizeSeries(stcSeries), opts.LastN); stc != nil {
+				data.STC = stc
+			}
+		}
 	}
 	return data
 }
@@ -256,14 +243,11 @@ func normalizeIndicatorCompressOptions(opts IndicatorCompressOptions) IndicatorC
 	if opts.ATRPeriod <= 0 {
 		opts.ATRPeriod = def.ATRPeriod
 	}
-	if opts.MACDFast <= 0 {
-		opts.MACDFast = def.MACDFast
+	if opts.STCFast <= 0 {
+		opts.STCFast = def.STCFast
 	}
-	if opts.MACDSlow <= 0 {
-		opts.MACDSlow = def.MACDSlow
-	}
-	if opts.MACDSignal <= 0 {
-		opts.MACDSignal = def.MACDSignal
+	if opts.STCSlow <= 0 {
+		opts.STCSlow = def.STCSlow
 	}
 	if opts.LastN <= 0 {
 		opts.LastN = def.LastN
@@ -287,38 +271,6 @@ func buildEMASnapshot(series []float64, price float64, tail int) *emaSnapshot {
 		DeltaToPrice: roundFloat(delta, 4),
 		DeltaPct:     roundFloat(deltaPct, 4),
 	}
-}
-
-func buildMACDSnapshot(closes []float64, fast, slow, signal, tail int) *macdSnapshot {
-	if len(closes) == 0 {
-		return nil
-	}
-	macdSeries, signalSeries, histSeries := talib.Macd(closes, fast, slow, signal)
-	mSeries := sanitizeSeries(macdSeries)
-	sSeries := sanitizeSeries(signalSeries)
-	hSeries := sanitizeSeries(histSeries)
-	if len(mSeries) == 0 || len(sSeries) == 0 || len(hSeries) == 0 {
-		return nil
-	}
-	histLast := roundSeriesTail(hSeries, tail)
-	var hist *seriesSnapshot
-	if len(histLast) > 0 {
-		hist = &seriesSnapshot{Last: histLast}
-	}
-	ms := &macdSnapshot{
-		DIF:       roundFloat(mSeries[len(mSeries)-1], 4),
-		DEA:       roundFloat(sSeries[len(sSeries)-1], 4),
-		Histogram: hist,
-	}
-	if slope, norm := computeSlopeSeries(histLast); slope != nil {
-		ms.Slope = slope
-		ms.NormalizedSlope = norm
-		ms.SlopeState = indicatorSlopeState(norm)
-	}
-	if sig := macdSignal(mSeries, sSeries, hSeries); sig != "" {
-		ms.Signal = sig
-	}
-	return ms
 }
 
 func buildRSISnapshot(series []float64, tail int) *rsiSnapshot {
@@ -385,63 +337,6 @@ func buildOBVSnapshot(closes, volumes []float64) *obvSnapshot {
 		}
 	}
 	return snap
-}
-
-func macdSignal(dif, dea, hist []float64) string {
-	n := minInt(len(dif), minInt(len(dea), len(hist)))
-	if n < 2 {
-		return ""
-	}
-	d1, d0 := dif[n-1], dif[n-2]
-	e1, e0 := dea[n-1], dea[n-2]
-	h1, h0 := hist[n-1], hist[n-2]
-
-	crossZeroUp := h0 <= 0 && h1 > 0
-	crossZeroDown := h0 >= 0 && h1 < 0
-	golden := d0 <= e0 && d1 > e1
-	dead := d0 >= e0 && d1 < e1
-
-	switch {
-	case golden && crossZeroUp:
-		return "golden_cross_zero_up"
-	case dead && crossZeroDown:
-		return "dead_cross_zero_down"
-	case golden:
-		return "golden_cross"
-	case dead:
-		return "dead_cross"
-	case crossZeroUp:
-		return "zero_up"
-	case crossZeroDown:
-		return "zero_down"
-	default:
-		return "flat"
-	}
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxIndicatorPeriod(length int) int {
-	maxPeriod := length - 2
-	if maxPeriod < 1 {
-		return 0
-	}
-	return maxPeriod
-}
-
-func clampIndicatorPeriod(period, maxPeriod int) int {
-	if period <= 0 || maxPeriod <= 0 {
-		return 0
-	}
-	if period > maxPeriod {
-		return maxPeriod
-	}
-	return period
 }
 
 func floatPtr(v float64) *float64 {

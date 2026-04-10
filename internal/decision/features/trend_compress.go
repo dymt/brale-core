@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"brale-core/internal/config"
 	"brale-core/internal/pkg/pattern/cdl"
 	"brale-core/internal/pkg/pattern/evidence"
 	"brale-core/internal/pkg/pattern/geometry"
@@ -19,42 +20,47 @@ import (
 // structure_candidates, recent_candles, and global_context.
 
 type TrendCompressOptions struct {
-	FractalSpan         int
-	MaxStructurePoints  int
-	DedupDistanceBars   int
-	DedupATRFactor      float64
-	RSIPeriod           int
-	ATRPeriod           int
-	RecentCandles       int
-	VolumeMAPeriod      int
-	EMA20Period         int
-	EMA50Period         int
-	EMA200Period        int
-	PatternMinScore     int
-	PatternMaxDetected  int
-	Pretty              bool
-	IncludeCurrentRSI   bool
-	IncludeStructureRSI bool
+	FractalSpan          int
+	MaxStructurePoints   int
+	DedupDistanceBars    int
+	DedupATRFactor       float64
+	SuperTrendPeriod     int
+	SuperTrendMultiplier float64
+	SkipSuperTrend       bool
+	RSIPeriod            int
+	ATRPeriod            int
+	RecentCandles        int
+	VolumeMAPeriod       int
+	EMA20Period          int
+	EMA50Period          int
+	EMA200Period         int
+	PatternMinScore      int
+	PatternMaxDetected   int
+	Pretty               bool
+	IncludeCurrentRSI    bool
+	IncludeStructureRSI  bool
 }
 
 func DefaultTrendCompressOptions() TrendCompressOptions {
 	return TrendCompressOptions{
-		FractalSpan:         2,
-		MaxStructurePoints:  8,
-		DedupDistanceBars:   10,
-		DedupATRFactor:      0.5,
-		RSIPeriod:           14,
-		ATRPeriod:           14,
-		RecentCandles:       7,
-		VolumeMAPeriod:      20,
-		EMA20Period:         20,
-		EMA50Period:         50,
-		EMA200Period:        200,
-		PatternMinScore:     100,
-		PatternMaxDetected:  3,
-		Pretty:              false,
-		IncludeCurrentRSI:   true,
-		IncludeStructureRSI: true,
+		FractalSpan:          2,
+		MaxStructurePoints:   8,
+		DedupDistanceBars:    10,
+		DedupATRFactor:       0.5,
+		SuperTrendPeriod:     14,
+		SuperTrendMultiplier: 2.5,
+		RSIPeriod:            14,
+		ATRPeriod:            14,
+		RecentCandles:        7,
+		VolumeMAPeriod:       20,
+		EMA20Period:          20,
+		EMA50Period:          50,
+		EMA200Period:         200,
+		PatternMinScore:      100,
+		PatternMaxDetected:   3,
+		Pretty:               false,
+		IncludeCurrentRSI:    true,
+		IncludeStructureRSI:  true,
 	}
 }
 
@@ -64,6 +70,7 @@ type TrendCompressedInput struct {
 	StructureCandidates []TrendStructureCandidate `json:"structure_candidates,omitempty"`
 	RecentCandles       []TrendRecentCandle       `json:"recent_candles"`
 	GlobalContext       TrendGlobalContext        `json:"global_context"`
+	SuperTrend          *TrendSuperTrendSnapshot  `json:"supertrend,omitempty"`
 	KeyLevels           *TrendKeyLevels           `json:"key_levels,omitempty"`
 	BreakEvents         []TrendBreakEvent         `json:"break_events,omitempty"`
 	BreakSummary        *TrendBreakSummary        `json:"break_summary,omitempty"`
@@ -104,6 +111,13 @@ type TrendGlobalContext struct {
 	EMA20           *float64 `json:"ema20,omitempty"`
 	EMA50           *float64 `json:"ema50,omitempty"`
 	EMA200          *float64 `json:"ema200,omitempty"`
+}
+
+type TrendSuperTrendSnapshot struct {
+	Interval    string  `json:"interval"`
+	State       string  `json:"state"`
+	Level       float64 `json:"level"`
+	DistancePct float64 `json:"distance_pct"`
 }
 
 type TrendKeyLevels struct {
@@ -192,7 +206,6 @@ func BuildTrendCompressedInput(symbol, interval string, candles []snapshot.Candl
 	}
 	opts = normalizeTrendCompressOptions(opts)
 	n := len(candles)
-	maxPeriod := maxIndicatorPeriod(n)
 
 	closes := make([]float64, n)
 	highs := make([]float64, n)
@@ -221,13 +234,11 @@ func BuildTrendCompressedInput(symbol, interval string, candles []snapshot.Candl
 
 	var rsiSeries []float64
 	var atrSeries []float64
-	if maxPeriod > 0 {
-		if period := clampIndicatorPeriod(opts.RSIPeriod, maxPeriod); period > 0 {
-			rsiSeries = talib.Rsi(closes, period)
-		}
-		if period := clampIndicatorPeriod(opts.ATRPeriod, maxPeriod); period > 0 {
-			atrSeries = talib.Atr(highs, lows, closes, period)
-		}
+	if opts.RSIPeriod > 0 && len(closes) >= config.RSIRequiredBars(opts.RSIPeriod) {
+		rsiSeries = talib.Rsi(closes, opts.RSIPeriod)
+	}
+	if opts.ATRPeriod > 0 && len(closes) >= config.ATRRequiredBars(opts.ATRPeriod) {
+		atrSeries = talib.Atr(highs, lows, closes, opts.ATRPeriod)
 	}
 
 	meta := TrendCompressedMeta{
@@ -243,24 +254,31 @@ func BuildTrendCompressedInput(symbol, interval string, candles []snapshot.Candl
 	}
 	gc.NormalizedSlope = roundFloat(normalizedSlope(closes), 4)
 	gc.SlopeState = trendSlopeState(gc.NormalizedSlope)
-	if maxPeriod > 0 {
-		if period := clampIndicatorPeriod(opts.EMA20Period, maxPeriod); period > 0 {
-			if v := lastNonZero(talib.Ema(closes, period)); v > 0 {
-				val := roundFloat(v, 4)
-				gc.EMA20 = &val
-			}
+	if opts.EMA20Period > 0 && len(closes) >= config.EMARequiredBars(opts.EMA20Period) {
+		if v := lastNonZero(talib.Ema(closes, opts.EMA20Period)); v > 0 {
+			val := roundFloat(v, 4)
+			gc.EMA20 = &val
 		}
-		if period := clampIndicatorPeriod(opts.EMA50Period, maxPeriod); period > 0 {
-			if v := lastNonZero(talib.Ema(closes, period)); v > 0 {
-				val := roundFloat(v, 4)
-				gc.EMA50 = &val
-			}
+	}
+	if opts.EMA50Period > 0 && len(closes) >= config.EMARequiredBars(opts.EMA50Period) {
+		if v := lastNonZero(talib.Ema(closes, opts.EMA50Period)); v > 0 {
+			val := roundFloat(v, 4)
+			gc.EMA50 = &val
 		}
-		if period := clampIndicatorPeriod(opts.EMA200Period, maxPeriod); period > 0 {
-			if v := lastNonZero(talib.Ema(closes, period)); v > 0 {
-				val := roundFloat(v, 4)
-				gc.EMA200 = &val
-			}
+	}
+	if opts.EMA200Period > 0 && len(closes) >= config.EMARequiredBars(opts.EMA200Period) {
+		if v := lastNonZero(talib.Ema(closes, opts.EMA200Period)); v > 0 {
+			val := roundFloat(v, 4)
+			gc.EMA200 = &val
+		}
+	}
+
+	var superTrend *TrendSuperTrendSnapshot
+	if !opts.SkipSuperTrend && opts.SuperTrendPeriod > 0 {
+		requiredBars := config.SuperTrendRequiredBars(opts.SuperTrendPeriod, opts.SuperTrendMultiplier)
+		if n >= requiredBars {
+			stResult := computeSuperTrendSeries(highs, lows, closes, opts.SuperTrendPeriod, opts.SuperTrendMultiplier)
+			superTrend = buildSuperTrendSnapshot(interval, stResult, closes)
 		}
 	}
 
@@ -290,6 +308,7 @@ func BuildTrendCompressedInput(symbol, interval string, candles []snapshot.Candl
 		StructureCandidates: candidates,
 		RecentCandles:       recentCandles,
 		GlobalContext:       gc,
+		SuperTrend:          superTrend,
 		KeyLevels:           keyLevels,
 		BreakEvents:         breakEvents,
 		BreakSummary:        breakSummary,
@@ -311,6 +330,12 @@ func normalizeTrendCompressOptions(opts TrendCompressOptions) TrendCompressOptio
 	}
 	if opts.DedupATRFactor <= 0 {
 		opts.DedupATRFactor = def.DedupATRFactor
+	}
+	if opts.SuperTrendPeriod <= 0 {
+		opts.SuperTrendPeriod = def.SuperTrendPeriod
+	}
+	if opts.SuperTrendMultiplier <= 0 {
+		opts.SuperTrendMultiplier = def.SuperTrendMultiplier
 	}
 	if opts.RSIPeriod <= 0 {
 		opts.RSIPeriod = def.RSIPeriod
@@ -344,6 +369,34 @@ func normalizeTrendCompressOptions(opts TrendCompressOptions) TrendCompressOptio
 		opts.IncludeStructureRSI = def.IncludeStructureRSI
 	}
 	return opts
+}
+
+func buildSuperTrendSnapshot(interval string, stSeries, closes []float64) *TrendSuperTrendSnapshot {
+	limit := len(stSeries)
+	if len(closes) < limit {
+		limit = len(closes)
+	}
+	for i := limit - 1; i >= 0; i-- {
+		level := stSeries[i]
+		close := closes[i]
+		if math.IsNaN(level) || math.IsInf(level, 0) || math.Abs(level) <= 1e-12 {
+			continue
+		}
+		if math.IsNaN(close) || math.IsInf(close, 0) || math.Abs(close) <= 1e-12 {
+			continue
+		}
+		state := "DOWN"
+		if close >= level {
+			state = "UP"
+		}
+		return &TrendSuperTrendSnapshot{
+			Interval:    strings.ToLower(strings.TrimSpace(interval)),
+			State:       state,
+			Level:       roundFloat(level, 4),
+			DistancePct: roundFloat(math.Abs(close-level)/close*100, 4),
+		}
+	}
+	return nil
 }
 
 func buildTrendSMC(candles []snapshot.Candle, closes []float64) TrendSMC {

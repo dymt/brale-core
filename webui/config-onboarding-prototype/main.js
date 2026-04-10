@@ -64,9 +64,8 @@ const strategyInputs = {
   ema_slow: document.getElementById("ema_slow"),
   rsi_period: document.getElementById("rsi_period"),
   last_n: document.getElementById("last_n"),
-  macd_fast: document.getElementById("macd_fast"),
-  macd_slow: document.getElementById("macd_slow"),
-  macd_signal: document.getElementById("macd_signal")
+  stc_fast: document.getElementById("stc_fast"),
+  stc_slow: document.getElementById("stc_slow")
 };
 
 const intervalInputs = Array.from(document.querySelectorAll('input[name="strategy_intervals"]'));
@@ -144,9 +143,8 @@ function defaultSymbolConfig() {
     ema_slow: 200,
     rsi_period: 14,
     last_n: 5,
-    macd_fast: 12,
-    macd_slow: 26,
-    macd_signal: 9
+    stc_fast: 23,
+    stc_slow: 50
   };
 }
 
@@ -164,9 +162,8 @@ function collectStrategyForm() {
     ema_slow: toInteger(String(strategyInputs.ema_slow.value || "").trim(), 200),
     rsi_period: toInteger(String(strategyInputs.rsi_period.value || "").trim(), 14),
     last_n: toInteger(String(strategyInputs.last_n.value || "").trim(), 5),
-    macd_fast: toInteger(String(strategyInputs.macd_fast.value || "").trim(), 12),
-    macd_slow: toInteger(String(strategyInputs.macd_slow.value || "").trim(), 26),
-    macd_signal: toInteger(String(strategyInputs.macd_signal.value || "").trim(), 9)
+    stc_fast: toInteger(String(strategyInputs.stc_fast.value || "").trim(), 23),
+    stc_slow: toInteger(String(strategyInputs.stc_slow.value || "").trim(), 50)
   };
 }
 
@@ -181,9 +178,8 @@ function fillStrategyForm(cfg) {
   strategyInputs.ema_slow.value = cfg?.ema_slow ?? "";
   strategyInputs.rsi_period.value = cfg?.rsi_period ?? "";
   strategyInputs.last_n.value = cfg?.last_n ?? "";
-  strategyInputs.macd_fast.value = cfg?.macd_fast ?? "";
-  strategyInputs.macd_slow.value = cfg?.macd_slow ?? "";
-  strategyInputs.macd_signal.value = cfg?.macd_signal ?? "";
+  strategyInputs.stc_fast.value = cfg?.stc_fast ?? "";
+  strategyInputs.stc_slow.value = cfg?.stc_slow ?? "";
 
   const intervals = Array.isArray(cfg?.intervals) ? cfg.intervals : [];
   intervalInputs.forEach((el) => {
@@ -391,9 +387,8 @@ function renderSymbolConfig(data) {
         `ema_slow = ${cfg.ema_slow}`,
         `rsi_period = ${cfg.rsi_period}`,
         `last_n = ${cfg.last_n}`,
-        `macd_fast = ${cfg.macd_fast}`,
-        `macd_slow = ${cfg.macd_slow}`,
-        `macd_signal = ${cfg.macd_signal}`,
+        `stc_fast = ${cfg.stc_fast}`,
+        `stc_slow = ${cfg.stc_slow}`,
         "",
         `# ${symbol} strategies/${symbol}.toml`,
         `[risk_management]`,

@@ -38,12 +38,10 @@ ema_slow = 200
 rsi_period = 14
 # ATR 计算周期。
 atr_period = 14
-# MACD 快线周期。
-macd_fast = 12
-# MACD 慢线周期。
-macd_slow = 26
-# MACD 信号周期。
-macd_signal = 9
+# STC 快线周期（Schaff Trend Cycle）。
+stc_fast = 23
+# STC 慢线周期。
+stc_slow = 50
 # 指标序列取最近 N 根窗口用于 LLM 总结。
 last_n = 5
 # 是否格式化输出 JSON（会增加体积）。

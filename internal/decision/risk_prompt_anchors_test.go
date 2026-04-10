@@ -103,6 +103,52 @@ func TestBuildStructureAnchorSummaryExtractsExpectedAnchors(t *testing.T) {
 	}
 }
 
+func TestBuildStructureAnchorSummaryIncludesSuperTrendButExcludesItFromNearest(t *testing.T) {
+	comp := features.CompressionResult{
+		Trends: map[string]map[string]features.TrendJSON{
+			"BTCUSDT": {
+				"1h": mustTrendJSONForAnchorTests(t, "BTCUSDT", "1h", features.TrendCompressedInput{
+					Meta: features.TrendCompressedMeta{Symbol: "BTCUSDT", Interval: "1h", Timestamp: "2026-04-06T00:00:00Z"},
+					GlobalContext: features.TrendGlobalContext{
+						EMA20: refFloat(99.0),
+					},
+					StructureCandidates: []features.TrendStructureCandidate{
+						{Price: 101.5, Type: "resistance", Source: "range_high", AgeCandles: 1},
+					},
+					SuperTrend: &features.TrendSuperTrendSnapshot{
+						Interval:    "1h",
+						State:       "UP",
+						Level:       99.8,
+						DistancePct: 0.2,
+					},
+				}),
+			},
+		},
+	}
+
+	got, err := buildStructureAnchorSummary(comp, "BTCUSDT", 100, 2)
+	if err != nil {
+		t.Fatalf("buildStructureAnchorSummary: %v", err)
+	}
+	supertrend, ok := got["supertrend"].(map[string]any)
+	if !ok {
+		t.Fatalf("supertrend=%#v", got["supertrend"])
+	}
+	if supertrend["interval"] != "1h" || supertrend["state"] != "UP" {
+		t.Fatalf("supertrend=%v", supertrend)
+	}
+	below, ok := got["nearest_below_entry"].(map[string]any)
+	if !ok {
+		t.Fatalf("nearest_below_entry=%#v", got["nearest_below_entry"])
+	}
+	if below["source"] == "supertrend" {
+		t.Fatalf("nearest_below_entry should exclude supertrend: %v", below)
+	}
+	if below["price"] != 99.0 {
+		t.Fatalf("nearest_below_entry.price=%v want 99", below["price"])
+	}
+}
+
 func TestBuildTightenPlanPassesStructureAnchorsToLLM(t *testing.T) {
 	called := false
 	stop := 100.2

@@ -72,42 +72,45 @@ func buildCompressor(symbolCfg config.SymbolConfig, enabled config.AgentEnabled,
 
 func toIndicatorOptions(cfg config.IndicatorConfig, indicatorEnabled bool) decision.IndicatorCompressOptions {
 	opts := decision.IndicatorCompressOptions{
-		EMAFast:    cfg.EMAFast,
-		EMAMid:     cfg.EMAMid,
-		EMASlow:    cfg.EMASlow,
-		RSIPeriod:  cfg.RSIPeriod,
-		ATRPeriod:  cfg.ATRPeriod,
-		MACDFast:   cfg.MACDFast,
-		MACDSlow:   cfg.MACDSlow,
-		MACDSignal: cfg.MACDSignal,
-		LastN:      cfg.LastN,
-		Pretty:     cfg.Pretty,
+		EMAFast:   cfg.EMAFast,
+		EMAMid:    cfg.EMAMid,
+		EMASlow:   cfg.EMASlow,
+		RSIPeriod: cfg.RSIPeriod,
+		ATRPeriod: cfg.ATRPeriod,
+		STCFast:   cfg.STCFast,
+		STCSlow:   cfg.STCSlow,
+		LastN:     cfg.LastN,
+		Pretty:    cfg.Pretty,
+		SkipSTC:   cfg.SkipSTC,
 	}
 	if !indicatorEnabled {
 		opts.SkipEMA = true
 		opts.SkipRSI = true
-		opts.SkipMACD = true
+		opts.SkipSTC = true
 	}
 	return opts
 }
 
 func toTrendOptionsFromPreset(preset config.TrendPreset) decision.TrendCompressOptions {
 	return decision.TrendCompressOptions{
-		FractalSpan:         preset.FractalSpan,
-		MaxStructurePoints:  preset.MaxStructurePoints,
-		DedupDistanceBars:   preset.DedupDistanceBars,
-		DedupATRFactor:      preset.DedupATRFactor,
-		RSIPeriod:           preset.RSIPeriod,
-		ATRPeriod:           preset.ATRPeriod,
-		RecentCandles:       preset.RecentCandles,
-		VolumeMAPeriod:      preset.VolumeMAPeriod,
-		EMA20Period:         preset.EMA20Period,
-		EMA50Period:         preset.EMA50Period,
-		EMA200Period:        preset.EMA200Period,
-		PatternMinScore:     preset.PatternMinScore,
-		PatternMaxDetected:  preset.PatternMaxDetected,
-		Pretty:              preset.Pretty,
-		IncludeCurrentRSI:   preset.IncludeCurrentRSI,
-		IncludeStructureRSI: preset.IncludeStructureRSI,
+		FractalSpan:          preset.FractalSpan,
+		MaxStructurePoints:   preset.MaxStructurePoints,
+		DedupDistanceBars:    preset.DedupDistanceBars,
+		DedupATRFactor:       preset.DedupATRFactor,
+		SuperTrendPeriod:     preset.SuperTrendPeriod,
+		SuperTrendMultiplier: preset.SuperTrendMultiplier,
+		SkipSuperTrend:       preset.SkipSuperTrend,
+		RSIPeriod:            preset.RSIPeriod,
+		ATRPeriod:            preset.ATRPeriod,
+		RecentCandles:        preset.RecentCandles,
+		VolumeMAPeriod:       preset.VolumeMAPeriod,
+		EMA20Period:          preset.EMA20Period,
+		EMA50Period:          preset.EMA50Period,
+		EMA200Period:         preset.EMA200Period,
+		PatternMinScore:      preset.PatternMinScore,
+		PatternMaxDetected:   preset.PatternMaxDetected,
+		Pretty:               preset.Pretty,
+		IncludeCurrentRSI:    preset.IncludeCurrentRSI,
+		IncludeStructureRSI:  preset.IncludeStructureRSI,
 	}
 }

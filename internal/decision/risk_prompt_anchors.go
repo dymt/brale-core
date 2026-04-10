@@ -43,6 +43,7 @@ func buildStructureAnchorSummary(comp features.CompressionResult, symbol string,
 	swingByInterval := make(map[string]any, len(keys))
 	var candidates []structureAnchorCandidate
 	var latestBreak *latestBreakAnchor
+	var shortestSuperTrend *features.TrendSuperTrendSnapshot
 
 	for i, key := range keys {
 		order[key] = i
@@ -86,6 +87,9 @@ func buildStructureAnchorSummary(comp features.CompressionResult, symbol string,
 		}
 		candidates = append(candidates, candidatesFromStructure(key, block.StructureCandidates)...)
 		candidates = append(candidates, candidatesFromOrderBlock(key, block.SMC.OrderBlock)...)
+		if shortestSuperTrend == nil && block.SuperTrend != nil {
+			shortestSuperTrend = block.SuperTrend
+		}
 		if next := buildLatestBreakAnchor(key, block.BreakSummary); shouldReplaceLatestBreak(latestBreak, next, order) {
 			latestBreak = next
 		}
@@ -94,6 +98,14 @@ func buildStructureAnchorSummary(comp features.CompressionResult, symbol string,
 	summary := map[string]any{
 		"ema_by_interval":        emaByInterval,
 		"last_swing_by_interval": swingByInterval,
+	}
+	if shortestSuperTrend != nil {
+		summary["supertrend"] = map[string]any{
+			"interval":     shortestSuperTrend.Interval,
+			"state":        shortestSuperTrend.State,
+			"level":        shortestSuperTrend.Level,
+			"distance_pct": shortestSuperTrend.DistancePct,
+		}
 	}
 	if below, ok := selectNearestAnchor(candidates, entry, atr, true, order); ok {
 		summary["nearest_below_entry"] = below

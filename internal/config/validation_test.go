@@ -9,8 +9,135 @@ import (
 
 func TestRequiredKlineLimit_Minimum(t *testing.T) {
 	got := requiredKlineLimit(SymbolConfig{})
-	if got != 3 {
-		t.Fatalf("kline limit=%d, want 3", got)
+	if got != 1 {
+		t.Fatalf("kline limit=%d, want 1", got)
+	}
+}
+
+func TestValidateSymbolConfigAcceptsSTCWithoutMACD(t *testing.T) {
+	temp := 0.1
+	cfg := SymbolConfig{
+		Symbol:     "BTCUSDT",
+		Intervals:  []string{"1h"},
+		KlineLimit: 300,
+		Agent:      AgentConfig{Indicator: boolPtr(true), Structure: boolPtr(true), Mechanics: boolPtr(true)},
+		Indicators: IndicatorConfig{
+			EMAFast:   21,
+			EMAMid:    50,
+			EMASlow:   200,
+			RSIPeriod: 14,
+			ATRPeriod: 14,
+			STCFast:   23,
+			STCSlow:   50,
+			LastN:     5,
+		},
+		Consensus: ConsensusConfig{ScoreThreshold: 0.3, ConfidenceThreshold: 0.6},
+		LLM: SymbolLLMConfig{
+			Agent:    LLMRoleSet{Indicator: LLMRoleConfig{Model: "a", Temperature: &temp}, Structure: LLMRoleConfig{Model: "b", Temperature: &temp}, Mechanics: LLMRoleConfig{Model: "c", Temperature: &temp}},
+			Provider: LLMRoleSet{Indicator: LLMRoleConfig{Model: "a", Temperature: &temp}, Structure: LLMRoleConfig{Model: "b", Temperature: &temp}, Mechanics: LLMRoleConfig{Model: "c", Temperature: &temp}},
+		},
+	}
+
+	if err := ValidateSymbolConfig(cfg); err != nil {
+		t.Fatalf("ValidateSymbolConfig() error = %v", err)
+	}
+}
+
+func TestRequiredKlineLimitIncludesSTCWarmup(t *testing.T) {
+	cfg := SymbolConfig{
+		Intervals: []string{"1h"},
+		Indicators: IndicatorConfig{
+			EMAFast:   21,
+			EMAMid:    50,
+			EMASlow:   200,
+			RSIPeriod: 14,
+			ATRPeriod: 14,
+			STCFast:   23,
+			STCSlow:   50,
+			LastN:     5,
+		},
+	}
+
+	got := requiredKlineLimit(cfg)
+	want := STCRequiredBars(23, 50)
+	if trend := TrendPresetRequiredBars(cfg.Intervals); trend > want {
+		want = trend
+	}
+	if got != want {
+		t.Fatalf("requiredKlineLimit()=%d want %d", got, want)
+	}
+}
+
+func TestRequiredKlineLimitSkipsSTCWarmupWhenDisabled(t *testing.T) {
+	cfg := SymbolConfig{
+		Intervals: []string{"1h"},
+		Indicators: IndicatorConfig{
+			EMAFast:   21,
+			EMAMid:    50,
+			EMASlow:   200,
+			RSIPeriod: 14,
+			ATRPeriod: 14,
+			STCFast:   23,
+			STCSlow:   50,
+			SkipSTC:   true,
+			LastN:     5,
+		},
+	}
+
+	got := requiredKlineLimit(cfg)
+	want := TrendPresetRequiredBars(cfg.Intervals)
+	if cfg.Indicators.EMAFast > want {
+		want = cfg.Indicators.EMAFast
+	}
+	if cfg.Indicators.EMAMid > want {
+		want = cfg.Indicators.EMAMid
+	}
+	if cfg.Indicators.EMASlow > want {
+		want = cfg.Indicators.EMASlow
+	}
+	if cfg.Indicators.RSIPeriod > want {
+		want = cfg.Indicators.RSIPeriod
+	}
+	if cfg.Indicators.ATRPeriod > want {
+		want = cfg.Indicators.ATRPeriod
+	}
+	if got != want {
+		t.Fatalf("requiredKlineLimit()=%d want %d", got, want)
+	}
+}
+
+func TestTrendPresetRequiredBarsIncludesSuperTrendWarmup(t *testing.T) {
+	intervals := []string{"1h"}
+
+	got := TrendPresetRequiredBars(intervals)
+	preset := TrendPresetForIntervals(intervals)["1h"]
+	want := SuperTrendRequiredBars(preset.SuperTrendPeriod, preset.SuperTrendMultiplier)
+	if preset.EMA200Period > want {
+		want = preset.EMA200Period
+	}
+	if preset.VolumeMAPeriod > want {
+		want = preset.VolumeMAPeriod
+	}
+	if preset.RecentCandles > want {
+		want = preset.RecentCandles
+	}
+	if v := preset.FractalSpan*2 + 1; v > want {
+		want = v
+	}
+	if got != want {
+		t.Fatalf("TrendPresetRequiredBars()=%d want %d", got, want)
+	}
+}
+
+func TestTalibRequiredBarsHelpers(t *testing.T) {
+	if got := EMARequiredBars(21); got != 21 {
+		t.Fatalf("EMARequiredBars(21)=%d want 21", got)
+	}
+	if got := RSIRequiredBars(14); got != 15 {
+		t.Fatalf("RSIRequiredBars(14)=%d want 15", got)
+	}
+	if got := ATRRequiredBars(14); got != 15 {
+		t.Fatalf("ATRRequiredBars(14)=%d want 15", got)
 	}
 }
 
@@ -145,7 +272,7 @@ func TestValidateSymbolConfigRejectsNonCanonicalSymbol(t *testing.T) {
 		Intervals:  []string{"1h"},
 		KlineLimit: 300,
 		Agent:      AgentConfig{Indicator: boolPtr(true), Structure: boolPtr(true), Mechanics: boolPtr(true)},
-		Indicators: IndicatorConfig{EMAFast: 21, EMAMid: 50, EMASlow: 200, RSIPeriod: 14, ATRPeriod: 14, MACDFast: 12, MACDSlow: 26, MACDSignal: 9, LastN: 5},
+		Indicators: IndicatorConfig{EMAFast: 21, EMAMid: 50, EMASlow: 200, RSIPeriod: 14, ATRPeriod: 14, STCFast: 23, STCSlow: 50, LastN: 5},
 		Consensus:  ConsensusConfig{ScoreThreshold: 0.3, ConfidenceThreshold: 0.6},
 		LLM: SymbolLLMConfig{
 			Agent:    LLMRoleSet{Indicator: LLMRoleConfig{Model: "a", Temperature: &temp}, Structure: LLMRoleConfig{Model: "b", Temperature: &temp}, Mechanics: LLMRoleConfig{Model: "c", Temperature: &temp}},

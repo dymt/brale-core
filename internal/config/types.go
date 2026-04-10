@@ -122,16 +122,16 @@ type SymbolRequire struct {
 }
 
 type IndicatorConfig struct {
-	EMAFast    int  `mapstructure:"ema_fast"`
-	EMAMid     int  `mapstructure:"ema_mid"`
-	EMASlow    int  `mapstructure:"ema_slow"`
-	RSIPeriod  int  `mapstructure:"rsi_period"`
-	ATRPeriod  int  `mapstructure:"atr_period"`
-	MACDFast   int  `mapstructure:"macd_fast"`
-	MACDSlow   int  `mapstructure:"macd_slow"`
-	MACDSignal int  `mapstructure:"macd_signal"`
-	LastN      int  `mapstructure:"last_n"`
-	Pretty     bool `mapstructure:"pretty"`
+	EMAFast   int  `mapstructure:"ema_fast"`
+	EMAMid    int  `mapstructure:"ema_mid"`
+	EMASlow   int  `mapstructure:"ema_slow"`
+	RSIPeriod int  `mapstructure:"rsi_period"`
+	ATRPeriod int  `mapstructure:"atr_period"`
+	STCFast   int  `mapstructure:"stc_fast"`
+	STCSlow   int  `mapstructure:"stc_slow"`
+	SkipSTC   bool `mapstructure:"skip_stc"`
+	LastN     int  `mapstructure:"last_n"`
+	Pretty    bool `mapstructure:"pretty"`
 }
 
 type CooldownConfig struct {

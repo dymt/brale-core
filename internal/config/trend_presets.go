@@ -9,22 +9,25 @@ import (
 )
 
 type TrendPreset struct {
-	FractalSpan         int
-	MaxStructurePoints  int
-	DedupDistanceBars   int
-	DedupATRFactor      float64
-	RSIPeriod           int
-	ATRPeriod           int
-	RecentCandles       int
-	VolumeMAPeriod      int
-	EMA20Period         int
-	EMA50Period         int
-	EMA200Period        int
-	PatternMinScore     int
-	PatternMaxDetected  int
-	Pretty              bool
-	IncludeCurrentRSI   bool
-	IncludeStructureRSI bool
+	FractalSpan          int
+	MaxStructurePoints   int
+	DedupDistanceBars    int
+	DedupATRFactor       float64
+	SuperTrendPeriod     int
+	SuperTrendMultiplier float64
+	SkipSuperTrend       bool
+	RSIPeriod            int
+	ATRPeriod            int
+	RecentCandles        int
+	VolumeMAPeriod       int
+	EMA20Period          int
+	EMA50Period          int
+	EMA200Period         int
+	PatternMinScore      int
+	PatternMaxDetected   int
+	Pretty               bool
+	IncludeCurrentRSI    bool
+	IncludeStructureRSI  bool
 }
 
 const (
@@ -35,22 +38,24 @@ const (
 
 func DefaultTrendPreset() TrendPreset {
 	return TrendPreset{
-		FractalSpan:         2,
-		MaxStructurePoints:  8,
-		DedupDistanceBars:   10,
-		DedupATRFactor:      0.5,
-		RSIPeriod:           14,
-		ATRPeriod:           14,
-		RecentCandles:       7,
-		VolumeMAPeriod:      20,
-		EMA20Period:         20,
-		EMA50Period:         50,
-		EMA200Period:        200,
-		PatternMinScore:     100,
-		PatternMaxDetected:  3,
-		Pretty:              false,
-		IncludeCurrentRSI:   true,
-		IncludeStructureRSI: true,
+		FractalSpan:          2,
+		MaxStructurePoints:   8,
+		DedupDistanceBars:    10,
+		DedupATRFactor:       0.5,
+		SuperTrendPeriod:     14,
+		SuperTrendMultiplier: 2.5,
+		RSIPeriod:            14,
+		ATRPeriod:            14,
+		RecentCandles:        7,
+		VolumeMAPeriod:       20,
+		EMA20Period:          20,
+		EMA50Period:          50,
+		EMA200Period:         200,
+		PatternMinScore:      100,
+		PatternMaxDetected:   3,
+		Pretty:               false,
+		IncludeCurrentRSI:    true,
+		IncludeStructureRSI:  true,
 	}
 }
 
@@ -82,8 +87,7 @@ func TrendPresetRequiredBars(intervals []string) int {
 			maxRequired = required
 		}
 	}
-	maxRequired = max(1, maxRequired)
-	return maxRequired + 1
+	return max(1, maxRequired)
 }
 
 type intervalEntry struct {
@@ -178,14 +182,19 @@ func dedupBars(targetMinutes, intervalMinutes, minBars int) int {
 }
 
 func presetRequiredBars(preset TrendPreset) int {
+	stRequired := 0
+	if !preset.SkipSuperTrend && preset.SuperTrendPeriod > 0 {
+		stRequired = SuperTrendRequiredBars(preset.SuperTrendPeriod, preset.SuperTrendMultiplier)
+	}
 	return maxInt(
-		preset.RSIPeriod,
-		preset.ATRPeriod,
+		RSIRequiredBars(preset.RSIPeriod),
+		ATRRequiredBars(preset.ATRPeriod),
 		preset.VolumeMAPeriod,
-		preset.EMA20Period,
-		preset.EMA50Period,
-		preset.EMA200Period,
+		EMARequiredBars(preset.EMA20Period),
+		EMARequiredBars(preset.EMA50Period),
+		EMARequiredBars(preset.EMA200Period),
 		preset.RecentCandles,
 		preset.FractalSpan*2+1,
+		stRequired,
 	)
 }

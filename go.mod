@@ -8,13 +8,15 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/iwat/talib-cdl-go v1.0.0
 	github.com/larksuite/oapi-sdk-go/v3 v3.3.0
+	github.com/manifoldco/promptui v0.9.0
 	github.com/markcheno/go-talib v0.0.0-20250114000313-ec55a20c902f
 	github.com/rulego/rulego v0.35.1
 	github.com/shopspring/decimal v1.4.0
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.19.0
 	github.com/wneessen/go-mail v0.7.2
 	go.uber.org/zap v1.21.0
-	golang.org/x/image v0.37.0
+	golang.org/x/term v0.41.0
 )
 
 require (
@@ -38,13 +40,10 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
-	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.34 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	golang.org/x/crypto v0.22.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 )
 

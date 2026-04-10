@@ -69,8 +69,8 @@ func validateIndicatorConfig(cfg IndicatorConfig) error {
 	if cfg.ATRPeriod <= 0 {
 		return validationErrorf("indicators.atr_period must be > 0")
 	}
-	if cfg.MACDFast <= 0 || cfg.MACDSlow <= 0 || cfg.MACDSignal <= 0 {
-		return validationErrorf("indicators.macd_fast/macd_slow/macd_signal must be > 0")
+	if !cfg.SkipSTC && (cfg.STCFast <= 0 || cfg.STCSlow <= 0) {
+		return validationErrorf("indicators.stc_fast/stc_slow must be > 0 when STC is enabled")
 	}
 	if cfg.LastN <= 0 {
 		return validationErrorf("indicators.last_n must be > 0")
@@ -174,19 +174,20 @@ func ValidateSymbolLLMModels(sys SystemConfig, cfg SymbolConfig) error {
 
 func requiredKlineLimit(cfg SymbolConfig) int {
 	trendRequired := TrendPresetRequiredBars(cfg.Intervals)
+	stcRequired := 0
+	if !cfg.Indicators.SkipSTC && cfg.Indicators.STCFast > 0 && cfg.Indicators.STCSlow > 0 {
+		stcRequired = STCRequiredBars(cfg.Indicators.STCFast, cfg.Indicators.STCSlow)
+	}
 	required := maxInt(
-		cfg.Indicators.EMAFast,
-		cfg.Indicators.EMAMid,
-		cfg.Indicators.EMASlow,
-		cfg.Indicators.RSIPeriod,
-		cfg.Indicators.ATRPeriod,
-		cfg.Indicators.MACDFast,
-		cfg.Indicators.MACDSlow,
-		cfg.Indicators.MACDSignal,
+		EMARequiredBars(cfg.Indicators.EMAFast),
+		EMARequiredBars(cfg.Indicators.EMAMid),
+		EMARequiredBars(cfg.Indicators.EMASlow),
+		RSIRequiredBars(cfg.Indicators.RSIPeriod),
+		ATRRequiredBars(cfg.Indicators.ATRPeriod),
+		stcRequired,
 		trendRequired,
 	)
-	required = max(1, required)
-	return required + 1
+	return max(1, required)
 }
 
 func maxInt(values ...int) int {
