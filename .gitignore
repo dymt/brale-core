@@ -70,9 +70,13 @@ webui/og-card-demo/ethusdt-og-card.png
 configs/freqtrade/config.base.json
 configs/symbols-index.toml
 configs/symbols/ETHUSDT.toml
+configs/symbols/XAGUSDT.toml
 configs/symbols/STOUSDT.toml
+configs/strategies/XAGUSDT.toml
 configs/strategies/STOUSDT.toml
 internal/onboarding/templates/freqtrade-config.base.json
 onboarding
 webui/brale-icon-only.png
 规则说明.txt
+/indicator.md
+/调研.md
