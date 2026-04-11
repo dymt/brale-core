@@ -3,7 +3,10 @@ package decisionutil
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
+	"time"
 
 	"brale-core/internal/decision/features"
 	"brale-core/internal/interval"
@@ -124,6 +127,45 @@ func PickIndicatorJSON(data features.CompressionResult, symbol string) (features
 	return features.IndicatorJSON{}, false
 }
 
+func PickIndicatorJSONForInterval(data features.CompressionResult, symbol, preferredInterval string) (features.IndicatorJSON, bool) {
+	byInterval, ok := data.Indicators[symbol]
+	if !ok || len(byInterval) == 0 {
+		return features.IndicatorJSON{}, false
+	}
+	preferred := strings.TrimSpace(preferredInterval)
+	if preferred == "" {
+		return PickIndicatorJSON(data, symbol)
+	}
+	if out, ok := byInterval[preferred]; ok {
+		return out, true
+	}
+	target, err := interval.ParseInterval(preferred)
+	if err != nil {
+		return PickIndicatorJSON(data, symbol)
+	}
+
+	keys := SortedIndicatorKeys(byInterval)
+	bestKey := ""
+	bestDiff := time.Duration(math.MaxInt64)
+	bestDur := time.Duration(0)
+	for _, key := range keys {
+		dur, parseErr := interval.ParseInterval(key)
+		if parseErr != nil {
+			continue
+		}
+		diff := durationAbs(dur - target)
+		if bestKey == "" || diff < bestDiff || (diff == bestDiff && dur < bestDur) {
+			bestKey = key
+			bestDiff = diff
+			bestDur = dur
+		}
+	}
+	if bestKey != "" {
+		return byInterval[bestKey], true
+	}
+	return PickIndicatorJSON(data, symbol)
+}
+
 func PickIndicatorJSONByInterval(data features.CompressionResult, symbol, interval string) (features.IndicatorJSON, bool) {
 	if byInterval, ok := data.Indicators[symbol]; ok {
 		if out, ok := byInterval[interval]; ok {
@@ -181,4 +223,11 @@ func SortedIntervalKeys[T any](m map[string]T) []string {
 		return di < dj
 	})
 	return keys
+}
+
+func durationAbs(value time.Duration) time.Duration {
+	if value < 0 {
+		return -value
+	}
+	return value
 }

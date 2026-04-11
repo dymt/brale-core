@@ -5,6 +5,7 @@ import (
 
 	"brale-core/internal/config"
 	"brale-core/internal/decision"
+	"brale-core/internal/interval"
 	"brale-core/internal/llm"
 	llmapp "brale-core/internal/llm/app"
 )
@@ -37,10 +38,31 @@ func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig) (
 	}
 	decisionInterval := ""
 	if len(symbolCfg.Intervals) > 0 {
-		// Use the shortest configured interval as the immediate decision window reference.
-		decisionInterval = symbolCfg.Intervals[0]
+		decisionInterval = selectDecisionInterval(symbolCfg.Intervals)
 	}
 	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker, DecisionInterval: decisionInterval}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker}, tracker
+}
+
+func selectDecisionInterval(intervals []string) string {
+	shortest := ""
+	var shortestDur time.Duration
+	for _, candidate := range intervals {
+		dur, err := interval.ParseInterval(candidate)
+		if err != nil {
+			continue
+		}
+		if shortest == "" || dur < shortestDur {
+			shortest = candidate
+			shortestDur = dur
+		}
+	}
+	if shortest != "" {
+		return shortest
+	}
+	if len(intervals) == 0 {
+		return ""
+	}
+	return intervals[0]
 }
 
 func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {

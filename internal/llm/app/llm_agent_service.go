@@ -11,6 +11,7 @@ import (
 
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/agent"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/interval"
 	"brale-core/internal/llm"
@@ -151,7 +152,7 @@ func (s LLMAgentService) pickInputs(ctx context.Context, data features.Compressi
 	stageErrs := make(map[string]error)
 	var ok bool
 	if enabled.Indicator {
-		inputs.indicator, ok = decision.PickIndicatorJSON(data, symbol)
+		inputs.indicator, ok = decisionutil.PickIndicatorJSONForInterval(data, symbol, s.DecisionInterval)
 		if !ok {
 			stageErrs["indicator"] = s.logStageError(ctx, "indicator", fmt.Errorf("indicator json missing"))
 		}
