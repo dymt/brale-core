@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"brale-core/internal/decision/decisionutil"
 )
 
 func (s *GormStore) FindPositionByID(ctx context.Context, positionID string) (PositionRecord, bool, error) {
@@ -22,7 +24,8 @@ func (s *GormStore) FindPositionByID(ctx context.Context, positionID string) (Po
 }
 
 func (s *GormStore) FindPositionBySymbol(ctx context.Context, symbol string, statuses []string) (PositionRecord, bool, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return PositionRecord{}, false, fmt.Errorf("symbol is required")
 	}
 	query := s.db.WithContext(ctx).Where("symbol = ?", symbol)

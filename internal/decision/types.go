@@ -36,6 +36,12 @@ type AgentPromptSet struct {
 	Mechanics LLMStagePrompt
 }
 
+type AgentInputSet struct {
+	Indicator features.IndicatorJSON
+	Structure features.TrendJSON
+	Mechanics features.MechanicsSnapshot
+}
+
 type ProviderPromptSet struct {
 	Indicator LLMStagePrompt
 	Structure LLMStagePrompt
@@ -43,7 +49,7 @@ type ProviderPromptSet struct {
 }
 
 type AgentService interface {
-	Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, error)
+	Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, AgentInputSet, error)
 }
 
 type ProviderService interface {
@@ -68,6 +74,7 @@ type SymbolResult struct {
 	AgentIndicator      agent.IndicatorSummary
 	AgentStructure      agent.StructureSummary
 	AgentMechanics      agent.MechanicsSummary
+	AgentInputs         AgentInputSet
 	ConsensusDirection  string
 	ConsensusScore      float64
 	ConsensusConfidence float64

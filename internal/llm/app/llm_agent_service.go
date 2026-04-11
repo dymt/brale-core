@@ -28,16 +28,16 @@ type LLMAgentService struct {
 	DecisionInterval string
 }
 
-func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, error) {
+func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data features.CompressionResult, enabled decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, decision.AgentInputSet, error) {
 	if err := s.ensureRunner(ctx); err != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, err
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, decision.AgentInputSet{}, err
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, ctxErr
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, decision.AgentInputSet{}, ctxErr
 	}
 	inputs, stageErrs := s.pickInputs(ctx, data, symbol, enabled)
 	if err := firstLLMStageError(symbol, "agent", enabled, stageErrs); err != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, err
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, decision.AgentInputSet{}, err
 	}
 	var indOut agent.IndicatorSummary
 	var stOut agent.StructureSummary
@@ -81,10 +81,10 @@ func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data featur
 		}
 	}
 	if err := parallel.RunFailFast(ctx, tasks...); err != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, err
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, decision.AgentInputSet{}, err
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, ctxErr
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, decision.AgentPromptSet{}, decision.AgentInputSet{}, ctxErr
 	}
 	if enabled.Indicator {
 		prompts.Indicator = indPrompt
@@ -95,7 +95,12 @@ func (s LLMAgentService) Analyze(ctx context.Context, symbol string, data featur
 	if enabled.Mechanics {
 		prompts.Mechanics = mechPrompt
 	}
-	return indOut, stOut, mechOut, prompts, nil
+	usedInputs := decision.AgentInputSet{
+		Indicator: inputs.indicator,
+		Structure: inputs.trend,
+		Mechanics: inputs.mechanics,
+	}
+	return indOut, stOut, mechOut, prompts, usedInputs, nil
 }
 
 func firstLLMStageError(symbol, phase string, enabled decision.AgentEnabled, stageErrs map[string]error) error {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"brale-core/internal/decision/decisionfmt"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/position"
 	"brale-core/internal/readmodel/dashboard"
@@ -32,6 +33,7 @@ type HistoryStore interface {
 }
 
 func BuildFlow(ctx context.Context, st FlowStore, symbol string, snapshotID uint, hasSnapshot bool, cfg SymbolConfig) (FlowResult, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	gates := []store.GateEventRecord{}
 	var err error
 	if !hasSnapshot {
@@ -120,6 +122,7 @@ func MapHistoryItems(gates []store.GateEventRecord) []HistoryItem {
 }
 
 func BuildDetail(ctx context.Context, st HistoryStore, cfg SymbolConfig, symbol string, snapshotID uint) (*Detail, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	selected, ok, err := st.FindGateEventBySnapshot(ctx, symbol, snapshotID)
 	if err != nil {
 		return nil, err

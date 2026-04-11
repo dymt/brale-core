@@ -298,8 +298,8 @@ func newRunnerForFlatRiskTests(symbol string, cb FlatRiskInitLLM) *Runner {
 
 type staticAgentService struct{}
 
-func (staticAgentService) Analyze(context.Context, string, features.CompressionResult, AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, error) {
-	return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, nil
+func (staticAgentService) Analyze(context.Context, string, features.CompressionResult, AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, AgentInputSet, error) {
+	return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, AgentInputSet{}, nil
 }
 
 type staticProviderService struct{}

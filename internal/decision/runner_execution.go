@@ -8,6 +8,7 @@ import (
 
 	"brale-core/internal/config"
 	"brale-core/internal/decision/decisionmode"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/ruleflow"
@@ -65,6 +66,7 @@ func (r *Runner) runSymbols(ctx context.Context, symbols []string, comp features
 }
 
 func (r *Runner) runSymbol(ctx context.Context, symbol string, comp features.CompressionResult, acct execution.AccountState, risk execution.RiskParams, opts RunOptions) SymbolResult {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	ctx = llm.WithSessionSymbol(ctx, symbol)
 	ctx = llm.WithSessionFlow(ctx, flowForSymbol(opts, symbol))
 	inputs, errResult := r.loadRunnerSymbolInputs(ctx, symbol, opts)
@@ -136,7 +138,7 @@ func (r *Runner) runAgentAndProviderStages(ctx context.Context, symbol string, c
 	if inputs.SkipProviderStage {
 		return res, false
 	}
-	dataCtx := BuildProviderDataContext(comp, symbol, selectDecisionInterval(inputs.Config.Intervals))
+	dataCtx := BuildProviderDataContext(res.AgentInputs)
 	providerRes, err := r.runProviderStage(ctx, symbol, inputs.Enabled, res, dataCtx, inputs.Logger)
 	if err != nil {
 		return providerRes, false

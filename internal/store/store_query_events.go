@@ -3,11 +3,13 @@ package store
 import (
 	"context"
 	"fmt"
-	"strings"
+
+	"brale-core/internal/decision/decisionutil"
 )
 
 func (s *GormStore) ListProviderEvents(ctx context.Context, symbol string, limit int) ([]ProviderEventRecord, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if limit <= 0 {
@@ -25,7 +27,8 @@ func (s *GormStore) ListProviderEvents(ctx context.Context, symbol string, limit
 }
 
 func (s *GormStore) ListProviderEventsBySnapshot(ctx context.Context, symbol string, snapshotID uint) ([]ProviderEventRecord, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if snapshotID == 0 {
@@ -42,7 +45,8 @@ func (s *GormStore) ListProviderEventsBySnapshot(ctx context.Context, symbol str
 }
 
 func (s *GormStore) ListAgentEvents(ctx context.Context, symbol string, limit int) ([]AgentEventRecord, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if limit <= 0 {
@@ -60,7 +64,8 @@ func (s *GormStore) ListAgentEvents(ctx context.Context, symbol string, limit in
 }
 
 func (s *GormStore) ListAgentEventsBySnapshot(ctx context.Context, symbol string, snapshotID uint) ([]AgentEventRecord, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if snapshotID == 0 {
@@ -77,7 +82,8 @@ func (s *GormStore) ListAgentEventsBySnapshot(ctx context.Context, symbol string
 }
 
 func (s *GormStore) ListGateEvents(ctx context.Context, symbol string, limit int) ([]GateEventRecord, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if limit <= 0 {
@@ -95,7 +101,8 @@ func (s *GormStore) ListGateEvents(ctx context.Context, symbol string, limit int
 }
 
 func (s *GormStore) FindGateEventBySnapshot(ctx context.Context, symbol string, snapshotID uint) (GateEventRecord, bool, error) {
-	if strings.TrimSpace(symbol) == "" {
+	symbol = decisionutil.NormalizeSymbol(symbol)
+	if symbol == "" {
 		return GateEventRecord{}, false, fmt.Errorf("symbol is required")
 	}
 	if snapshotID == 0 {

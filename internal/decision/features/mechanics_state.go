@@ -334,17 +334,6 @@ func pickPrimaryOIHistory(items map[string]oiHistoryPayload) (oiHistoryPayload, 
 	return oiHistoryPayload{}, false
 }
 
-func pickPrimaryCVD(items map[string]cvdPayload) (cvdPayload, bool) {
-	if len(items) == 0 {
-		return cvdPayload{}, false
-	}
-	keys := sortedMechanicsIntervals(mapKeys(items))
-	for _, key := range keys {
-		return items[key], true
-	}
-	return cvdPayload{}, false
-}
-
 func crowdingAnchors(input MechanicsCompressedInput) (float64, float64, bool) {
 	if input.FuturesSentiment != nil {
 		return input.FuturesSentiment.LSRatio, input.FuturesSentiment.TakerLongShortVolRatio, true
@@ -446,14 +435,6 @@ func signLabel(value float64) string {
 	default:
 		return "unknown"
 	}
-}
-
-func normalizedMechanicsToken(value string, fallback string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return fallback
-	}
-	return value
 }
 
 func sortedMechanicsIntervals(keys []string) []string {

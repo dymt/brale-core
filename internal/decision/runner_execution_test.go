@@ -39,12 +39,12 @@ type failingAgentService struct {
 	err        error
 }
 
-func (f *failingAgentService) Analyze(_ context.Context, symbol string, _ features.CompressionResult, _ AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, error) {
+func (f *failingAgentService) Analyze(_ context.Context, symbol string, _ features.CompressionResult, _ AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, AgentInputSet, error) {
 	f.calls++
 	if symbol == f.failSymbol {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, f.err
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, AgentInputSet{}, f.err
 	}
-	return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, nil
+	return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, AgentInputSet{}, nil
 }
 
 func (c *countingProviderService) Judge(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ AgentEnabled, _ ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {

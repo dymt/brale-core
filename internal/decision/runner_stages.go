@@ -7,6 +7,7 @@ import (
 
 	"brale-core/internal/config"
 	"brale-core/internal/decision/agent"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/decision/fund"
 	"brale-core/internal/decision/provider"
@@ -18,13 +19,13 @@ import (
 
 func (r *Runner) runAgentStage(ctx context.Context, symbol string, comp features.CompressionResult, enabled AgentEnabled, logger *zap.Logger) (SymbolResult, error) {
 	start := time.Now()
-	ind, st, mech, agentPrompts, err := r.analyze(ctx, symbol, comp, enabled)
+	ind, st, mech, agentPrompts, agentInputs, err := r.analyze(ctx, symbol, comp, enabled)
 	if err != nil {
 		logger.Error("agent analyze failed", zap.Error(err))
 		return symbolError(symbol, err, fmt.Sprintf("AGENT_ERROR:%v", err)), err
 	}
 	logger.Debug("agent analyze complete", zap.Duration("latency", time.Since(start)))
-	return SymbolResult{Symbol: symbol, EnabledAgents: enabled, AgentIndicator: ind, AgentStructure: st, AgentMechanics: mech, AgentPrompts: agentPrompts}, nil
+	return SymbolResult{Symbol: symbol, EnabledAgents: enabled, AgentIndicator: ind, AgentStructure: st, AgentMechanics: mech, AgentPrompts: agentPrompts, AgentInputs: agentInputs}, nil
 }
 
 func (r *Runner) runProviderStage(ctx context.Context, symbol string, enabled AgentEnabled, res SymbolResult, dataCtx ProviderDataContext, logger *zap.Logger) (SymbolResult, error) {
@@ -67,6 +68,7 @@ func providerEnabledFromAgentPrompts(enabled AgentEnabled, prompts AgentPromptSe
 }
 
 func (r *Runner) getBinding(symbol string) (strategy.StrategyBinding, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	bind, ok := r.Bindings[symbol]
 	if !ok {
 		return strategy.StrategyBinding{}, fmt.Errorf("binding not found")
@@ -75,6 +77,7 @@ func (r *Runner) getBinding(symbol string) (strategy.StrategyBinding, error) {
 }
 
 func (r *Runner) getConfig(symbol string) (config.SymbolConfig, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	cfg, ok := r.Configs[symbol]
 	if !ok {
 		return config.SymbolConfig{}, fmt.Errorf("config not found")
@@ -83,6 +86,7 @@ func (r *Runner) getConfig(symbol string) (config.SymbolConfig, error) {
 }
 
 func (r *Runner) getEnabled(symbol string) (AgentEnabled, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	enabled, ok := r.Enabled[symbol]
 	if !ok {
 		return AgentEnabled{}, fmt.Errorf("enabled config not found")
@@ -90,12 +94,12 @@ func (r *Runner) getEnabled(symbol string) (AgentEnabled, error) {
 	return enabled, nil
 }
 
-func (r *Runner) analyze(ctx context.Context, symbol string, comp features.CompressionResult, enabled AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, error) {
-	ind, st, mech, prompts, err := r.Agent.Analyze(ctx, symbol, comp, enabled)
+func (r *Runner) analyze(ctx context.Context, symbol string, comp features.CompressionResult, enabled AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentPromptSet, AgentInputSet, error) {
+	ind, st, mech, prompts, inputs, err := r.Agent.Analyze(ctx, symbol, comp, enabled)
 	if err != nil {
-		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, err
+		return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, AgentInputSet{}, err
 	}
-	return ind, st, mech, prompts, nil
+	return ind, st, mech, prompts, inputs, nil
 }
 
 func (r *Runner) judge(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled AgentEnabled, dataCtx ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
