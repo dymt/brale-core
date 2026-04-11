@@ -432,7 +432,7 @@ func stripTrendGlobalContext(obj map[string]any) {
 	if !ok {
 		return
 	}
-	for _, key := range []string{"trend_slope", "normalized_slope", "ema20", "ema50", "ema200", "vol_ratio", "window"} {
+	for _, key := range []string{"trend_slope", "normalized_slope", "window"} {
 		delete(gc, key)
 	}
 	if len(gc) == 0 {
