@@ -179,7 +179,7 @@ type ProviderPromptSet struct {
 	MechanicsUser string
 }
 
-func (b LLMPromptBuilder) ProviderPrompts(ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled decision.AgentEnabled) (ProviderPromptSet, error) {
+func (b LLMPromptBuilder) ProviderPrompts(ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled decision.AgentEnabled, dataCtx decision.ProviderDataContext) (ProviderPromptSet, error) {
 	var indicatorSys string
 	var structureSys string
 	var mechanicsSys string
@@ -207,15 +207,15 @@ func (b LLMPromptBuilder) ProviderPrompts(ind agent.IndicatorSummary, st agent.S
 	mechanicsUser := ""
 	if enabled.Indicator {
 		indSummary := toProviderIndicatorSummary(ind)
-		indicatorUser = buildProviderUser(b.UserFormat, providerSummary{Indicator: &indSummary}, providerExampleIndicator())
+		indicatorUser = buildProviderUserWithData(b.UserFormat, providerSummary{Indicator: &indSummary}, dataCtx.IndicatorCrossTF, providerExampleIndicator())
 	}
 	if enabled.Structure {
 		stSummary := toProviderStructureSummary(st)
-		structureUser = buildProviderUser(b.UserFormat, providerSummary{Structure: &stSummary}, providerExampleStructure())
+		structureUser = buildProviderUserWithData(b.UserFormat, providerSummary{Structure: &stSummary}, dataCtx.StructureAnchorCtx, providerExampleStructure())
 	}
 	if enabled.Mechanics {
 		mechSummary := toProviderMechanicsSummary(mech)
-		mechanicsUser = buildProviderUser(b.UserFormat, providerSummary{Mechanics: &mechSummary}, providerExampleMechanics())
+		mechanicsUser = buildProviderUserWithData(b.UserFormat, providerSummary{Mechanics: &mechSummary}, dataCtx.MechanicsCtx, providerExampleMechanics())
 	}
 	return ProviderPromptSet{
 		IndicatorSys:  indicatorSys,
@@ -236,7 +236,7 @@ type InPositionPromptSet struct {
 	MechanicsUser string
 }
 
-func (b LLMPromptBuilder) InPositionProviderPrompts(ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, summary positionprompt.Summary, enabled decision.AgentEnabled) (InPositionPromptSet, error) {
+func (b LLMPromptBuilder) InPositionProviderPrompts(ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, summary positionprompt.Summary, enabled decision.AgentEnabled, dataCtx decision.ProviderDataContext) (InPositionPromptSet, error) {
 	var indicatorSys string
 	var structureSys string
 	var mechanicsSys string
@@ -264,15 +264,15 @@ func (b LLMPromptBuilder) InPositionProviderPrompts(ind agent.IndicatorSummary, 
 	mechanicsUser := ""
 	if enabled.Indicator {
 		indSummary := toProviderIndicatorSummary(ind)
-		indicatorUser = buildInPositionProviderUser(b.UserFormat, providerSummary{Indicator: &indSummary}, summary, providerExampleInPositionIndicator())
+		indicatorUser = buildInPositionProviderUserWithData(b.UserFormat, providerSummary{Indicator: &indSummary}, summary, dataCtx.IndicatorCrossTF, providerExampleInPositionIndicator())
 	}
 	if enabled.Structure {
 		stSummary := toProviderStructureSummary(st)
-		structureUser = buildInPositionProviderUser(b.UserFormat, providerSummary{Structure: &stSummary}, summary, providerExampleInPositionStructure())
+		structureUser = buildInPositionProviderUserWithData(b.UserFormat, providerSummary{Structure: &stSummary}, summary, dataCtx.StructureAnchorCtx, providerExampleInPositionStructure())
 	}
 	if enabled.Mechanics {
 		mechSummary := toProviderMechanicsSummary(mech)
-		mechanicsUser = buildInPositionProviderUser(b.UserFormat, providerSummary{Mechanics: &mechSummary}, summary, providerExampleInPositionMechanics())
+		mechanicsUser = buildInPositionProviderUserWithData(b.UserFormat, providerSummary{Mechanics: &mechSummary}, summary, dataCtx.MechanicsCtx, providerExampleInPositionMechanics())
 	}
 	return InPositionPromptSet{
 		IndicatorSys:  indicatorSys,
@@ -360,6 +360,22 @@ func buildProviderUser(format UserPromptFormat, summary providerSummary, example
 	)
 }
 
+func buildProviderUserWithData(format UserPromptFormat, summary providerSummary, dataCtx any, example string) string {
+	raw, _ := json.Marshal(summary)
+	blocks := []payloadBlock{{label: "摘要输入:", payload: string(raw)}}
+	if dataCtx != nil {
+		dataRaw, _ := json.Marshal(dataCtx)
+		if len(dataRaw) > 2 { // not just "{}" or "null"
+			blocks = append(blocks, payloadBlock{label: "代码计算数据锚点(仅供交叉验证):", payload: string(dataRaw)})
+		}
+	}
+	blocks = append(blocks,
+		payloadBlock{label: "约束: 输出示例 JSON 仅用于展示固定字段结构、字段类型与引用格式；禁止直接引用、复制、改写或沿用示例中的任何结论、reason、tag、阈值、布尔值、置信度或措辞。最终输出必须完全基于本轮输入独立生成。数据锚点仅用于交叉验证Agent摘要的一致性，不作为独立判断依据。", payload: ""},
+		payloadBlock{label: "输出示例(JSON):", payload: example},
+	)
+	return formatPayloads(format, blocks...)
+}
+
 func buildInPositionProviderUser(format UserPromptFormat, summary providerSummary, pos positionprompt.Summary, example string) string {
 	raw, _ := json.Marshal(summary)
 	posRaw, _ := json.Marshal(pos)
@@ -370,6 +386,26 @@ func buildInPositionProviderUser(format UserPromptFormat, summary providerSummar
 		payloadBlock{label: "约束: 仅输出固定字段 JSON；禁止编造/新增字段或阈值；允许原样引用输入中已有的 field=value 作为审计依据。输出示例 JSON 仅用于展示字段结构、字段类型与引用格式；禁止直接引用、复制、改写或沿用示例中的任何结论、reason、tag、阈值、布尔值、置信度或措辞。最终输出必须完全基于本轮输入独立生成。", payload: ""},
 		payloadBlock{label: "输出示例(JSON):", payload: example},
 	)
+}
+
+func buildInPositionProviderUserWithData(format UserPromptFormat, summary providerSummary, pos positionprompt.Summary, dataCtx any, example string) string {
+	raw, _ := json.Marshal(summary)
+	posRaw, _ := json.Marshal(pos)
+	blocks := []payloadBlock{
+		{label: "摘要输入:", payload: string(raw)},
+		{label: "仓位摘要:", payload: string(posRaw)},
+	}
+	if dataCtx != nil {
+		dataRaw, _ := json.Marshal(dataCtx)
+		if len(dataRaw) > 2 {
+			blocks = append(blocks, payloadBlock{label: "代码计算数据锚点(仅供交叉验证):", payload: string(dataRaw)})
+		}
+	}
+	blocks = append(blocks,
+		payloadBlock{label: "约束: 仅输出固定字段 JSON；禁止编造/新增字段或阈值；允许原样引用输入中已有的 field=value 作为审计依据。数据锚点仅用于交叉验证Agent摘要的一致性，不作为独立判断依据。最终输出必须完全基于本轮输入独立生成。", payload: ""},
+		payloadBlock{label: "输出示例(JSON):", payload: example},
+	)
+	return formatPayloads(format, blocks...)
 }
 
 func providerExampleIndicator() string {

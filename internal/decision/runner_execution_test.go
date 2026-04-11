@@ -47,12 +47,12 @@ func (f *failingAgentService) Analyze(_ context.Context, symbol string, _ featur
 	return agent.IndicatorSummary{}, agent.StructureSummary{}, agent.MechanicsSummary{}, AgentPromptSet{}, nil
 }
 
-func (c *countingProviderService) Judge(context.Context, string, agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentEnabled) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
+func (c *countingProviderService) Judge(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ AgentEnabled, _ ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
 	c.judgeCalls++
 	return provider.IndicatorProviderOut{}, provider.StructureProviderOut{}, provider.MechanicsProviderOut{}, ProviderPromptSet{}, nil
 }
 
-func (c *countingProviderService) JudgeInPosition(context.Context, string, agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, positionprompt.Summary, AgentEnabled) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, error) {
+func (c *countingProviderService) JudgeInPosition(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ positionprompt.Summary, _ AgentEnabled, _ ProviderDataContext) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, error) {
 	return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, nil
 }
 

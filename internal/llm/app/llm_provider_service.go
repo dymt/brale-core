@@ -27,7 +27,7 @@ type LLMProviderService struct {
 	Tracker *LLMRunTracker
 }
 
-func (s LLMProviderService) Judge(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled decision.AgentEnabled) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, decision.ProviderPromptSet, error) {
+func (s LLMProviderService) Judge(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled decision.AgentEnabled, dataCtx decision.ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, decision.ProviderPromptSet, error) {
 	if s.Runner == nil {
 		logging.FromContext(ctx).Named("decision").Error("provider judge failed", zap.String("stage", "init"), zap.Error(fmt.Errorf("runner is required")))
 		return provider.IndicatorProviderOut{}, provider.StructureProviderOut{}, provider.MechanicsProviderOut{}, decision.ProviderPromptSet{}, wrapLLMStageError("provider", symbol, "init", fmt.Errorf("runner is required"))
@@ -35,7 +35,7 @@ func (s LLMProviderService) Judge(ctx context.Context, symbol string, ind agent.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return provider.IndicatorProviderOut{}, provider.StructureProviderOut{}, provider.MechanicsProviderOut{}, decision.ProviderPromptSet{}, ctxErr
 	}
-	prompts, err := s.Prompts.ProviderPrompts(ind, st, mech, enabled)
+	prompts, err := s.Prompts.ProviderPrompts(ind, st, mech, enabled, dataCtx)
 	if err != nil {
 		logging.FromContext(ctx).Named("decision").Error("provider judge failed", zap.String("stage", "prompts"), zap.Error(err))
 		return provider.IndicatorProviderOut{}, provider.StructureProviderOut{}, provider.MechanicsProviderOut{}, decision.ProviderPromptSet{}, wrapLLMStageError("provider", symbol, "prompts", err)
@@ -148,7 +148,7 @@ func (s LLMProviderService) Judge(ctx context.Context, symbol string, ind agent.
 	return indOut, stOut, mechOut, promptSet, nil
 }
 
-func (s LLMProviderService) JudgeInPosition(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, summary positionprompt.Summary, enabled decision.AgentEnabled) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, decision.ProviderPromptSet, error) {
+func (s LLMProviderService) JudgeInPosition(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, summary positionprompt.Summary, enabled decision.AgentEnabled, dataCtx decision.ProviderDataContext) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, decision.ProviderPromptSet, error) {
 	logger := logging.FromContext(ctx).Named("decision").With(zap.String("symbol", symbol))
 	if s.Runner == nil {
 		logger.Error("provider judge failed", zap.String("stage", "init"), zap.Error(fmt.Errorf("runner is required")))
@@ -157,7 +157,7 @@ func (s LLMProviderService) JudgeInPosition(ctx context.Context, symbol string, 
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, decision.ProviderPromptSet{}, ctxErr
 	}
-	prompts, err := s.Prompts.InPositionProviderPrompts(ind, st, mech, summary, enabled)
+	prompts, err := s.Prompts.InPositionProviderPrompts(ind, st, mech, summary, enabled, dataCtx)
 	if err != nil {
 		logger.Error("provider judge failed", zap.String("stage", "prompts"), zap.Error(err))
 		return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, decision.ProviderPromptSet{}, wrapLLMStageError("provider", symbol, "prompts_in_position", err)

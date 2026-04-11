@@ -11,13 +11,17 @@ import (
 )
 
 type stubRiskSessionProvider struct {
-	callResp  string
-	callErr   error
-	callCount int
+	callResp   string
+	callErr    error
+	callCount  int
+	lastSystem string
+	lastUser   string
 }
 
-func (s *stubRiskSessionProvider) Call(_ context.Context, _, _ string) (string, error) {
+func (s *stubRiskSessionProvider) Call(_ context.Context, system, user string) (string, error) {
 	s.callCount++
+	s.lastSystem = system
+	s.lastUser = user
 	if s.callErr != nil {
 		return "", s.callErr
 	}

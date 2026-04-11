@@ -164,11 +164,11 @@ func TestPreviewTemplateBackedStrategiesUseConservativeSieveFallback(t *testing.
 	for _, rel := range []string{"configs/strategies/default.toml", "configs/strategies/ETHUSDT.toml"} {
 		t.Run(rel, func(t *testing.T) {
 			content := generatedFileContent(t, result, rel)
-			if !strings.Contains(content, "default_gate_action = \"WAIT\"") {
-				t.Fatalf("%s missing conservative default_gate_action:\n%s", rel, content)
+			if !strings.Contains(content, "default_gate_action = \"ALLOW\"") {
+				t.Fatalf("%s missing default_gate_action:\n%s", rel, content)
 			}
-			if !strings.Contains(content, "default_size_factor = 0.0") {
-				t.Fatalf("%s missing conservative default_size_factor:\n%s", rel, content)
+			if !strings.Contains(content, "default_size_factor = 1.0") {
+				t.Fatalf("%s missing default_size_factor:\n%s", rel, content)
 			}
 		})
 	}

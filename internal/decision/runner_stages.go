@@ -27,10 +27,10 @@ func (r *Runner) runAgentStage(ctx context.Context, symbol string, comp features
 	return SymbolResult{Symbol: symbol, EnabledAgents: enabled, AgentIndicator: ind, AgentStructure: st, AgentMechanics: mech, AgentPrompts: agentPrompts}, nil
 }
 
-func (r *Runner) runProviderStage(ctx context.Context, symbol string, enabled AgentEnabled, res SymbolResult, logger *zap.Logger) (SymbolResult, error) {
+func (r *Runner) runProviderStage(ctx context.Context, symbol string, enabled AgentEnabled, res SymbolResult, dataCtx ProviderDataContext, logger *zap.Logger) (SymbolResult, error) {
 	start := time.Now()
 	providerEnabled := providerEnabledFromAgentPrompts(enabled, res.AgentPrompts)
-	pInd, pSt, pMech, providerPrompts, err := r.judge(ctx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, providerEnabled)
+	pInd, pSt, pMech, providerPrompts, err := r.judge(ctx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, providerEnabled, dataCtx)
 	if err != nil {
 		logger.Error("provider judge failed", zap.Error(err))
 		res.Err = err
@@ -98,8 +98,8 @@ func (r *Runner) analyze(ctx context.Context, symbol string, comp features.Compr
 	return ind, st, mech, prompts, nil
 }
 
-func (r *Runner) judge(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled AgentEnabled) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
-	return r.Provider.Judge(ctx, symbol, ind, st, mech, enabled)
+func (r *Runner) judge(ctx context.Context, symbol string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled AgentEnabled, dataCtx ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
+	return r.Provider.Judge(ctx, symbol, ind, st, mech, enabled, dataCtx)
 }
 
 func (r *Runner) ensureRuleflowEngine() ruleflow.Evaluator {

@@ -70,11 +70,11 @@ type fakeProvider struct {
 	inPositionMechanics *provider.InPositionMechanicsOut
 }
 
-func (f fakeProvider) Judge(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ decision.AgentEnabled) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, decision.ProviderPromptSet, error) {
+func (f fakeProvider) Judge(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ decision.AgentEnabled, _ decision.ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, decision.ProviderPromptSet, error) {
 	return f.indicator, f.structure, f.mechanics, decision.ProviderPromptSet{}, nil
 }
 
-func (f fakeProvider) JudgeInPosition(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ positionprompt.Summary, _ decision.AgentEnabled) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, decision.ProviderPromptSet, error) {
+func (f fakeProvider) JudgeInPosition(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ positionprompt.Summary, _ decision.AgentEnabled, _ decision.ProviderDataContext) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, decision.ProviderPromptSet, error) {
 	ind := provider.InPositionIndicatorOut{MomentumSustaining: true, DivergenceDetected: false, Reason: "ok"}
 	st := provider.InPositionStructureOut{Integrity: true, ThreatLevel: provider.ThreatLevelNone, Reason: "ok"}
 	mech := provider.InPositionMechanicsOut{AdverseLiquidation: false, CrowdingReversal: false, Reason: "ok"}

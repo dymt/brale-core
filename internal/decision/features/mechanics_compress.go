@@ -144,7 +144,11 @@ func BuildMechanicsCompressedJSON(ctx context.Context, symbol string, snap snaps
 }
 
 func BuildMechanicsSnapshot(ctx context.Context, symbol string, snap snapshot.MarketSnapshot, opts MechanicsCompressOptions) (MechanicsSnapshot, error) {
-	raw, err := BuildMechanicsCompressedJSON(ctx, symbol, snap, opts)
+	payload, err := BuildMechanicsCompressed(ctx, symbol, snap, opts)
+	if err != nil {
+		return MechanicsSnapshot{}, err
+	}
+	raw, err := buildMechanicsStateRaw(payload, opts.Pretty)
 	if err != nil {
 		return MechanicsSnapshot{}, err
 	}

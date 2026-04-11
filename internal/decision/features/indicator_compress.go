@@ -16,30 +16,40 @@ import (
 const indicatorCompressVersion = "indicator_compress_v1"
 
 type IndicatorCompressOptions struct {
-	EMAFast   int
-	EMAMid    int
-	EMASlow   int
-	RSIPeriod int
-	ATRPeriod int
-	STCFast   int
-	STCSlow   int
-	LastN     int
-	Pretty    bool
-	SkipEMA   bool
-	SkipRSI   bool
-	SkipSTC   bool
+	EMAFast        int
+	EMAMid         int
+	EMASlow        int
+	RSIPeriod      int
+	ATRPeriod      int
+	STCFast        int
+	STCSlow        int
+	BBPeriod       int
+	BBMultiplier   float64
+	CHOPPeriod     int
+	StochRSIPeriod int
+	AroonPeriod    int
+	LastN          int
+	Pretty         bool
+	SkipEMA        bool
+	SkipRSI        bool
+	SkipSTC        bool
 }
 
 func DefaultIndicatorCompressOptions() IndicatorCompressOptions {
 	return IndicatorCompressOptions{
-		EMAFast:   21,
-		EMAMid:    50,
-		EMASlow:   200,
-		RSIPeriod: 14,
-		ATRPeriod: 14,
-		STCFast:   23,
-		STCSlow:   50,
-		LastN:     3,
+		EMAFast:        21,
+		EMAMid:         50,
+		EMASlow:        200,
+		RSIPeriod:      14,
+		ATRPeriod:      14,
+		STCFast:        23,
+		STCSlow:        50,
+		BBPeriod:       20,
+		BBMultiplier:   2.0,
+		CHOPPeriod:     14,
+		StochRSIPeriod: 14,
+		AroonPeriod:    25,
+		LastN:          3,
 	}
 }
 
@@ -66,13 +76,18 @@ type indicatorMarket struct {
 }
 
 type indicatorData struct {
-	EMAFast *emaSnapshot `json:"ema_fast,omitempty"`
-	EMAMid  *emaSnapshot `json:"ema_mid,omitempty"`
-	EMASlow *emaSnapshot `json:"ema_slow,omitempty"`
-	RSI     *rsiSnapshot `json:"rsi,omitempty"`
-	ATR     *atrSnapshot `json:"atr,omitempty"`
-	OBV     *obvSnapshot `json:"obv,omitempty"`
-	STC     *stcSnapshot `json:"stc,omitempty"`
+	EMAFast      *emaSnapshot          `json:"ema_fast,omitempty"`
+	EMAMid       *emaSnapshot          `json:"ema_mid,omitempty"`
+	EMASlow      *emaSnapshot          `json:"ema_slow,omitempty"`
+	RSI          *rsiSnapshot          `json:"rsi,omitempty"`
+	ATR          *atrSnapshot          `json:"atr,omitempty"`
+	OBV          *obvSnapshot          `json:"obv,omitempty"`
+	STC          *stcSnapshot          `json:"stc,omitempty"`
+	BB           *bbSnapshot           `json:"bb,omitempty"`
+	CHOP         *chopSnapshot         `json:"chop,omitempty"`
+	StochRSI     *stochRSISnapshot     `json:"stoch_rsi,omitempty"`
+	Aroon        *aroonSnapshot        `json:"aroon,omitempty"`
+	TDSequential *tdSequentialSnapshot `json:"td_sequential,omitempty"`
 }
 
 type emaSnapshot struct {
@@ -201,8 +216,16 @@ func buildIndicatorData(closes, highs, lows, volumes []float64, lastClose float6
 	}
 	if !opts.SkipRSI {
 		if opts.RSIPeriod > 0 && len(closes) >= config.RSIRequiredBars(opts.RSIPeriod) {
-			if rsi := buildRSISnapshot(sanitizeSeries(talib.Rsi(closes, opts.RSIPeriod)), opts.LastN); rsi != nil {
+			rsiSeries := sanitizeSeries(talib.Rsi(closes, opts.RSIPeriod))
+			if rsi := buildRSISnapshot(rsiSeries, opts.LastN); rsi != nil {
 				data.RSI = rsi
+			}
+			// StochRSI is computed from the RSI series
+			if opts.StochRSIPeriod > 0 && len(rsiSeries) >= opts.StochRSIPeriod {
+				stochSeries := computeStochRSI(rsiSeries, opts.StochRSIPeriod)
+				if snap := buildStochRSISnapshot(sanitizeSeries(stochSeries)); snap != nil {
+					data.StochRSI = snap
+				}
 			}
 		}
 	}
@@ -227,6 +250,34 @@ func buildIndicatorData(closes, highs, lows, volumes []float64, lastClose float6
 			if stc := buildSTCSnapshot(sanitizeSeries(stcSeries), opts.LastN); stc != nil {
 				data.STC = stc
 			}
+		}
+	}
+	// Bollinger Bands
+	if opts.BBPeriod > 0 && len(closes) >= opts.BBPeriod {
+		upper, middle, lower := computeBollingerBands(closes, opts.BBPeriod, opts.BBMultiplier)
+		if snap := buildBBSnapshot(upper, middle, lower, lastClose); snap != nil {
+			data.BB = snap
+		}
+	}
+	// Choppiness Index
+	if opts.CHOPPeriod > 1 && len(closes) > opts.CHOPPeriod {
+		chopSeries := computeCHOP(highs, lows, closes, opts.CHOPPeriod)
+		if snap := buildCHOPSnapshot(chopSeries); snap != nil {
+			data.CHOP = snap
+		}
+	}
+	// Aroon
+	if opts.AroonPeriod > 0 && len(highs) > opts.AroonPeriod {
+		aroonUp, aroonDown := computeAroon(highs, lows, opts.AroonPeriod)
+		if snap := buildAroonSnapshot(aroonUp, aroonDown); snap != nil {
+			data.Aroon = snap
+		}
+	}
+	// TD Sequential
+	if len(closes) > 4 {
+		buySetup, sellSetup := computeTDSequential(closes)
+		if snap := buildTDSequentialSnapshot(buySetup, sellSetup); snap != nil {
+			data.TDSequential = snap
 		}
 	}
 	return data
@@ -254,6 +305,21 @@ func normalizeIndicatorCompressOptions(opts IndicatorCompressOptions) IndicatorC
 	}
 	if opts.STCSlow <= 0 {
 		opts.STCSlow = def.STCSlow
+	}
+	if opts.BBPeriod <= 0 {
+		opts.BBPeriod = def.BBPeriod
+	}
+	if opts.BBMultiplier <= 0 {
+		opts.BBMultiplier = def.BBMultiplier
+	}
+	if opts.CHOPPeriod <= 0 {
+		opts.CHOPPeriod = def.CHOPPeriod
+	}
+	if opts.StochRSIPeriod <= 0 {
+		opts.StochRSIPeriod = def.StochRSIPeriod
+	}
+	if opts.AroonPeriod <= 0 {
+		opts.AroonPeriod = def.AroonPeriod
 	}
 	if opts.LastN <= 0 {
 		opts.LastN = def.LastN

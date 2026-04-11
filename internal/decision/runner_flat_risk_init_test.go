@@ -304,11 +304,11 @@ func (staticAgentService) Analyze(context.Context, string, features.CompressionR
 
 type staticProviderService struct{}
 
-func (staticProviderService) Judge(context.Context, string, agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, AgentEnabled) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
+func (staticProviderService) Judge(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ AgentEnabled, _ ProviderDataContext) (provider.IndicatorProviderOut, provider.StructureProviderOut, provider.MechanicsProviderOut, ProviderPromptSet, error) {
 	return provider.IndicatorProviderOut{}, provider.StructureProviderOut{}, provider.MechanicsProviderOut{}, ProviderPromptSet{}, nil
 }
 
-func (staticProviderService) JudgeInPosition(context.Context, string, agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, positionprompt.Summary, AgentEnabled) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, error) {
+func (staticProviderService) JudgeInPosition(_ context.Context, _ string, _ agent.IndicatorSummary, _ agent.StructureSummary, _ agent.MechanicsSummary, _ positionprompt.Summary, _ AgentEnabled, _ ProviderDataContext) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, error) {
 	return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, nil
 }
 

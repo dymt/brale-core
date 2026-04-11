@@ -39,16 +39,21 @@ type indicatorTrendState struct {
 }
 
 type indicatorMomentumState struct {
-	RSIZone       string `json:"rsi_zone"`
-	RSISlopeState string `json:"rsi_slope_state"`
-	STCState      string `json:"stc_state"`
-	OBVSlopeState string `json:"obv_slope_state"`
+	RSIZone       string  `json:"rsi_zone"`
+	RSISlopeState string  `json:"rsi_slope_state"`
+	STCState      string  `json:"stc_state"`
+	OBVSlopeState string  `json:"obv_slope_state"`
+	StochRSIZone  string  `json:"stoch_rsi_zone,omitempty"`
+	AroonSignal   string  `json:"aroon_signal,omitempty"`
 }
 
 type indicatorVolatilityState struct {
 	ATRRaw         float64 `json:"atr_raw"`
 	ATRExpandState string  `json:"atr_expand_state"`
 	ATRChangePct   float64 `json:"atr_change_pct,omitempty"`
+	BBZone         string  `json:"bb_zone,omitempty"`
+	BBWidthState   string  `json:"bb_width_state,omitempty"`
+	CHOPRegime     string  `json:"chop_regime,omitempty"`
 }
 
 type indicatorCrossTFSummary struct {
@@ -177,11 +182,16 @@ func summarizeIndicatorPayload(payload IndicatorCompressedInput) indicatorTFStat
 			RSISlopeState: classifyRSISlope(payload.Data.RSI),
 			STCState:      classifySTCState(payload.Data.STC),
 			OBVSlopeState: classifyOBVSlope(payload.Data.OBV),
+			StochRSIZone:  classifyStochRSIZone(payload.Data.StochRSI),
+			AroonSignal:   classifyAroonSignal(payload.Data.Aroon),
 		},
 		Volatility: indicatorVolatilityState{
 			ATRRaw:         atr,
 			ATRExpandState: classifyATRExpansion(payload.Data.ATR),
 			ATRChangePct:   atrChangePct(payload.Data.ATR),
+			BBZone:         classifyBBZone(payload.Data.BB),
+			BBWidthState:   classifyBBWidthState(payload.Data.BB),
+			CHOPRegime:     classifyCHOPRegime(payload.Data.CHOP),
 		},
 	}
 	state.Bias = computeIndicatorBias(state)
@@ -411,6 +421,12 @@ func detectIndicatorEvents(payload IndicatorCompressedInput) []string {
 	currentStack := classifyEMAStack(emaLatest(payload.Data.EMAFast), emaLatest(payload.Data.EMAMid), emaLatest(payload.Data.EMASlow))
 	appendEvent("ema_stack_bull_flip", prevStack != "bull" && currentStack == "bull")
 	appendEvent("ema_stack_bear_flip", prevStack != "bear" && currentStack == "bear")
+
+	// TD Sequential events (setup completion at 9)
+	if td := payload.Data.TDSequential; td != nil {
+		appendEvent("td_buy_setup_9", td.BuySetup >= 9)
+		appendEvent("td_sell_setup_9", td.SellSetup >= 9)
+	}
 	return events
 }
 
@@ -457,6 +473,95 @@ func atrChangePct(atr *atrSnapshot) float64 {
 		return 0
 	}
 	return *atr.ChangePct
+}
+
+// classifyBBZone classifies the price position within Bollinger Bands.
+// Uses %B (percent_b): <0 = below_lower, >1 = above_upper, 0-0.2 = near_lower,
+// 0.8-1.0 = near_upper, 0.2-0.8 = mid.
+func classifyBBZone(bb *bbSnapshot) string {
+	if bb == nil {
+		return ""
+	}
+	switch {
+	case bb.PercentB < 0:
+		return "below_lower"
+	case bb.PercentB <= 0.2:
+		return "near_lower"
+	case bb.PercentB >= 1.0:
+		return "above_upper"
+	case bb.PercentB >= 0.8:
+		return "near_upper"
+	default:
+		return "mid"
+	}
+}
+
+// classifyBBWidthState classifies Bollinger Band width as squeeze/normal/wide.
+// Width < 2% = squeeze, > 6% = wide, else normal.
+// These thresholds are tuned for BTC/ETH on 15m-4h timeframes.
+func classifyBBWidthState(bb *bbSnapshot) string {
+	if bb == nil {
+		return ""
+	}
+	switch {
+	case bb.Width < 2.0:
+		return "squeeze"
+	case bb.Width > 6.0:
+		return "wide"
+	default:
+		return "normal"
+	}
+}
+
+// classifyCHOPRegime classifies Choppiness Index into trending/choppy.
+// CHOP < 38.2 = trending, > 61.8 = choppy, else transition.
+// Standard Fibonacci levels used in quant practice for BTC/ETH.
+func classifyCHOPRegime(chop *chopSnapshot) string {
+	if chop == nil {
+		return ""
+	}
+	switch {
+	case chop.Value < 38.2:
+		return "trending"
+	case chop.Value > 61.8:
+		return "choppy"
+	default:
+		return "transition"
+	}
+}
+
+// classifyStochRSIZone classifies Stochastic RSI value (0-1 range).
+func classifyStochRSIZone(sr *stochRSISnapshot) string {
+	if sr == nil {
+		return ""
+	}
+	switch {
+	case sr.Value <= 0.2:
+		return "oversold"
+	case sr.Value >= 0.8:
+		return "overbought"
+	default:
+		return "neutral"
+	}
+}
+
+// classifyAroonSignal classifies Aroon indicator state.
+// AroonUp > 70 && AroonDown < 30 = strong_up, inverse = strong_down,
+// both > 70 = crossover, else neutral.
+func classifyAroonSignal(aroon *aroonSnapshot) string {
+	if aroon == nil {
+		return ""
+	}
+	switch {
+	case aroon.Up > 70 && aroon.Down < 30:
+		return "strong_up"
+	case aroon.Down > 70 && aroon.Up < 30:
+		return "strong_down"
+	case aroon.Up > 70 && aroon.Down > 70:
+		return "crossover"
+	default:
+		return "neutral"
+	}
 }
 
 func absFloat(value float64) float64 {

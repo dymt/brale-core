@@ -186,7 +186,7 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 		p.notifyError(ctx, res.Err)
 		return res, res.Err
 	}
-	indOut, stOut, mechOut, prompts, evaluated, err := p.judgeInPositionWithFallback(ctx, symbol, res, pos)
+	indOut, stOut, mechOut, prompts, evaluated, err := p.judgeInPositionWithFallback(ctx, symbol, res, pos, comp)
 	if err != nil {
 		logger.Error("provider judge failed", zap.Error(err))
 		p.notifyError(ctx, err)

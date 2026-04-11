@@ -136,7 +136,8 @@ func (r *Runner) runAgentAndProviderStages(ctx context.Context, symbol string, c
 	if inputs.SkipProviderStage {
 		return res, false
 	}
-	providerRes, err := r.runProviderStage(ctx, symbol, inputs.Enabled, res, inputs.Logger)
+	dataCtx := BuildProviderDataContext(comp, symbol)
+	providerRes, err := r.runProviderStage(ctx, symbol, inputs.Enabled, res, dataCtx, inputs.Logger)
 	if err != nil {
 		return providerRes, false
 	}

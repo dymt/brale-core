@@ -186,7 +186,7 @@ func (p *Pipeline) buildHoldGate(ctx context.Context, symbol string, res SymbolR
 	if err != nil {
 		return ruleflow.Result{}, provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, err
 	}
-	indOut, stOut, mechOut, prompts, evaluated, err := p.judgeInPositionWithFallback(ctx, symbol, res, promptSummary)
+	indOut, stOut, mechOut, prompts, evaluated, err := p.judgeInPositionWithFallback(ctx, symbol, res, promptSummary, comp)
 	if err != nil {
 		return ruleflow.Result{}, provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, err
 	}
@@ -254,7 +254,7 @@ func (p *Pipeline) buildHardGuardPosition(ctx context.Context, symbol string, po
 	return out
 }
 
-func (p *Pipeline) judgeInPositionWithFallback(ctx context.Context, symbol string, res SymbolResult, summary positionprompt.Summary) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, bool, error) {
+func (p *Pipeline) judgeInPositionWithFallback(ctx context.Context, symbol string, res SymbolResult, summary positionprompt.Summary, comp features.CompressionResult) (provider.InPositionIndicatorOut, provider.InPositionStructureOut, provider.InPositionMechanicsOut, ProviderPromptSet, bool, error) {
 	if p == nil || p.Runner == nil || p.Runner.Provider == nil {
 		return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, fmt.Errorf("provider is required")
 	}
@@ -270,7 +270,8 @@ func (p *Pipeline) judgeInPositionWithFallback(ctx context.Context, symbol strin
 	}
 	runCtx := llm.WithSessionSymbol(ctx, symbol)
 	runCtx = llm.WithSessionFlow(runCtx, llm.LLMFlowInPosition)
-	indOut, stOut, mechOut, prompts, err := p.Runner.Provider.JudgeInPosition(runCtx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, summary, providerEnabled)
+	dataCtx := BuildProviderDataContext(comp, symbol)
+	indOut, stOut, mechOut, prompts, err := p.Runner.Provider.JudgeInPosition(runCtx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, summary, providerEnabled, dataCtx)
 	if err != nil {
 		if provider.IsDecodeError(err) {
 			return provider.InPositionIndicatorOut{}, provider.InPositionStructureOut{}, provider.InPositionMechanicsOut{}, ProviderPromptSet{}, false, nil
