@@ -13,11 +13,7 @@ func TestPickInputsUsesDecisionIntervalForIndicator(t *testing.T) {
 	service := LLMAgentService{DecisionInterval: "15m"}
 	data := features.CompressionResult{
 		Indicators: map[string]map[string]features.IndicatorJSON{
-			"BTCUSDT": {
-				"5m":  {Symbol: "BTCUSDT", Interval: "5m"},
-				"15m": {Symbol: "BTCUSDT", Interval: "15m"},
-				"1h":  {Symbol: "BTCUSDT", Interval: "1h"},
-			},
+			"BTCUSDT": llmAgentIndicatorInputsForTest(t),
 		},
 	}
 
@@ -25,8 +21,24 @@ func TestPickInputsUsesDecisionIntervalForIndicator(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected stage errors: %v", errs)
 	}
-	if inputs.indicator.Interval != "15m" {
-		t.Fatalf("interval=%q want %q", inputs.indicator.Interval, "15m")
+	if inputs.indicator.Interval != "multi" {
+		t.Fatalf("interval=%q want %q", inputs.indicator.Interval, "multi")
+	}
+
+	var payload struct {
+		DecisionInterval string `json:"decision_interval"`
+		MultiTF          []struct {
+			Interval string `json:"interval"`
+		} `json:"multi_tf"`
+	}
+	if err := json.Unmarshal(inputs.indicator.RawJSON, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload.DecisionInterval != "15m" {
+		t.Fatalf("decision_interval=%q want %q", payload.DecisionInterval, "15m")
+	}
+	if len(payload.MultiTF) == 0 || payload.MultiTF[0].Interval != "5m" {
+		t.Fatalf("multi_tf=%v", payload.MultiTF)
 	}
 }
 
@@ -78,5 +90,46 @@ func TestStripTrendGlobalContextRemovesEmptyMap(t *testing.T) {
 
 	if _, exists := obj["global_context"]; exists {
 		t.Fatalf("expected empty global_context to be removed")
+	}
+}
+
+func llmAgentIndicatorInputsForTest(t *testing.T) map[string]features.IndicatorJSON {
+	t.Helper()
+
+	build := func(interval string, current, previous float64, age int64, fast float64, fastLastN []float64, mid float64, midLastN []float64, slow float64, slowLastN []float64, rsi float64, rsiNorm float64, atr float64, atrChange float64, obvChange float64, stcState string) features.IndicatorJSON {
+		raw, err := json.Marshal(map[string]any{
+			"_meta": map[string]any{
+				"series_order": "oldest_to_latest",
+				"sampled_at":   "2026-04-11T00:00:00Z",
+				"version":      "indicator_compress_v1",
+				"data_age_sec": map[string]int64{"indicator": age},
+			},
+			"market": map[string]any{
+				"symbol":         "BTCUSDT",
+				"interval":       interval,
+				"current_price":  current,
+				"previous_price": previous,
+				"price_timestamp": "2026-04-11T00:00:00Z",
+			},
+			"data": map[string]any{
+				"ema_fast": map[string]any{"latest": fast, "last_n": fastLastN},
+				"ema_mid":  map[string]any{"latest": mid, "last_n": midLastN},
+				"ema_slow": map[string]any{"latest": slow, "last_n": slowLastN},
+				"rsi":      map[string]any{"current": rsi, "normalized_slope": rsiNorm},
+				"atr":      map[string]any{"latest": atr, "change_pct": atrChange},
+				"obv":      map[string]any{"change_rate": obvChange},
+				"stc":      map[string]any{"state": stcState},
+			},
+		})
+		if err != nil {
+			t.Fatalf("marshal indicator payload: %v", err)
+		}
+		return features.IndicatorJSON{Symbol: "BTCUSDT", Interval: interval, RawJSON: raw}
+	}
+
+	return map[string]features.IndicatorJSON{
+		"5m":  build("5m", 105, 97, 12, 102, []float64{98, 102}, 101, []float64{101, 101}, 100, []float64{101, 100}, 62, 0.2, 4, 6, 0.03, "rising"),
+		"15m": build("15m", 104, 102, 20, 101, []float64{100, 101}, 100, []float64{99, 100}, 99, []float64{98, 99}, 58, 0.18, 5, 4, 0.02, "rising"),
+		"1h":  build("1h", 96, 98, 30, 98, []float64{99, 98}, 99, []float64{100, 99}, 100, []float64{101, 100}, 42, -0.2, 6, -3, -0.03, "falling"),
 	}
 }
