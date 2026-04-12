@@ -15,6 +15,7 @@ import (
 	"brale-core/internal/pkg/httpclient"
 	"brale-core/internal/pkg/logging"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"go.uber.org/zap"
 )
 
@@ -154,8 +155,17 @@ func (c *OpenAIClient) callOnce(ctx context.Context, url string, raw []byte, tim
 	client := c.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: timeout}
+	} else if client.Timeout <= 0 {
+		cloned := *client
+		cloned.Timeout = timeout
+		client = &cloned
 	}
-	resp, err := client.Do(req)
+	retryClient := newLLMRetryClient(client)
+	retryReq, err := retryablehttp.FromRequest(req)
+	if err != nil {
+		return "", 0, err
+	}
+	resp, err := retryClient.Do(retryReq)
 	if err != nil {
 		return "", 0, err
 	}
@@ -183,6 +193,35 @@ func (c *OpenAIClient) callOnce(ctx context.Context, url string, raw []byte, tim
 		return "", 0, fmt.Errorf("empty choices")
 	}
 	return parsed.Choices[0].Message.Content, 0, nil
+}
+
+func newLLMRetryClient(base *http.Client) *retryablehttp.Client {
+	client := retryablehttp.NewClient()
+	client.RetryMax = 2
+	client.RetryWaitMin = 200 * time.Millisecond
+	client.RetryWaitMax = 2 * time.Second
+	client.Logger = nil
+	client.ErrorHandler = retryablehttp.PassthroughErrorHandler
+	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		if err != nil {
+			return true, nil
+		}
+		if resp == nil {
+			return false, nil
+		}
+		switch resp.StatusCode {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true, nil
+		case http.StatusTooManyRequests:
+			return false, nil
+		default:
+			return false, nil
+		}
+	}
+	if base != nil {
+		client.HTTPClient = base
+	}
+	return client
 }
 
 func parseRetryWait(h http.Header) time.Duration {
