@@ -37,8 +37,8 @@ type Pipeline struct {
 	ExitConfirmCache        *ExitConfirmCache
 	EntryCooldownCache      *EntryCooldownCache
 	EntryCooldownRounds     int
-	AgentStore              func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled AgentEnabled, prompts AgentPromptSet) error
-	ProviderStore           func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, providers fund.ProviderBundle, prompts ProviderPromptSet) error
+	AgentStore              func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, inputs AgentInputSet, enabled AgentEnabled, prompts AgentPromptSet) error
+	ProviderStore           func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, providers fund.ProviderBundle, dataCtx ProviderDataContext, prompts ProviderPromptSet) error
 	ProviderInPositionStore func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind provider.InPositionIndicatorOut, st provider.InPositionStructureOut, mech provider.InPositionMechanicsOut, prompts ProviderPromptSet, enabled AgentEnabled) error
 	GateStore               func(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, gate fund.GateDecision, providers fund.ProviderBundle) error
 	Notifier                Notifier

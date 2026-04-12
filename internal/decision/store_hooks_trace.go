@@ -161,6 +161,16 @@ func renderRoundTraceMarkdown(h StoreHooks, gateRec *store.GateEventRecord, agen
 	appendProviderVerdict(&b, providerEvents, "structure")
 	appendProviderVerdict(&b, providerEvents, "mechanics")
 
+	b.WriteString("## Agent Input Payloads\n\n")
+	appendAgentInputPayloadSection(&b, agentEvents, "indicator")
+	appendAgentInputPayloadSection(&b, agentEvents, "structure")
+	appendAgentInputPayloadSection(&b, agentEvents, "mechanics")
+
+	b.WriteString("## Provider Data Context\n\n")
+	appendProviderDataContextSection(&b, providerEvents, "indicator")
+	appendProviderDataContextSection(&b, providerEvents, "structure")
+	appendProviderDataContextSection(&b, providerEvents, "mechanics")
+
 	b.WriteString("## Raw LLM I/O\n\n")
 	appendAgentSection(&b, agentEvents, "indicator")
 	appendAgentSection(&b, agentEvents, "structure")
@@ -257,6 +267,20 @@ func appendAgentSection(b *strings.Builder, events []store.AgentEventRecord, sta
 	b.WriteString("\n```\n\n---\n\n")
 }
 
+func appendAgentInputPayloadSection(b *strings.Builder, events []store.AgentEventRecord, stage string) {
+	rec, ok := findAgentByStage(events, stage)
+	b.WriteString("### ")
+	b.WriteString(stage)
+	b.WriteString("\n")
+	if !ok || len(rec.InputJSON) == 0 {
+		b.WriteString("- missing: `true`\n\n")
+		return
+	}
+	b.WriteString("```json\n")
+	b.WriteString(prettyJSON(rec.InputJSON))
+	b.WriteString("\n```\n\n")
+}
+
 func appendProviderSection(b *strings.Builder, events []store.ProviderEventRecord, role string) {
 	rec, ok := findProviderByRole(events, role)
 	b.WriteString("### Provider - ")
@@ -291,6 +315,20 @@ func appendProviderSection(b *strings.Builder, events []store.ProviderEventRecor
 	b.WriteString("#### Output JSON\n```json\n")
 	b.WriteString(prettyJSON(rec.OutputJSON))
 	b.WriteString("\n```\n\n---\n\n")
+}
+
+func appendProviderDataContextSection(b *strings.Builder, events []store.ProviderEventRecord, role string) {
+	rec, ok := findProviderByRole(events, role)
+	b.WriteString("### ")
+	b.WriteString(role)
+	b.WriteString("\n")
+	if !ok || len(rec.DataContextJSON) == 0 {
+		b.WriteString("- missing: `true`\n\n")
+		return
+	}
+	b.WriteString("```json\n")
+	b.WriteString(prettyJSON(rec.DataContextJSON))
+	b.WriteString("\n```\n\n")
 }
 
 func findAgentByStage(events []store.AgentEventRecord, stage string) (store.AgentEventRecord, bool) {

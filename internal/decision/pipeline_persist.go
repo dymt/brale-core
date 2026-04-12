@@ -46,14 +46,14 @@ func (p *Pipeline) handlePlan(ctx context.Context, out PersistResult, res Symbol
 
 func (p *Pipeline) persistSymbolStores(ctx context.Context, snapID uint, snap snapshot.MarketSnapshot, res SymbolResult, logger *zap.Logger) error {
 	if p.AgentStore != nil {
-		if err := p.AgentStore(ctx, snap, snapID, res.Symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, res.EnabledAgents, res.AgentPrompts); err != nil {
+		if err := p.AgentStore(ctx, snap, snapID, res.Symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, res.AgentInputs, res.EnabledAgents, res.AgentPrompts); err != nil {
 			logger.Error("agent store failed", zap.Error(err))
 			p.notifyError(ctx, err)
 			return err
 		}
 	}
 	if p.ProviderStore != nil {
-		if err := p.ProviderStore(ctx, snap, snapID, res.Symbol, res.Providers, res.ProviderPrompts); err != nil {
+		if err := p.ProviderStore(ctx, snap, snapID, res.Symbol, res.Providers, BuildProviderDataContext(res.AgentInputs), res.ProviderPrompts); err != nil {
 			logger.Error("provider store failed", zap.Error(err))
 			p.notifyError(ctx, err)
 			return err
@@ -71,7 +71,7 @@ func (p *Pipeline) persistSymbolStores(ctx context.Context, snapID uint, snap sn
 
 func (p *Pipeline) persistInPositionStores(ctx context.Context, snapID uint, snap snapshot.MarketSnapshot, res SymbolResult, ind provider.InPositionIndicatorOut, st provider.InPositionStructureOut, mech provider.InPositionMechanicsOut, prompts ProviderPromptSet, logger *zap.Logger) error {
 	if p.AgentStore != nil {
-		if err := p.AgentStore(ctx, snap, snapID, res.Symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, res.EnabledAgents, res.AgentPrompts); err != nil {
+		if err := p.AgentStore(ctx, snap, snapID, res.Symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, res.AgentInputs, res.EnabledAgents, res.AgentPrompts); err != nil {
 			logger.Error("agent store failed", zap.Error(err))
 			p.notifyError(ctx, err)
 			return err

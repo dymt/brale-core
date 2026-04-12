@@ -33,7 +33,7 @@ type StoreHooks struct {
 	TraceRedacted bool
 }
 
-func (h StoreHooks) SaveAgent(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, enabled AgentEnabled, prompts AgentPromptSet) error {
+func (h StoreHooks) SaveAgent(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, ind agent.IndicatorSummary, st agent.StructureSummary, mech agent.MechanicsSummary, inputs AgentInputSet, enabled AgentEnabled, prompts AgentPromptSet) error {
 	logger := logging.FromContext(ctx).Named("decision").With(zap.String("symbol", sym), zap.Uint("snapshot_id", snapID))
 	if h.Store == nil {
 		return fmt.Errorf("store is required")
@@ -43,17 +43,17 @@ func (h StoreHooks) SaveAgent(ctx context.Context, snap snapshot.MarketSnapshot,
 		ts = time.Now().Unix()
 	}
 	if enabled.Indicator {
-		if err := h.saveAgentStage(ctx, snapID, sym, "indicator", ind, ts, prompts.Indicator); err != nil {
+		if err := h.saveAgentStage(ctx, snapID, sym, "indicator", ind, inputs.Indicator.RawJSON, ts, prompts.Indicator); err != nil {
 			return err
 		}
 	}
 	if enabled.Structure {
-		if err := h.saveAgentStage(ctx, snapID, sym, "structure", st, ts, prompts.Structure); err != nil {
+		if err := h.saveAgentStage(ctx, snapID, sym, "structure", st, inputs.Structure.RawJSON, ts, prompts.Structure); err != nil {
 			return err
 		}
 	}
 	if enabled.Mechanics {
-		if err := h.saveAgentStage(ctx, snapID, sym, "mechanics", mech, ts, prompts.Mechanics); err != nil {
+		if err := h.saveAgentStage(ctx, snapID, sym, "mechanics", mech, inputs.Mechanics.RawJSON, ts, prompts.Mechanics); err != nil {
 			return err
 		}
 	}
@@ -61,7 +61,7 @@ func (h StoreHooks) SaveAgent(ctx context.Context, snap snapshot.MarketSnapshot,
 	return nil
 }
 
-func (h StoreHooks) saveAgentStage(ctx context.Context, snapID uint, sym, stage string, payload any, ts int64, prompt LLMStagePrompt) error {
+func (h StoreHooks) saveAgentStage(ctx context.Context, snapID uint, sym, stage string, payload any, inputRaw []byte, ts int64, prompt LLMStagePrompt) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -72,6 +72,7 @@ func (h StoreHooks) saveAgentStage(ctx context.Context, snapID uint, sym, stage 
 		Symbol:             sym,
 		Timestamp:          ts,
 		Stage:              stage,
+		InputJSON:          datatypes.JSON(cloneJSONBytes(inputRaw)),
 		SystemPrompt:       prompt.System,
 		UserPrompt:         prompt.User,
 		OutputJSON:         datatypes.JSON(raw),
@@ -83,7 +84,7 @@ func (h StoreHooks) saveAgentStage(ctx context.Context, snapID uint, sym, stage 
 	return h.Store.SaveAgentEvent(ctx, rec)
 }
 
-func (h StoreHooks) SaveProvider(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, providers fund.ProviderBundle, prompts ProviderPromptSet) error {
+func (h StoreHooks) SaveProvider(ctx context.Context, snap snapshot.MarketSnapshot, snapID uint, sym string, providers fund.ProviderBundle, dataCtx ProviderDataContext, prompts ProviderPromptSet) error {
 	logger := logging.FromContext(ctx).Named("decision").With(zap.String("symbol", sym), zap.Uint("snapshot_id", snapID))
 	if h.Store == nil {
 		return fmt.Errorf("store is required")
@@ -106,17 +107,17 @@ func (h StoreHooks) SaveProvider(ctx context.Context, snap snapshot.MarketSnapsh
 		SignalTag:         providers.Mechanics.SignalTag,
 	})
 	if providers.Enabled.Indicator {
-		if err := h.saveProviderStage(ctx, snapID, sym, "indicator", providers.Indicator, indicatorTradeable, ts, prompts.Indicator); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "indicator", providers.Indicator, dataCtx.IndicatorCrossTF, indicatorTradeable, ts, prompts.Indicator); err != nil {
 			return err
 		}
 	}
 	if providers.Enabled.Structure {
-		if err := h.saveProviderStage(ctx, snapID, sym, "structure", providers.Structure, structureTradeable, ts, prompts.Structure); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "structure", providers.Structure, dataCtx.StructureAnchorCtx, structureTradeable, ts, prompts.Structure); err != nil {
 			return err
 		}
 	}
 	if providers.Enabled.Mechanics {
-		if err := h.saveProviderStage(ctx, snapID, sym, "mechanics", providers.Mechanics, mechanicsTradeable, ts, prompts.Mechanics); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "mechanics", providers.Mechanics, dataCtx.MechanicsCtx, mechanicsTradeable, ts, prompts.Mechanics); err != nil {
 			return err
 		}
 	}
@@ -128,8 +129,12 @@ func (h StoreHooks) SaveProvider(ctx context.Context, snap snapshot.MarketSnapsh
 	return nil
 }
 
-func (h StoreHooks) saveProviderStage(ctx context.Context, snapID uint, sym, role string, payload any, tradeable bool, ts int64, prompt LLMStagePrompt) error {
+func (h StoreHooks) saveProviderStage(ctx context.Context, snapID uint, sym, role string, payload any, dataCtx any, tradeable bool, ts int64, prompt LLMStagePrompt) error {
 	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	dataCtxRaw, err := marshalContextJSON(dataCtx)
 	if err != nil {
 		return err
 	}
@@ -139,6 +144,7 @@ func (h StoreHooks) saveProviderStage(ctx context.Context, snapID uint, sym, rol
 		Symbol:             sym,
 		Timestamp:          ts,
 		Role:               role,
+		DataContextJSON:    datatypes.JSON(dataCtxRaw),
 		SystemPrompt:       prompt.System,
 		UserPrompt:         prompt.User,
 		OutputJSON:         datatypes.JSON(raw),
@@ -161,17 +167,17 @@ func (h StoreHooks) SaveProviderInPosition(ctx context.Context, snap snapshot.Ma
 		ts = time.Now().Unix()
 	}
 	if enabled.Indicator {
-		if err := h.saveProviderStage(ctx, snapID, sym, "indicator_in_position", ind, false, ts, prompts.Indicator); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "indicator_in_position", ind, nil, false, ts, prompts.Indicator); err != nil {
 			return err
 		}
 	}
 	if enabled.Structure {
-		if err := h.saveProviderStage(ctx, snapID, sym, "structure_in_position", st, false, ts, prompts.Structure); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "structure_in_position", st, nil, false, ts, prompts.Structure); err != nil {
 			return err
 		}
 	}
 	if enabled.Mechanics {
-		if err := h.saveProviderStage(ctx, snapID, sym, "mechanics_in_position", mech, false, ts, prompts.Mechanics); err != nil {
+		if err := h.saveProviderStage(ctx, snapID, sym, "mechanics_in_position", mech, nil, false, ts, prompts.Mechanics); err != nil {
 			return err
 		}
 	}
@@ -266,6 +272,27 @@ func buildGateProviderRefs(gate fund.GateDecision, providers fund.ProviderBundle
 		Mechanics: providers.Mechanics,
 	}
 	return json.Marshal(ref)
+}
+
+func cloneJSONBytes(raw []byte) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	return append([]byte(nil), raw...)
+}
+
+func marshalContextJSON(data any) ([]byte, error) {
+	if data == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	if string(raw) == "null" || string(raw) == "{}" {
+		return nil, nil
+	}
+	return raw, nil
 }
 
 func (h StoreHooks) notifyGate(ctx context.Context, rec *store.GateEventRecord) error {

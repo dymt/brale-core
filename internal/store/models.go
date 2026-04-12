@@ -14,6 +14,7 @@ type AgentEventRecord struct {
 	Symbol             string         `gorm:"index:idx_agent_symbol_stage_time,priority:1"`
 	Timestamp          int64          `gorm:"index:idx_agent_symbol_stage_time,priority:2,sort:desc"`
 	Stage              string         `gorm:"index:idx_agent_symbol_stage_time,priority:4"`
+	InputJSON          datatypes.JSON `gorm:"type:json"`
 	SystemPrompt       string         `gorm:"type:text"`
 	UserPrompt         string         `gorm:"type:text"`
 	OutputJSON         datatypes.JSON `gorm:"type:json"`
@@ -31,6 +32,7 @@ type ProviderEventRecord struct {
 	Timestamp          int64  `gorm:"index:idx_prov_symbol_role_time,priority:2,sort:desc"`
 	ProviderID         string
 	Role               string         `gorm:"index:idx_prov_symbol_role_time,priority:3"`
+	DataContextJSON    datatypes.JSON `gorm:"type:json"`
 	SystemPrompt       string         `gorm:"type:text"`
 	UserPrompt         string         `gorm:"type:text"`
 	OutputJSON         datatypes.JSON `gorm:"type:json"`
