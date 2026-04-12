@@ -25,13 +25,15 @@ import (
 )
 
 const (
-	defaultAPIBASE        = "https://api.telegram.org"
-	defaultPollTimeout    = 30 * time.Second
-	defaultUpdateLimit    = 50
-	defaultSessionTTL     = 5 * time.Minute
-	defaultRequestTimeout = 90 * time.Second
-	defaultLockPath       = "/tmp/brale-core-telegrambot.lock"
-	tradeHistoryMenuLimit = 10
+	defaultAPIBASE             = "https://api.telegram.org"
+	defaultPollTimeout         = 30 * time.Second
+	defaultUpdateLimit         = 50
+	defaultSessionTTL          = 5 * time.Minute
+	defaultRequestTimeout      = 90 * time.Second
+	defaultObserveTimeout      = 300 * time.Second
+	defaultObservePollInterval = 2 * time.Second
+	defaultLockPath            = "/tmp/brale-core-telegrambot.lock"
+	tradeHistoryMenuLimit      = 10
 
 	cbMenuMonitor   = "menu_monitor"
 	cbMenuPositions = "menu_positions"
@@ -48,18 +50,21 @@ const (
 )
 
 type Bot struct {
-	apiBase        string
-	token          string
-	runtimeBase    string
-	runtimeClient  *botruntime.Client
-	client         *http.Client
-	logger         *zap.Logger
-	sessions       *sessionStore
-	pollTimeout    time.Duration
-	updateLimit    int
-	requestTimeout time.Duration
-	lockPath       string
-	lockFile       *os.File
+	apiBase              string
+	token                string
+	runtimeBase          string
+	runtimeClient        *botruntime.Client
+	client               *http.Client
+	logger               *zap.Logger
+	sessions             *sessionStore
+	pollTimeout          time.Duration
+	updateLimit          int
+	requestTimeout       time.Duration
+	observeTimeout       time.Duration
+	observePollInterval  time.Duration
+	lockPath             string
+	lockFile             *os.File
+	renderRuntimePayload func(context.Context, string, uint, map[string]any, map[string]any, string) (*cardimage.ImageAsset, error)
 }
 
 func New(cfg Config, logger *zap.Logger) (*Bot, error) {
@@ -81,6 +86,14 @@ func New(cfg Config, logger *zap.Logger) (*Bot, error) {
 	if requestTimeout <= 0 {
 		requestTimeout = defaultRequestTimeout
 	}
+	observeTimeout := cfg.ObserveTimeout
+	if observeTimeout <= 0 {
+		observeTimeout = defaultObserveTimeout
+	}
+	observePollInterval := cfg.ObservePollInterval
+	if observePollInterval <= 0 {
+		observePollInterval = defaultObservePollInterval
+	}
 	sessionTTL := cfg.SessionTTL
 	if sessionTTL <= 0 {
 		sessionTTL = defaultSessionTTL
@@ -100,17 +113,22 @@ func New(cfg Config, logger *zap.Logger) (*Bot, error) {
 	}
 
 	return &Bot{
-		apiBase:        defaultAPIBASE,
-		token:          strings.TrimSpace(cfg.Token),
-		runtimeBase:    runtimeBase,
-		runtimeClient:  runtimeClient,
-		client:         httpClient,
-		logger:         logger,
-		sessions:       newSessionStore(sessionTTL),
-		pollTimeout:    pollTimeout,
-		updateLimit:    updateLimit,
-		requestTimeout: requestTimeout,
-		lockPath:       lockPath,
+		apiBase:             defaultAPIBASE,
+		token:               strings.TrimSpace(cfg.Token),
+		runtimeBase:         runtimeBase,
+		runtimeClient:       runtimeClient,
+		client:              httpClient,
+		logger:              logger,
+		sessions:            newSessionStore(sessionTTL),
+		pollTimeout:         pollTimeout,
+		updateLimit:         updateLimit,
+		requestTimeout:      requestTimeout,
+		observeTimeout:      observeTimeout,
+		observePollInterval: observePollInterval,
+		lockPath:            lockPath,
+		renderRuntimePayload: func(ctx context.Context, symbol string, snapshotID uint, gate map[string]any, agent map[string]any, title string) (*cardimage.ImageAsset, error) {
+			return cardimage.NewOGRenderer().RenderRuntimePayload(ctx, symbol, snapshotID, gate, agent, title)
+		},
 	}, nil
 }
 
@@ -243,6 +261,11 @@ func (b *Bot) runObserve(ctx context.Context, req ObserveRequest) (ObserveRespon
 	if hasObserveReport(out) && strings.EqualFold(strings.TrimSpace(out.Status), "ok") {
 		return out, nil
 	}
+	b.logger.Info("telegram observe awaiting report",
+		zap.String("symbol", strings.TrimSpace(req.Symbol)),
+		zap.String("status", strings.TrimSpace(out.Status)),
+		zap.String("request_id", strings.TrimSpace(out.RequestID)),
+	)
 	if out.Symbol == "" {
 		out.Symbol = req.Symbol
 	}
@@ -471,18 +494,17 @@ func (b *Bot) toggleSchedule(ctx context.Context, chatID int64, enable bool) {
 }
 
 func (b *Bot) executeObserveFlat(parent context.Context, chatID int64, symbol string) {
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, b.requestTimeout)
+	ctx, cancel := b.newDetachedTimeoutContext(parent, b.effectiveObserveTimeout())
 	defer cancel()
 	req := ObserveRequest{Symbol: symbol}
 	resp, err := b.runObserve(ctx, req)
+	sendCtx, sendCancel := b.newDetachedTimeoutContext(parent, b.effectiveRequestTimeout())
+	defer sendCancel()
 	if err != nil {
-		b.sendText(ctx, chatID, fmt.Sprintf("单轮决策失败：%s", err.Error()))
+		b.sendText(sendCtx, chatID, fmt.Sprintf("单轮决策失败：%s", err.Error()))
 		return
 	}
-	b.sendObserveResponse(ctx, chatID, resp)
+	b.sendObserveResponse(sendCtx, chatID, resp)
 }
 
 func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp ObserveResponse) {
@@ -491,10 +513,23 @@ func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp Observ
 		if text == "" {
 			text = "观察结果缺少渲染数据"
 		}
+		b.logger.Warn("telegram observe missing render payload",
+			zap.String("symbol", strings.TrimSpace(resp.Symbol)),
+			zap.String("status", strings.TrimSpace(resp.Status)),
+			zap.String("request_id", strings.TrimSpace(resp.RequestID)),
+			zap.Bool("has_agent", len(resp.Agent) > 0),
+			zap.Bool("has_gate", len(resp.Gate) > 0),
+		)
 		b.sendText(ctx, chatID, text)
 		return
 	}
-	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
+	render := b.renderRuntimePayload
+	if render == nil {
+		render = func(ctx context.Context, symbol string, snapshotID uint, gate map[string]any, agent map[string]any, title string) (*cardimage.ImageAsset, error) {
+			return cardimage.NewOGRenderer().RenderRuntimePayload(ctx, symbol, snapshotID, gate, agent, title)
+		}
+	}
+	asset, err := render(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
 	if err != nil {
 		b.logger.Warn("telegram observe image render failed", zap.String("symbol", resp.Symbol), zap.Error(err))
 		b.sendText(ctx, chatID, fmt.Sprintf("观察图片生成失败：%s", err.Error()))
@@ -515,16 +550,25 @@ func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (
 		return ObserveResponse{}, false
 	}
 	deadline, hasDeadline := ctx.Deadline()
-	interval := 2 * time.Second
+	interval := b.effectiveObservePollInterval()
 	if interval <= 0 {
 		interval = time.Second
 	}
 	for {
 		if hasDeadline && time.Now().After(deadline) {
+			b.logger.Warn("telegram observe report wait timed out",
+				zap.String("symbol", strings.TrimSpace(symbol)),
+				zap.String("request_id", strings.TrimSpace(requestID)),
+			)
 			return ObserveResponse{}, false
 		}
 		select {
 		case <-ctx.Done():
+			b.logger.Warn("telegram observe report wait canceled",
+				zap.String("symbol", strings.TrimSpace(symbol)),
+				zap.String("request_id", strings.TrimSpace(requestID)),
+				zap.Error(ctx.Err()),
+			)
 			return ObserveResponse{}, false
 		case <-time.After(interval):
 		}
@@ -536,6 +580,11 @@ func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (
 			continue
 		}
 		if hasObserveReport(resp) || strings.EqualFold(strings.TrimSpace(resp.Status), "ok") {
+			b.logger.Info("telegram observe report ready",
+				zap.String("symbol", strings.TrimSpace(symbol)),
+				zap.String("request_id", strings.TrimSpace(resp.RequestID)),
+				zap.String("status", strings.TrimSpace(resp.Status)),
+			)
 			return resp, true
 		}
 	}
@@ -601,4 +650,36 @@ func (b *Bot) doTelegramRequest(ctx context.Context, method, path string, payloa
 
 func normalizeSymbol(symbol string) string {
 	return symbolpkg.Normalize(symbol)
+}
+
+func (b *Bot) effectiveRequestTimeout() time.Duration {
+	if b == nil || b.requestTimeout <= 0 {
+		return defaultRequestTimeout
+	}
+	return b.requestTimeout
+}
+
+func (b *Bot) effectiveObserveTimeout() time.Duration {
+	if b == nil || b.observeTimeout <= 0 {
+		return defaultObserveTimeout
+	}
+	return b.observeTimeout
+}
+
+func (b *Bot) effectiveObservePollInterval() time.Duration {
+	if b == nil || b.observePollInterval <= 0 {
+		return defaultObservePollInterval
+	}
+	return b.observePollInterval
+}
+
+func (b *Bot) newDetachedTimeoutContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		timeout = defaultRequestTimeout
+	}
+	base := context.Background()
+	if parent != nil {
+		base = context.WithoutCancel(parent)
+	}
+	return context.WithTimeout(base, timeout)
 }

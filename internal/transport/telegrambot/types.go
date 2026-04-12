@@ -7,13 +7,15 @@ import (
 )
 
 type Config struct {
-	Token          string
-	RuntimeBaseURL string
-	PollTimeout    time.Duration
-	UpdateLimit    int
-	SessionTTL     time.Duration
-	RequestTimeout time.Duration
-	LockPath       string
+	Token               string
+	RuntimeBaseURL      string
+	PollTimeout         time.Duration
+	UpdateLimit         int
+	SessionTTL          time.Duration
+	RequestTimeout      time.Duration
+	ObserveTimeout      time.Duration
+	ObservePollInterval time.Duration
+	LockPath            string
 }
 
 type ObserveRequest = botruntime.ObserveRunRequest
