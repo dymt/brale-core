@@ -160,6 +160,9 @@ func TestTalibRequiredBarsHelpers(t *testing.T) {
 	if got := CHOPRequiredBars(14); got != 15 {
 		t.Fatalf("CHOPRequiredBars(14)=%d want 15", got)
 	}
+	if got := CHOPRequiredBars(1); got != 2 {
+		t.Fatalf("CHOPRequiredBars(1)=%d want 2", got)
+	}
 	if got := StochRSIRequiredBars(14, 14); got != 28 {
 		t.Fatalf("StochRSIRequiredBars(14, 14)=%d want 28", got)
 	}

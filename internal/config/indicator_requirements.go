@@ -52,7 +52,7 @@ func BBRequiredBars(period int) int {
 // CHOPRequiredBars returns the minimum number of bars needed before CHOP can
 // produce its first usable value.
 func CHOPRequiredBars(period int) int {
-	if period <= 1 {
+	if period <= 0 {
 		return 0
 	}
 	return period + 1
