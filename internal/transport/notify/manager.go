@@ -166,6 +166,13 @@ func NewManager(cfg NotificationConfig, formatter decisionfmt.Formatter) (Notifi
 	return Manager{formatter: formatter, renderer: cardimage.NewOGRenderer(), senders: senders, dedupe: newDedupeGuard(defaultNotifyDedupeTTL)}, nil
 }
 
+func NewTestManager(senders ...Sender) Manager {
+	return Manager{
+		senders: append([]Sender(nil), senders...),
+		dedupe:  newDedupeGuard(defaultNotifyDedupeTTL),
+	}
+}
+
 func (m Manager) SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error {
 	if m.renderer == nil {
 		return fmt.Errorf("decision image renderer is required")

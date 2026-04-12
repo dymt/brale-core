@@ -10,16 +10,28 @@ import (
 )
 
 type Notifier interface {
+	GateNotifier
+	PositionNotifier
+	TradeNotifier
+}
+
+type GateNotifier interface {
 	SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error
 	SendStartup(ctx context.Context) error
+	SendError(ctx context.Context, message string) error
+}
+
+type PositionNotifier interface {
 	SendPositionOpen(ctx context.Context, notice PositionOpenNotice) error
 	SendPositionClose(ctx context.Context, notice PositionCloseNotice) error
 	SendPositionCloseSummary(ctx context.Context, notice PositionCloseSummaryNotice) error
 	SendRiskPlanUpdate(ctx context.Context, notice RiskPlanUpdateNotice) error
+}
+
+type TradeNotifier interface {
 	SendTradeOpen(ctx context.Context, notice TradeOpenNotice) error
 	SendTradePartialClose(ctx context.Context, notice TradePartialCloseNotice) error
 	SendTradeCloseSummary(ctx context.Context, notice TradeCloseSummaryNotice) error
-	SendError(ctx context.Context, message string) error
 }
 
 type PositionOpenNotice = notifyport.PositionOpenNotice
