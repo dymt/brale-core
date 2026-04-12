@@ -11,6 +11,7 @@ import (
 
 	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/decisionmode"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/fund"
 	"brale-core/internal/decision/provider"
@@ -116,6 +117,7 @@ func (p *Pipeline) validate() error {
 }
 
 func (p *Pipeline) getBinding(symbol string) (strategy.StrategyBinding, error) {
+	symbol = decisionutil.NormalizeSymbol(symbol)
 	bind, ok := p.Bindings[symbol]
 	if !ok {
 		return strategy.StrategyBinding{}, fmt.Errorf("binding not found")

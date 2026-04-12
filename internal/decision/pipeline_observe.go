@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"brale-core/internal/decision/decisionmode"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
@@ -214,9 +215,14 @@ func (p *Pipeline) resolveDecisionContexts(ctx context.Context, symbols []string
 		if err != nil {
 			return nil, err
 		}
-		contexts[symbol] = symbolDecisionContext{
+		ctxInfo := symbolDecisionContext{
 			Mode:       decisionmode.Resolve(state == fsm.StateInPosition),
 			PositionID: posID,
+		}
+		contexts[symbol] = ctxInfo
+		normalized := decisionutil.NormalizeSymbol(symbol)
+		if normalized != "" && normalized != symbol {
+			contexts[normalized] = ctxInfo
 		}
 	}
 	return contexts, nil

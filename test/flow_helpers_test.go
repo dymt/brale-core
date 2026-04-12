@@ -15,6 +15,7 @@ import (
 	"brale-core/internal/config"
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/agent"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/decision/fund"
@@ -57,8 +58,8 @@ type fakeAgent struct {
 	mechanics agent.MechanicsSummary
 }
 
-func (f fakeAgent) Analyze(_ context.Context, _ string, _ features.CompressionResult, _ decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, error) {
-	return f.indicator, f.structure, f.mechanics, decision.AgentPromptSet{}, nil
+func (f fakeAgent) Analyze(_ context.Context, _ string, _ features.CompressionResult, _ decision.AgentEnabled) (agent.IndicatorSummary, agent.StructureSummary, agent.MechanicsSummary, decision.AgentPromptSet, decision.AgentInputSet, error) {
+	return f.indicator, f.structure, f.mechanics, decision.AgentPromptSet{}, decision.AgentInputSet{}, nil
 }
 
 type fakeProvider struct {
@@ -357,6 +358,7 @@ func (f fakeRuleflow) Evaluate(_ context.Context, _ string, input ruleflow.Input
 		CreatedAt:    time.Now().UTC(),
 		ExpiresAt:    time.Now().UTC().Add(24 * time.Hour),
 		TakeProfits:  []float64{tpLevel},
+		TakeProfitRatios: []float64{1},
 		RiskAnnotations: execution.RiskAnnotations{
 			StopSource:   stopSource,
 			StopReason:   "atr_multiple",
@@ -401,25 +403,40 @@ func newPipelineEnv(t *testing.T, cfg pipelineConfig) pipelineEnv {
 		Symbol:    cfg.symbol,
 		Intervals: []string{"1h"},
 	}
-
 	riskMgmt := defaultRiskManagementConfig()
+	normalizedSymbol := decisionutil.NormalizeSymbol(cfg.symbol)
+	indicatorBySymbol := map[string]map[string]features.IndicatorJSON{
+		cfg.symbol: {"1h": {Symbol: cfg.symbol, Interval: "1h", RawJSON: []byte(`{"close":10000,"atr":100}`)}},
+	}
+	trendBySymbol := map[string]map[string]features.TrendJSON{
+		cfg.symbol: {"1h": {Symbol: cfg.symbol, Interval: "1h", RawJSON: []byte(`{"structure_candidates":[{"price":10000,"type":"support"}],"structure_points":[{"idx":1,"price":9900,"type":"low"}]}`)}},
+	}
+	bindings := map[string]strategy.StrategyBinding{
+		cfg.symbol: {Symbol: cfg.bind.Symbol, StrategyID: cfg.bind.StrategyID, SystemHash: cfg.bind.SystemHash, StrategyHash: cfg.bind.StrategyHash, RuleChainPath: "configs/rules/default.json", RiskManagement: riskMgmt},
+	}
+	configs := map[string]config.SymbolConfig{cfg.symbol: symCfg}
+	enabledMap := map[string]decision.AgentEnabled{
+		cfg.symbol: {Indicator: true, Structure: true, Mechanics: true},
+	}
+	if normalizedSymbol != "" && normalizedSymbol != cfg.symbol {
+		indicatorBySymbol[normalizedSymbol] = indicatorBySymbol[cfg.symbol]
+		trendBySymbol[normalizedSymbol] = trendBySymbol[cfg.symbol]
+		bindings[normalizedSymbol] = bindings[cfg.symbol]
+		configs[normalizedSymbol] = symCfg
+		enabledMap[normalizedSymbol] = enabledMap[cfg.symbol]
+	}
+
 	runner := &decision.Runner{
 		Snapshotter: fakeSnapshotter{},
 		Compressor: fakeCompressor{comp: features.CompressionResult{
-			Indicators: map[string]map[string]features.IndicatorJSON{
-				cfg.symbol: {"1h": {Symbol: cfg.symbol, Interval: "1h", RawJSON: []byte(`{"close":10000,"atr":100}`)}},
-			},
-			Trends: map[string]map[string]features.TrendJSON{
-				cfg.symbol: {"1h": {Symbol: cfg.symbol, Interval: "1h", RawJSON: []byte(`{"structure_candidates":[{"price":10000,"type":"support"}],"structure_points":[{"idx":1,"price":9900,"type":"low"}]}`)}},
-			},
+			Indicators: indicatorBySymbol,
+			Trends:     trendBySymbol,
 		}},
 		Agent:    fakeAgent{structure: agent.StructureSummary{Regime: regime, LastBreak: lastBreak}},
 		Provider: fakeProvider{indicator: cfg.providers.Indicator, structure: cfg.providers.Structure, mechanics: cfg.providers.Mechanics},
-		Bindings: map[string]strategy.StrategyBinding{cfg.symbol: {Symbol: cfg.bind.Symbol, StrategyID: cfg.bind.StrategyID, SystemHash: cfg.bind.SystemHash, StrategyHash: cfg.bind.StrategyHash, RuleChainPath: "configs/rules/default.json", RiskManagement: riskMgmt}},
-		Configs:  map[string]config.SymbolConfig{cfg.symbol: symCfg},
-		Enabled: map[string]decision.AgentEnabled{
-			cfg.symbol: {Indicator: true, Structure: true, Mechanics: true},
-		},
+		Bindings: bindings,
+		Configs:  configs,
+		Enabled:  enabledMap,
 		Ruleflow: ruleflow.Evaluator(fakeRuleflow{gateDecision: cfg.gateDecision, positionID: cfg.positionID, symbol: cfg.symbol}),
 	}
 
@@ -439,7 +456,7 @@ func newPipelineEnv(t *testing.T, cfg pipelineConfig) pipelineEnv {
 			stateProvider,
 		),
 		ExecutionSystem: "freqtrade",
-		Bindings:        map[string]strategy.StrategyBinding{cfg.symbol: cfg.bind},
+		Bindings:        bindings,
 	}
 	hooks := decision.StoreHooks{Store: storeImpl, SystemHash: "sys", StrategyHash: "strat", SourceVersion: "test"}
 	pipeline.AgentStore = hooks.SaveAgent

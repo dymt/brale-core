@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"brale-core/internal/decision/decisionmode"
+	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/decision/features"
 	"brale-core/internal/decision/fsm"
 	"brale-core/internal/execution"
@@ -58,6 +59,10 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 			continue
 		}
 		modeBySymbol[symbol] = ctxInfo.Mode
+		normalized := decisionutil.NormalizeSymbol(symbol)
+		if normalized != "" && normalized != symbol {
+			modeBySymbol[normalized] = ctxInfo.Mode
+		}
 		if p.shouldSkipSymbolByEntryCooldown(symbol, ctxInfo.Mode, logger) {
 			cooldownSkipped[symbol] = PersistResult{Symbol: symbol, Gate: gateReasonEntryCooldownActive}
 			continue
@@ -122,6 +127,10 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 	for _, symbol := range symbols {
 		if pr, ok := outBySymbol[symbol]; ok {
 			out = append(out, pr)
+			continue
+		}
+		if pr, ok := outBySymbol[decisionutil.NormalizeSymbol(symbol)]; ok {
+			out = append(out, pr)
 		}
 	}
 	logger.Debug("pipeline run complete",
@@ -154,11 +163,15 @@ func (p *Pipeline) enrichRunOptions(opts RunOptions, symbols []string, modeBySym
 		if _, ok := riskModeBySymbol[symbol]; ok {
 			continue
 		}
-		bind, ok := p.Bindings[symbol]
-		if !ok {
+		bind, err := p.getBinding(symbol)
+		if err != nil {
 			continue
 		}
 		riskModeBySymbol[symbol] = resolveTightenPlanSource(bind)
+		normalized := decisionutil.NormalizeSymbol(symbol)
+		if normalized != "" && normalized != symbol {
+			riskModeBySymbol[normalized] = riskModeBySymbol[symbol]
+		}
 	}
 	runOpts.RiskStrategyModeBySymbol = riskModeBySymbol
 	return runOpts
