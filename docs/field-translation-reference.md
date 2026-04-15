@@ -42,6 +42,15 @@
 | below | 下方 | 价格位于该 EMA 下方 |
 | near | 附近 | 价格紧贴该 EMA |
 
+### 3.2a EMA 距离（ema_distance_fast_atr / ema_distance_mid_atr）
+
+| 字段名 | 中文名 | 含义 |
+|---------|------|------|
+| ema_distance_fast_atr | 快线EMA距离(ATR) | 价格与快线EMA的距离，以ATR为单位 |
+| ema_distance_mid_atr | 中线EMA距离(ATR) | 价格与中线EMA的距离，以ATR为单位 |
+
+数值越大表示价格偏离均线越远，可能出现回归均值的走势。
+
 ### 3.3 RSI 斜率（rsi_slope_state）
 
 | 原字段值 | 中文 | 含义 | 对决策的意义 |
@@ -119,6 +128,19 @@
 | ema_stack_bear_flip | EMA转为空头排列 | 均线系统翻空 |
 | aroon_strong_bullish | 阿隆指标强势看多 | 阿隆指标发出强烈看涨信号 |
 | aroon_strong_bearish | 阿隆指标强势看空 | 阿隆指标发出强烈看跌信号 |
+
+### 3.11a TD Sequential 动态事件
+
+TD Sequential 事件由代码动态生成（indicator_state.go:458-462），格式为 `td_{buy|sell}_setup_{N}`，其中 N 为 8–13。
+
+| 事件模式 | 中文翻译 | 含义 |
+|---------|---------|------|
+| td_buy_setup_8 | TD买入序列8 | TD Sequential 买入序列第 8 根 K 线 |
+| td_buy_setup_9 | TD买入序列9 | TD Sequential 买入序列完成（经典信号） |
+| td_buy_setup_10..13 | TD买入序列10..13 | 买入序列延伸，信号减弱 |
+| td_sell_setup_8 | TD卖出序列8 | TD Sequential 卖出序列第 8 根 K 线 |
+| td_sell_setup_9 | TD卖出序列9 | TD Sequential 卖出序列完成（经典信号） |
+| td_sell_setup_10..13 | TD卖出序列10..13 | 卖出序列延伸，信号减弱 |
 
 ### 3.12 跨周期汇总（cross_tf_summary）
 
@@ -386,6 +408,8 @@
 | stable | 稳定 | 杠杆/波动状态 |
 | expanding | 波动/动能扩张 | 波动率方向 |
 | contracting | 波动/动能收敛 | 波动率方向 |
+| moderate | 温和 | 斜率幅度（趋势斜率介于平缓和陡峭之间） |
+| steep | 陡峭 | 斜率幅度（趋势斜率较大，动能强劲） |
 
 ---
 
