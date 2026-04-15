@@ -18,6 +18,18 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+type errReadCloser struct {
+	err error
+}
+
+func (r errReadCloser) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func (r errReadCloser) Close() error {
+	return nil
+}
+
 func newTestHTTPClient(fn roundTripFunc) *http.Client {
 	return &http.Client{Transport: fn}
 }
@@ -221,5 +233,113 @@ func TestOpenAIClientCallOnceRetriesTransportErrors(t *testing.T) {
 	}
 	if got := attempts.Load(); got != 2 {
 		t.Fatalf("attempts=%d want 2", got)
+	}
+}
+
+func TestOpenAIClientCallOnceReturnsBodyReadError(t *testing.T) {
+	client := &OpenAIClient{
+		Endpoint: "https://llm.example.com",
+		Model:    "m",
+		APIKey:   "k",
+		Timeout:  time.Second,
+		HTTPClient: newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Status:     "500 Internal Server Error",
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       errReadCloser{err: fmt.Errorf("body boom")},
+			}, nil
+		}),
+	}
+
+	_, _, err := client.callOnce(context.Background(), "https://llm.example.com/chat/completions", []byte(`{"ok":true}`), time.Second)
+	if err == nil {
+		t.Fatal("callOnce() error = nil, want body read error")
+	}
+	if !strings.Contains(err.Error(), "read response body") {
+		t.Fatalf("error=%q should mention body read context", err.Error())
+	}
+	if !strings.Contains(err.Error(), "body boom") {
+		t.Fatalf("error=%q should mention underlying body read error", err.Error())
+	}
+}
+
+func TestOpenAIClientCallMultiTurnPassesAllMessages(t *testing.T) {
+	var sentMessages []map[string]string
+	client := &OpenAIClient{
+		Endpoint: "https://llm.example.com",
+		Model:    "m",
+		APIKey:   "k",
+		Timeout:  time.Second,
+		HTTPClient: newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+			var req map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			msgs, _ := req["messages"].([]any)
+			for _, m := range msgs {
+				msg, _ := m.(map[string]any)
+				sentMessages = append(sentMessages, map[string]string{
+					"role":    fmt.Sprint(msg["role"]),
+					"content": fmt.Sprint(msg["content"]),
+				})
+			}
+			return jsonResponse(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`), nil
+		}),
+	}
+
+	messages := []ChatMessage{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: "Hello"},
+		{Role: "assistant", Content: "Hi there!"},
+		{Role: "user", Content: "How are you?"},
+	}
+	out, err := client.CallMultiTurn(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("CallMultiTurn() error = %v", err)
+	}
+	if out != `{"ok":true}` {
+		t.Fatalf("output=%q want %q", out, `{"ok":true}`)
+	}
+	if len(sentMessages) != 4 {
+		t.Fatalf("sent %d messages want 4", len(sentMessages))
+	}
+	if sentMessages[0]["role"] != "system" {
+		t.Fatalf("first message role=%q want system", sentMessages[0]["role"])
+	}
+	if sentMessages[2]["role"] != "assistant" {
+		t.Fatalf("third message role=%q want assistant", sentMessages[2]["role"])
+	}
+	if sentMessages[3]["content"] != "How are you?" {
+		t.Fatalf("fourth message content=%q want 'How are you?'", sentMessages[3]["content"])
+	}
+}
+
+func TestOpenAIClientCallMultiTurnUsesJSONObjectFormat(t *testing.T) {
+	var responseFormat map[string]any
+	client := &OpenAIClient{
+		Endpoint: "https://llm.example.com",
+		Model:    "m",
+		APIKey:   "k",
+		Timeout:  time.Second,
+		HTTPClient: newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+			var req map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			responseFormat, _ = req["response_format"].(map[string]any)
+			return jsonResponse(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`), nil
+		}),
+	}
+
+	messages := []ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "usr"},
+	}
+	if _, err := client.CallMultiTurn(context.Background(), messages); err != nil {
+		t.Fatalf("CallMultiTurn() error = %v", err)
+	}
+	if responseFormat["type"] != "json_object" {
+		t.Fatalf("response_format.type=%v want json_object", responseFormat["type"])
 	}
 }

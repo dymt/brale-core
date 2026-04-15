@@ -31,13 +31,16 @@ type OpenAIClient struct {
 
 type chatRequest struct {
 	Model          string        `json:"model"`
-	Messages       []chatMessage `json:"messages"`
+	Messages       []ChatMessage `json:"messages"`
 	MaxTokens      int           `json:"max_tokens"`
 	ResponseFormat any           `json:"response_format,omitempty"`
 	Temperature    float64       `json:"temperature"`
 }
 
-type chatMessage struct {
+// ChatMessage represents a single message in an LLM conversation.
+// Exported so that external packages (reflection, MCP interaction) can
+// build multi-turn message histories.
+type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
@@ -51,7 +54,7 @@ type chatResponse struct {
 }
 
 func (c *OpenAIClient) Call(ctx context.Context, system, user string) (string, error) {
-	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
+	messages := []ChatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
 	return c.doCall(ctx, messages, jsonObjectFormat())
 }
 
@@ -59,11 +62,18 @@ func (c *OpenAIClient) CallStructured(ctx context.Context, system, user string, 
 	if !c.StructuredOutput {
 		return c.Call(ctx, system, user)
 	}
-	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
+	messages := []ChatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}
 	return c.doCall(ctx, messages, jsonSchemaFormat(schema))
 }
 
-func (c *OpenAIClient) doCall(ctx context.Context, messages []chatMessage, responseFormat any) (string, error) {
+// CallMultiTurn accepts a pre-built message history for multi-turn
+// conversations. Intended for reflection, interactive CLI, and MCP
+// workflows — not for the main trading decision pipeline.
+func (c *OpenAIClient) CallMultiTurn(ctx context.Context, messages []ChatMessage) (string, error) {
+	return c.doCall(ctx, messages, jsonObjectFormat())
+}
+
+func (c *OpenAIClient) doCall(ctx context.Context, messages []ChatMessage, responseFormat any) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -173,7 +183,10 @@ func (c *OpenAIClient) callOnce(ctx context.Context, url string, raw []byte, tim
 		_ = resp.Body.Close()
 	}()
 
-	bodyBytes, _ := httpclient.ReadLimitedBody(resp.Body, 4*1024*1024)
+	bodyBytes, err := httpclient.ReadLimitedBody(resp.Body, 4*1024*1024)
+	if err != nil {
+		return "", 0, fmt.Errorf("read response body: %w", err)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyText := strings.TrimSpace(string(bodyBytes))
 		if resp.StatusCode == http.StatusTooManyRequests {
