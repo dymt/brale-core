@@ -123,3 +123,40 @@ services:
       - type: bind
         source: ${BRALE_DATA_ROOT:-./data/brale}
         target: /app/data
+
+  mcp-sse:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: brale-runtime
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["/app/bralectl"]
+    command:
+      - "mcp"
+      - "serve"
+      - "--mode"
+      - "sse"
+      - "--addr"
+      - "0.0.0.0:8765"
+      - "--system"
+      - "/app/configs/system.toml"
+      - "--index"
+      - "/app/configs/symbols-index.toml"
+    depends_on:
+      brale:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - type: bind
+        source: ${BRALE_CONFIG_ROOT:-./configs}
+        target: /app/configs
+        read_only: true
+      - type: bind
+        source: ${BRALE_DATA_ROOT:-./data/brale}
+        target: /app/data
+    restart: unless-stopped
