@@ -198,6 +198,37 @@ var translatedTerms = map[string]string{
 	"ema_stack_bear_flip":       "EMA转为空头排列",
 	"aroon_strong_bullish":      "阿隆指标强势看多",
 	"aroon_strong_bearish":      "阿隆指标强势看空",
+	// OI-价格关系 (mechanics_state.go classifyOIPriceRelation)
+	"price_up_oi_up":   "价格上涨/OI上升",
+	"price_up_oi_down": "价格上涨/OI下降",
+	"price_down_oi_up": "价格下跌/OI上升",
+	"price_down_oi_down": "价格下跌/OI下降",
+	// 情绪状态 (mechanics_state.go classifySentiment)
+	"fear":          "恐惧",
+	"greed":         "贪婪",
+	"extreme_greed": "极度贪婪",
+	// 资金费率热度 / 清算压力 (mechanics_state.go)
+	"hot":      "过热",
+	"elevated": "偏高",
+	// 机制冲突 (mechanics_state.go detectMechanicsConflicts)
+	"crowding_long_but_liq_stress_high":  "多头拥挤但清算压力高",
+	"crowding_short_but_liq_stress_high": "空头拥挤但清算压力高",
+	"funding_long_but_oi_falling":        "资金费率偏多但OI下降",
+	"funding_short_but_oi_rising":        "资金费率偏空但OI上升",
+	// 结构突破事件类型 (trend_compress.go)
+	"break_up":   "向上突破",
+	"break_down": "向下突破",
+	// SuperTrend 状态 / 情绪标签
+	"bullish":      "看多",
+	"bearish":      "看空",
+	"Strong Long":  "强烈看多",
+	"Strong Short": "强烈看空",
+	"Long Bias":    "偏多",
+	"Short Bias":   "偏空",
+	"strong long":  "强烈看多",
+	"strong short": "强烈看空",
+	"long bias":    "偏多",
+	"short bias":   "偏空",
 }
 
 var llmKeyLabels = map[string]string{
@@ -269,6 +300,36 @@ var llmKeyLabels = map[string]string{
 	"price_vs_ema_mid":     "价格vs中线EMA",
 	"price_vs_ema_slow":    "价格vs慢线EMA",
 	"freshness_sec":        "数据新鲜度(秒)",
+	// 机制状态字段 (mechanics_state.go)
+	"oi_state":           "持仓量状态",
+	"funding_state":      "资金费率状态",
+	"crowding_state":     "拥挤度状态",
+	"liquidation_state":  "清算状态",
+	"sentiment_state":    "市场情绪",
+	"mechanics_conflict": "机制冲突",
+	"oi_price_relation":  "OI-价格关系",
+	"change_state":       "变化状态",
+	"fear_greed":         "恐贪指数",
+	"top_trader_bias":    "大户偏向",
+	"reversal_risk":      "反转风险",
+	"stress":             "清算压力",
+	"heat":               "资金费率热度",
+	"ls_ratio":           "多空比",
+	"taker_ratio":        "主动买卖比",
+	"oi_change_pct":      "OI变化率",
+	"price_change_pct":   "价格变化率",
+	// 趋势结构字段 (trend_compress.go)
+	"vol_ratio":                 "成交量比率",
+	"level_price":               "关键价位",
+	"order_block":               "订单块(Order Block)",
+	"fvg":                       "公允价值缺口(FVG)",
+	"slope_state":               "斜率状态",
+	"trend_slope":               "趋势斜率",
+	"break_events":              "结构突破事件",
+	"break_summary":             "突破汇总",
+	"supertrend":                "SuperTrend指标",
+	"tag":                       "情绪标签",
+	"taker_long_short_vol_ratio": "主买/主卖成交量比",
 }
 
 var providerRoleLabels = map[string]string{
@@ -550,7 +611,7 @@ func normalizeDirtyValue(value string) string {
 
 // FormatEventList translates an event list string like "events=price_cross_ema_fast_down"
 // or "events含 aroon_strong_bearish" into fully translated Chinese text.
-var eventsPattern = regexp.MustCompile(`(?i)(events)\s*([=含])\s*(.+)`)
+var eventsPattern = regexp.MustCompile(`(?i)(?:^|\b)(events)\s*([=含])\s*(.+)`)
 
 func FormatEventList(text string) string {
 	return eventsPattern.ReplaceAllStringFunc(text, func(match string) string {

@@ -142,6 +142,29 @@ const valueMap = new Map([
   ['conflict', '冲突/分歧'],
   ['long', '多头方向'],
   ['short', '空头方向'],
+  // OI-价格关系 (mechanics_state.go)
+  ['price_up_oi_up', '价格上涨/OI上升'],
+  ['price_up_oi_down', '价格上涨/OI下降'],
+  ['price_down_oi_up', '价格下跌/OI上升'],
+  ['price_down_oi_down', '价格下跌/OI下降'],
+  // 情绪状态 (mechanics_state.go)
+  ['fear', '恐惧'],
+  ['greed', '贪婪'],
+  ['extreme_greed', '极度贪婪'],
+  // 资金费率热度 / 清算压力
+  ['hot', '过热'],
+  ['elevated', '偏高'],
+  // 机制冲突
+  ['crowding_long_but_liq_stress_high', '多头拥挤但清算压力高'],
+  ['crowding_short_but_liq_stress_high', '空头拥挤但清算压力高'],
+  ['funding_long_but_oi_falling', '资金费率偏多但OI下降'],
+  ['funding_short_but_oi_rising', '资金费率偏空但OI上升'],
+  // 结构突破事件
+  ['break_up', '向上突破'],
+  ['break_down', '向下突破'],
+  // SuperTrend / 情绪标签
+  ['bullish', '看多'],
+  ['bearish', '看空'],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -178,6 +201,11 @@ const phraseMap = new Map([
   ['in 4h', '在4小时内'],
   ['over 4h', '4小时以上'],
   ['over 1h', '1小时以上'],
+  // 情绪标签 (sentiment_service.go)
+  ['Strong Long', '强烈看多'],
+  ['Strong Short', '强烈看空'],
+  ['Long Bias', '偏多'],
+  ['Short Bias', '偏空'],
 ]);
 
 // Word-level translations: applied with word-boundary matching only.
@@ -230,6 +258,35 @@ const fieldNameMap = new Map([
   ['CHOP', '震荡指数'],
   ['Aroon', '阿隆指标'],
   ['StochRSI', '随机RSI'],
+  // 机制状态字段 (mechanics_state.go)
+  ['oi_state', '持仓量状态'],
+  ['funding_state', '资金费率状态'],
+  ['crowding_state', '拥挤度状态'],
+  ['liquidation_state', '清算状态'],
+  ['sentiment_state', '市场情绪'],
+  ['mechanics_conflict', '机制冲突'],
+  ['oi_price_relation', 'OI-价格关系'],
+  ['change_state', '变化状态'],
+  ['top_trader_bias', '大户偏向'],
+  ['reversal_risk', '反转风险'],
+  ['stress', '清算压力'],
+  ['heat', '资金费率热度'],
+  ['ls_ratio', '多空比'],
+  ['taker_ratio', '主动买卖比'],
+  ['oi_change_pct', 'OI变化率'],
+  ['price_change_pct', '价格变化率'],
+  // 趋势结构字段 (trend_compress.go)
+  ['vol_ratio', '成交量比率'],
+  ['level_price', '关键价位'],
+  ['order_block', '订单块'],
+  ['fvg', '公允价值缺口'],
+  ['slope_state', '斜率状态'],
+  ['trend_slope', '趋势斜率'],
+  ['break_events', '结构突破事件'],
+  ['break_summary', '突破汇总'],
+  ['supertrend', 'SuperTrend指标'],
+  ['tag', '情绪标签'],
+  ['taker_long_short_vol_ratio', '主买/主卖成交量比'],
 ]);
 
 function mapValue(value) {

@@ -168,6 +168,157 @@ func TestTranslateTermIndicatorStates(t *testing.T) {
 	}
 }
 
+func TestTranslateTermMechanicsStates(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		// OI-价格关系
+		{in: "price_up_oi_up", want: "price_up_oi_up(价格上涨/OI上升)"},
+		{in: "price_up_oi_down", want: "price_up_oi_down(价格上涨/OI下降)"},
+		{in: "price_down_oi_up", want: "price_down_oi_up(价格下跌/OI上升)"},
+		{in: "price_down_oi_down", want: "price_down_oi_down(价格下跌/OI下降)"},
+		// 情绪状态
+		{in: "fear", want: "fear(恐惧)"},
+		{in: "greed", want: "greed(贪婪)"},
+		{in: "extreme_greed", want: "extreme_greed(极度贪婪)"},
+		// 资金费率热度 / 清算压力
+		{in: "hot", want: "hot(过热)"},
+		{in: "elevated", want: "elevated(偏高)"},
+		// 机制冲突
+		{in: "crowding_long_but_liq_stress_high", want: "crowding_long_but_liq_stress_high(多头拥挤但清算压力高)"},
+		{in: "crowding_short_but_liq_stress_high", want: "crowding_short_but_liq_stress_high(空头拥挤但清算压力高)"},
+		{in: "funding_long_but_oi_falling", want: "funding_long_but_oi_falling(资金费率偏多但OI下降)"},
+		{in: "funding_short_but_oi_rising", want: "funding_short_but_oi_rising(资金费率偏空但OI上升)"},
+		// 趋势突破
+		{in: "break_up", want: "break_up(向上突破)"},
+		{in: "break_down", want: "break_down(向下突破)"},
+		// SuperTrend / 情绪标签
+		{in: "bullish", want: "bullish(看多)"},
+		{in: "bearish", want: "bearish(看空)"},
+		{in: "Strong Long", want: "Strong Long(强烈看多)"},
+		{in: "Strong Short", want: "Strong Short(强烈看空)"},
+		{in: "Long Bias", want: "Long Bias(偏多)"},
+		{in: "Short Bias", want: "Short Bias(偏空)"},
+	}
+	for _, tc := range tests {
+		if got := translateTerm(tc.in); got != tc.want {
+			t.Fatalf("translateTerm(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestTranslateLLMKeyMechanicsAndTrendFields(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		// Mechanics state fields
+		{in: "oi_state", want: "持仓量状态"},
+		{in: "funding_state", want: "资金费率状态"},
+		{in: "crowding_state", want: "拥挤度状态"},
+		{in: "liquidation_state", want: "清算状态"},
+		{in: "sentiment_state", want: "市场情绪"},
+		{in: "mechanics_conflict", want: "机制冲突"},
+		{in: "oi_price_relation", want: "OI-价格关系"},
+		{in: "change_state", want: "变化状态"},
+		{in: "fear_greed", want: "恐贪指数"},
+		{in: "top_trader_bias", want: "大户偏向"},
+		{in: "reversal_risk", want: "反转风险"},
+		{in: "stress", want: "清算压力"},
+		{in: "heat", want: "资金费率热度"},
+		{in: "ls_ratio", want: "多空比"},
+		{in: "taker_ratio", want: "主动买卖比"},
+		{in: "oi_change_pct", want: "OI变化率"},
+		{in: "price_change_pct", want: "价格变化率"},
+		// Trend fields
+		{in: "vol_ratio", want: "成交量比率"},
+		{in: "level_price", want: "关键价位"},
+		{in: "order_block", want: "订单块(Order Block)"},
+		{in: "fvg", want: "公允价值缺口(FVG)"},
+		{in: "slope_state", want: "斜率状态"},
+		{in: "trend_slope", want: "趋势斜率"},
+		{in: "break_events", want: "结构突破事件"},
+		{in: "break_summary", want: "突破汇总"},
+		{in: "supertrend", want: "SuperTrend指标"},
+		{in: "tag", want: "情绪标签"},
+		{in: "taker_long_short_vol_ratio", want: "主买/主卖成交量比"},
+	}
+	for _, tc := range tests {
+		if got := translateLLMKey(tc.in); got != tc.want {
+			t.Fatalf("translateLLMKey(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestTranslateLLMFieldRefsMechanics(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "oi_price_relation=price_down_oi_up",
+			in:   "oi_price_relation=price_down_oi_up",
+			want: "OI-价格关系=价格下跌/OI上升",
+		},
+		{
+			name: "dotted mechanics path",
+			in:   "oi_state.change_state=rising",
+			want: "持仓量状态.变化状态=上升",
+		},
+		{
+			name: "sentiment fear_greed=extreme_greed",
+			in:   "sentiment_state.fear_greed=extreme_greed",
+			want: "市场情绪.恐贪指数=极度贪婪",
+		},
+		{
+			name: "conflict string standalone",
+			in:   "crowding_long_but_liq_stress_high",
+			want: "多头拥挤但清算压力高",
+		},
+		{
+			name: "break event type",
+			in:   "break_events含 break_up",
+			want: "结构突破事件含 向上突破",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TranslateLLMFieldRefs(tc.in)
+			if got != tc.want {
+				t.Errorf("TranslateLLMFieldRefs(%q)\n  got  = %q\n  want = %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHalfTranslatedMechanicsRejected ensures conflict strings and compound values are
+// translated as whole units, never partially.
+func TestHalfTranslatedMechanicsRejected(t *testing.T) {
+	badOutputs := []string{
+		"crowding_多头方向_but",
+		"funding_多头方向_but",
+		"price_上行_oi",
+		"break_上行",
+	}
+	inputs := []string{
+		"crowding_long_but_liq_stress_high",
+		"funding_long_but_oi_falling",
+		"price_up_oi_down",
+		"break_up",
+	}
+	for _, input := range inputs {
+		got := TranslateLLMFieldRefs(input)
+		for _, bad := range badOutputs {
+			if strings.Contains(got, bad) {
+				t.Errorf("TranslateLLMFieldRefs(%q) produced half-translated output containing %q: %q",
+					input, bad, got)
+			}
+		}
+	}
+}
+
 func TestFormatEventList(t *testing.T) {
 	tests := []struct {
 		name string
