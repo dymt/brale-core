@@ -343,7 +343,10 @@ func (b *Bot) sendImage(ctx context.Context, chatID int64, asset *cardimage.Imag
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := httpclient.ReadLimitedBody(resp.Body, 2048)
+		bodyBytes, readErr := httpclient.ReadLimitedBody(resp.Body, 2048)
+		if readErr != nil {
+			return fmt.Errorf("telegram image send failed: read response body: %w", readErr)
+		}
 		return fmt.Errorf("telegram image send failed: %s", strings.TrimSpace(string(bodyBytes)))
 	}
 	return nil
@@ -637,7 +640,10 @@ func (b *Bot) doTelegramRequest(ctx context.Context, method, path string, payloa
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := httpclient.ReadLimitedBody(resp.Body, 2048)
+		bodyBytes, readErr := httpclient.ReadLimitedBody(resp.Body, 2048)
+		if readErr != nil {
+			return fmt.Errorf("telegram status %s: read response body: %w", resp.Status, readErr)
+		}
 		bodyText := strings.TrimSpace(string(bodyBytes))
 		if bodyText == "" {
 			return fmt.Errorf("telegram status %s", resp.Status)

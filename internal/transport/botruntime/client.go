@@ -103,6 +103,65 @@ func (c *Client) FetchObserveReport(ctx context.Context, symbol string) (Observe
 	return out, err
 }
 
+func (c *Client) FetchScheduleStatus(ctx context.Context) (ScheduleResponse, error) {
+	var out ScheduleResponse
+	err := c.Do(ctx, http.MethodGet, "/api/runtime/schedule/status", nil, &out)
+	return out, err
+}
+
+func (c *Client) FetchDashboardOverview(ctx context.Context, symbol string) (DashboardOverviewResponse, error) {
+	var out DashboardOverviewResponse
+	path := "/api/runtime/dashboard/overview"
+	if symbol = strings.TrimSpace(symbol); symbol != "" {
+		path += "?symbol=" + url.QueryEscape(symbol)
+	}
+	err := c.Do(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) FetchDashboardAccountSummary(ctx context.Context) (DashboardAccountSummaryResponse, error) {
+	var out DashboardAccountSummaryResponse
+	err := c.Do(ctx, http.MethodGet, "/api/runtime/dashboard/account_summary", nil, &out)
+	return out, err
+}
+
+func (c *Client) FetchDashboardKline(ctx context.Context, symbol, interval string, limit int) (DashboardKlineResponse, error) {
+	var out DashboardKlineResponse
+	query := url.Values{}
+	query.Set("symbol", symbol)
+	query.Set("interval", interval)
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	err := c.Do(ctx, http.MethodGet, "/api/runtime/dashboard/kline?"+query.Encode(), nil, &out)
+	return out, err
+}
+
+func (c *Client) FetchDashboardDecisionFlow(ctx context.Context, symbol string, snapshotID uint) (DashboardDecisionFlowResponse, error) {
+	var out DashboardDecisionFlowResponse
+	query := url.Values{}
+	query.Set("symbol", symbol)
+	if snapshotID > 0 {
+		query.Set("snapshot_id", fmt.Sprintf("%d", snapshotID))
+	}
+	err := c.Do(ctx, http.MethodGet, "/api/runtime/dashboard/decision_flow?"+query.Encode(), nil, &out)
+	return out, err
+}
+
+func (c *Client) FetchDashboardDecisionHistory(ctx context.Context, symbol string, limit int, snapshotID uint) (DashboardDecisionHistoryResponse, error) {
+	var out DashboardDecisionHistoryResponse
+	query := url.Values{}
+	query.Set("symbol", symbol)
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	if snapshotID > 0 {
+		query.Set("snapshot_id", fmt.Sprintf("%d", snapshotID))
+	}
+	err := c.Do(ctx, http.MethodGet, "/api/runtime/dashboard/decision_history?"+query.Encode(), nil, &out)
+	return out, err
+}
+
 func (c *Client) PostScheduleToggle(ctx context.Context, enable bool) (ScheduleResponse, error) {
 	var out ScheduleResponse
 	req := scheduleToggleRequest{Enable: &enable}

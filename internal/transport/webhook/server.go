@@ -107,7 +107,7 @@ func (s *Server) Mux() (*http.ServeMux, error) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		transport.WriteBody(w, []byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("/api/live/freqtrade/webhook", s.handleFreqtradeWebhook)
 	return mux, nil
@@ -154,7 +154,7 @@ func (s *Server) handleFreqtradeWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	transport.WriteBody(w, []byte(`{"status":"ok"}`))
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string, details any) {

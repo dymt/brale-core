@@ -22,7 +22,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(okBody)
+		WriteBody(w, okBody)
 	})
 	srv := &http.Server{
 		Addr:    s.Addr,

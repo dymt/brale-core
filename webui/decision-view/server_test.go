@@ -76,6 +76,10 @@ func (f *fakeStore) ListProviderEventsBySnapshot(context.Context, string, uint) 
 	return nil, nil
 }
 
+func (f *fakeStore) ListProviderEventsByTimeRange(context.Context, string, int64, int64) ([]store.ProviderEventRecord, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) ListAgentEvents(_ context.Context, symbol string, _ int) ([]store.AgentEventRecord, error) {
 	return append([]store.AgentEventRecord{}, f.agents[symbol]...), nil
 }
@@ -84,8 +88,16 @@ func (f *fakeStore) ListAgentEventsBySnapshot(context.Context, string, uint) ([]
 	return nil, nil
 }
 
+func (f *fakeStore) ListAgentEventsByTimeRange(context.Context, string, int64, int64) ([]store.AgentEventRecord, error) {
+	return nil, nil
+}
+
 func (f *fakeStore) ListGateEvents(_ context.Context, symbol string, _ int) ([]store.GateEventRecord, error) {
 	return append([]store.GateEventRecord{}, f.gates[symbol]...), nil
+}
+
+func (f *fakeStore) ListGateEventsByTimeRange(context.Context, string, int64, int64) ([]store.GateEventRecord, error) {
+	return nil, nil
 }
 
 func (f *fakeStore) FindGateEventBySnapshot(_ context.Context, symbol string, snapshotID uint) (store.GateEventRecord, bool, error) {
@@ -95,6 +107,10 @@ func (f *fakeStore) FindGateEventBySnapshot(_ context.Context, symbol string, sn
 		}
 	}
 	return store.GateEventRecord{}, false, nil
+}
+
+func (f *fakeStore) ListDistinctSnapshotIDs(context.Context, string, int64, int64) ([]uint, error) {
+	return nil, nil
 }
 
 func TestServerHandlerDecisionViewAPIs(t *testing.T) {

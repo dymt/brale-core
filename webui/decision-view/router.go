@@ -84,7 +84,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	if _, err = w.Write(data); err != nil {
+		return
+	}
 }
 
 func normalizeBasePath(base string) string {

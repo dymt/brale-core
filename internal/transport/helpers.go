@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"brale-core/internal/pkg/logging"
+
 	"go.uber.org/zap"
 )
 
@@ -42,6 +44,13 @@ func ShutdownServerOnContext(ctx context.Context, server *http.Server, timeout t
 	}()
 }
 
+// WriteBody writes data to the HTTP response and logs write failures at debug level.
+func WriteBody(w http.ResponseWriter, data []byte) {
+	if _, err := w.Write(data); err != nil {
+		logging.L().Debug("http write failed", zap.Error(err))
+	}
+}
+
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -50,7 +59,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write(data)
+	WriteBody(w, data)
 }
 
 func BuildRuntimeBaseURL(addr string) string {

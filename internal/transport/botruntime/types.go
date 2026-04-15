@@ -1,6 +1,10 @@
 package botruntime
 
-import "time"
+import (
+	"time"
+
+	"brale-core/internal/transport/runtimeapi"
+)
 
 type ObserveRunRequest struct {
 	Symbol string `json:"symbol"`
@@ -128,3 +132,9 @@ type ScheduleNextRun struct {
 	BarInterval   string `json:"bar_interval"`
 	NextExecution string `json:"next_execution"`
 }
+
+type DashboardOverviewResponse = runtimeapi.DashboardOverviewResponse
+type DashboardAccountSummaryResponse = runtimeapi.DashboardAccountSummaryResponse
+type DashboardKlineResponse = runtimeapi.DashboardKlineResponse
+type DashboardDecisionFlowResponse = runtimeapi.DashboardDecisionFlowResponse
+type DashboardDecisionHistoryResponse = runtimeapi.DashboardDecisionHistoryResponse

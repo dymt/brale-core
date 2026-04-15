@@ -47,7 +47,9 @@ func serveIndex(w http.ResponseWriter) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	if _, err = w.Write(data); err != nil {
+		return
+	}
 }
 
 func normalizeBasePath(base string) string {
