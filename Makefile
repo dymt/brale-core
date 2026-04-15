@@ -28,9 +28,32 @@ ENABLE_ONBOARDING_NORM := $(if $(filter 1 true TRUE yes YES on ON,$(ENABLE_ONBOA
 OPTIONAL_STACK_SERVICES := $(if $(filter 1,$(ENABLE_MCP_NORM)),mcp-sse,) $(if $(filter 1,$(ENABLE_ONBOARDING_NORM)),onboarding,)
 REBUILD_SERVICES := brale $(if $(filter 1,$(ENABLE_MCP_NORM)),mcp-sse,)
 
-COMPOSE = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)" docker compose -f "$(COMPOSE_FILE)"
-STACK_ENV = HOST_UID="$(HOST_UID)" HOST_GID="$(HOST_GID)" HOST_REPO_ROOT="$(HOST_REPO_ROOT)" BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)" BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)" PGDATA_ROOT="$(PGDATA_ROOT)" FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)" FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)" FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)" STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)"
-ONBOARDING_PREPARE = $(STACK_ENV) $(COMPOSE) run --rm --no-deps onboarding prepare-stack
+STACK_EXPORTS = export HOST_UID="$(HOST_UID)"; export HOST_GID="$(HOST_GID)"; export COMPOSE_PROJECT_NAME="$(COMPOSE_PROJECT_NAME)"; export HOST_REPO_ROOT="$(HOST_REPO_ROOT)"; export BRALE_CONFIG_ROOT="$(BRALE_CONFIG_ROOT)"; export BRALE_DATA_ROOT="$(BRALE_DATA_ROOT)"; export PGDATA_ROOT="$(PGDATA_ROOT)"; export FREQTRADE_CONFIG_ROOT="$(FREQTRADE_CONFIG_ROOT)"; export FREQTRADE_RUNTIME_ROOT="$(FREQTRADE_RUNTIME_ROOT)"; export FREQTRADE_CONFIG_FILE="$(FREQTRADE_CONFIG_FILE)"; export STACK_PROXY_ENV_FILE="$(STACK_PROXY_ENV_FILE)";
+STACK_PROXY_SOURCE = if [ -f "$$STACK_PROXY_ENV_FILE" ]; then \
+	while IFS= read -r line || [ -n "$$line" ]; do \
+		trimmed="$$line"; \
+		trimmed="$$(printf '%s' "$$trimmed" | sed 's/^[[:space:]]*//')"; \
+		if [ -z "$$trimmed" ]; then \
+			continue; \
+		fi; \
+		if [ "$${trimmed:0:1}" = "$$(printf '\043')" ]; then \
+			continue; \
+		fi; \
+		if [[ "$$trimmed" =~ ^(HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)=(.*)$$ ]]; then \
+			value="$${BASH_REMATCH[2]}"; \
+			if printf '%s\n' "$$value" | grep -q '[`$$]'; then \
+				echo "[ERR] proxy env values must be literal in $$STACK_PROXY_ENV_FILE"; \
+				exit 1; \
+			fi; \
+			export "$${BASH_REMATCH[1]}=$$value"; \
+		else \
+			echo "[ERR] invalid proxy env entry in $$STACK_PROXY_ENV_FILE: $$trimmed"; \
+			exit 1; \
+		fi; \
+	done < "$$STACK_PROXY_ENV_FILE"; \
+fi;
+COMPOSE = $(STACK_EXPORTS) $(STACK_PROXY_SOURCE) docker compose -f "$(COMPOSE_FILE)"
+ONBOARDING_PREPARE = $(COMPOSE) run --rm --no-deps onboarding prepare-stack
 
 .PHONY: help env-init setup init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs bralectl-build bralectl-builder-image add-symbol llm-probe migrate-up migrate-down
 
@@ -100,7 +123,7 @@ init: ## Start the onboarding UI only
 	fi; \
 	echo "[OK] Docker is ready"; \
 	echo "[INFO] Starting onboarding container at $(ONBOARDING_URL)"; \
-	$(STACK_ENV) $(COMPOSE) up -d --build onboarding; \
+	$(COMPOSE) up -d --build onboarding; \
 	for i in $$(seq 1 60); do \
 		if curl -fsS "$(ONBOARDING_URL)/api/status" >/dev/null 2>&1; then \
 			echo "[OK] onboarding running at $(ONBOARDING_URL)"; \
@@ -110,25 +133,25 @@ init: ## Start the onboarding UI only
 		sleep 1; \
 	done; \
 	echo "[ERR] onboarding did not become ready in time"; \
-	$(STACK_ENV) $(COMPOSE) logs --tail=200 onboarding; \
+	$(COMPOSE) logs --tail=200 onboarding; \
 	exit 1
 
 init-stop: ## Stop the onboarding UI container
 	@set -e; \
-	$(STACK_ENV) $(COMPOSE) stop onboarding >/dev/null 2>&1 || true; \
+	$(COMPOSE) stop onboarding >/dev/null 2>&1 || true; \
 	echo "[OK] stopped onboarding container"
 
 init-status: ## Show onboarding UI status
 	@set -e; \
 	if curl -fsS "$(ONBOARDING_URL)/api/status" >/dev/null 2>&1; then \
 		echo "[OK] onboarding running at $(ONBOARDING_URL)"; \
-		$(STACK_ENV) $(COMPOSE) ps onboarding; \
+		$(COMPOSE) ps onboarding; \
 		exit 0; \
 	fi; \
 	echo "[INFO] onboarding not running"
 
 init-logs: ## Tail onboarding UI logs
-	@$(STACK_ENV) $(COMPOSE) logs -f --tail=200 onboarding
+	@$(COMPOSE) logs -f --tail=200 onboarding
 
 check:
 	@if [ ! -f ".env" ]; then \
@@ -186,7 +209,7 @@ prepare:
 start: check prepare ## Start the core stack; use ENABLE_MCP=1 and/or ENABLE_ONBOARDING=1 for optional services
 	@$(MAKE) start-freqtrade
 	@$(MAKE) wait-freqtrade
-	@$(STACK_ENV) $(COMPOSE) up -d --build brale $(OPTIONAL_STACK_SERVICES)
+	@$(COMPOSE) up -d --build brale $(OPTIONAL_STACK_SERVICES)
 
 apply-config: check prepare stop ## Regenerate configs and restart the stack
 	@$(MAKE) start ENABLE_MCP="$(ENABLE_MCP)" ENABLE_ONBOARDING="$(ENABLE_ONBOARDING)"
@@ -194,7 +217,7 @@ apply-config: check prepare stop ## Regenerate configs and restart the stack
 onboarding-start: apply-config
 
 onboarding-pull:
-	@$(STACK_ENV) $(COMPOSE) pull freqtrade
+	@$(COMPOSE) pull freqtrade
 
 onboarding-refresh-brale:
 	@echo "[INFO] onboarding-refresh-brale: start"
@@ -210,11 +233,11 @@ onboarding-refresh-brale:
 	@echo "[OK] onboarding-refresh-brale: done"
 
 start-freqtrade: ## Start the freqtrade service
-	@$(STACK_ENV) $(COMPOSE) up -d --build freqtrade
+	@$(COMPOSE) up -d --build freqtrade
 
 wait-freqtrade: ## Wait for freqtrade health to turn green
 	@ \
-	cid=$$($(STACK_ENV) $(COMPOSE) ps -q freqtrade); \
+	cid=$$($(COMPOSE) ps -q freqtrade); \
 	if [ -z "$$cid" ]; then \
 		echo "[ERR] freqtrade container id not found"; \
 		exit 1; \
@@ -228,43 +251,44 @@ wait-freqtrade: ## Wait for freqtrade health to turn green
 		fi; \
 		sleep 2; \
 	done; \
-	echo "[ERR] freqtrade did not become healthy in time"; \
+	echo "[ERR] freqtrade did not become healthy in time — recent logs:"; \
+	$(COMPOSE) logs --tail=30 freqtrade 2>&1 || true; \
 	exit 1
 
 start-brale: ## Start only the brale runtime service
-	@$(STACK_ENV) $(COMPOSE) up -d brale
+	@$(COMPOSE) up -d brale
 
 mcp-start: check prepare ## Start the MCP SSE service (brings dependencies up as needed)
-	@$(STACK_ENV) $(COMPOSE) up -d --build mcp-sse
+	@$(COMPOSE) up -d --build mcp-sse
 
 mcp-stop: ## Stop the MCP SSE service
-	@$(STACK_ENV) $(COMPOSE) stop mcp-sse
+	@$(COMPOSE) stop mcp-sse
 
 mcp-logs: ## Tail MCP SSE logs
-	@$(STACK_ENV) $(COMPOSE) logs -f --tail=200 mcp-sse
+	@$(COMPOSE) logs -f --tail=200 mcp-sse
 
 stop-freqtrade:
-	@$(STACK_ENV) $(COMPOSE) stop freqtrade
+	@$(COMPOSE) stop freqtrade
 
 stop-brale:
-	@$(STACK_ENV) $(COMPOSE) stop brale
+	@$(COMPOSE) stop brale
 
 rebuild: check prepare ## Rebuild brale (and mcp-sse when ENABLE_MCP=1)
-	@$(STACK_ENV) $(COMPOSE) up -d --build $(REBUILD_SERVICES)
+	@$(COMPOSE) up -d --build $(REBUILD_SERVICES)
 
 stop: ## Stop the running compose services
-	@$(STACK_ENV) $(COMPOSE) stop brale freqtrade mcp-sse onboarding
+	@$(COMPOSE) stop brale freqtrade mcp-sse onboarding
 
 restart: apply-config
 
 down: ## Remove the compose stack and orphans
-	@$(STACK_ENV) $(COMPOSE) down --remove-orphans
+	@$(COMPOSE) down --remove-orphans
 
 status: ## Show compose service status
-	@$(STACK_ENV) $(COMPOSE) ps
+	@$(COMPOSE) ps
 
 logs: ## Tail the core stack logs
-	@$(STACK_ENV) $(COMPOSE) logs -f --tail=200 freqtrade brale
+	@$(COMPOSE) logs -f --tail=200 freqtrade brale
 
 bralectl-build: ## Build the local bralectl binary
 	@if ! command -v go >/dev/null 2>&1; then \
@@ -321,8 +345,8 @@ migrate-up: ## Run database migrations
 		go run ./cmd/brale-core -migrate-up; \
 	else \
 		echo "[INFO] go not found, running migrations in Docker"; \
-		$(STACK_ENV) $(COMPOSE) up -d timescaledb >/dev/null; \
-		$(STACK_ENV) $(COMPOSE) run --rm --no-deps brale -migrate-up; \
+		$(COMPOSE) up -d timescaledb >/dev/null; \
+		$(COMPOSE) run --rm --no-deps brale -migrate-up; \
 	fi
 
 migrate-down: ## Roll back the last database migration
@@ -330,6 +354,6 @@ migrate-down: ## Roll back the last database migration
 		go run ./cmd/brale-core -migrate-down; \
 	else \
 		echo "[INFO] go not found, rolling back migrations in Docker"; \
-		$(STACK_ENV) $(COMPOSE) up -d timescaledb >/dev/null; \
-		$(STACK_ENV) $(COMPOSE) run --rm --no-deps brale -migrate-down; \
+		$(COMPOSE) up -d timescaledb >/dev/null; \
+		$(COMPOSE) run --rm --no-deps brale -migrate-down; \
 	fi

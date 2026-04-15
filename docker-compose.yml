@@ -7,7 +7,15 @@ services:
       context: .
       dockerfile: Dockerfile
       target: onboarding-runtime
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     restart: unless-stopped
@@ -94,7 +102,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 15s
+      start_period: 30s
     volumes:
       - type: bind
         source: ${FREQTRADE_RUNTIME_ROOT:-./data/freqtrade/user_data}
@@ -105,7 +113,15 @@ services:
       context: .
       dockerfile: Dockerfile
       target: brale-runtime
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
@@ -153,7 +169,15 @@ services:
       context: .
       dockerfile: Dockerfile
       target: brale-runtime
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
