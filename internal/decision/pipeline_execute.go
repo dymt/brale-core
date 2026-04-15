@@ -237,19 +237,29 @@ func (p *Pipeline) armEntryCooldownOnExitSignal(res SymbolResult, logger *zap.Lo
 func (p *Pipeline) handleSymbol(ctx context.Context, res SymbolResult, snapID uint, snap snapshot.MarketSnapshot, comp features.CompressionResult, state fsm.PositionState, posID string) (PersistResult, error) {
 	logger := logging.FromContext(ctx).Named("pipeline").With(zap.String("symbol", res.Symbol))
 	out := PersistResult{Symbol: res.Symbol, Gate: res.Gate.GateReason}
+	recordMemory := p != nil && p.WorkingMemory != nil
+	defer func() {
+		if recordMemory {
+			p.recordWorkingMemory(ctx, res, comp)
+		}
+	}()
 	if err := p.handleSymbolError(ctx, logger, res); err != nil {
+		recordMemory = false
 		out.Err = err
 		return out, err
 	}
 	state, posID, err := p.resolveState(ctx, res.Symbol, state, posID, logger)
 	if err != nil {
+		recordMemory = false
 		out.Err = err
 		return out, err
 	}
 	if state == fsm.StateInPosition {
+		recordMemory = false
 		return p.handleInPosition(ctx, logger, out, res, snapID, snap, comp, posID)
 	}
 	if err := p.persistSymbolStores(ctx, snapID, snap, res, logger); err != nil {
+		recordMemory = false
 		return out, err
 	}
 	if !res.Gate.GlobalTradeable || res.Plan == nil {
@@ -280,7 +290,11 @@ func (p *Pipeline) handleSymbol(ctx context.Context, res SymbolResult, snapID ui
 		logger.Info("fsm blocked open")
 		return out, nil
 	}
-	return p.handlePlan(ctx, out, res, posID, state)
+	finalOut, err := p.handlePlan(ctx, out, res, posID, state)
+	if err != nil {
+		recordMemory = false
+	}
+	return finalOut, err
 }
 
 func (p *Pipeline) handleSymbolError(ctx context.Context, logger *zap.Logger, res SymbolResult) error {

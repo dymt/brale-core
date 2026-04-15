@@ -130,7 +130,8 @@ func (r *Runner) loadRunnerSymbolInputs(ctx context.Context, symbol string, opts
 }
 
 func (r *Runner) runAgentAndProviderStages(ctx context.Context, symbol string, comp features.CompressionResult, inputs *runnerSymbolInputs) (SymbolResult, bool) {
-	res, err := r.runAgentStage(ctx, symbol, comp, inputs.Enabled, inputs.Logger)
+	runCtx := r.withWorkingMemoryPromptContext(ctx, symbol, comp)
+	res, err := r.runAgentStage(runCtx, symbol, comp, inputs.Enabled, inputs.Logger)
 	if err != nil {
 		return res, false
 	}
@@ -139,7 +140,7 @@ func (r *Runner) runAgentAndProviderStages(ctx context.Context, symbol string, c
 		return res, false
 	}
 	dataCtx := BuildProviderDataContext(res.AgentInputs)
-	providerRes, err := r.runProviderStage(ctx, symbol, inputs.Enabled, res, dataCtx, inputs.Logger)
+	providerRes, err := r.runProviderStage(runCtx, symbol, inputs.Enabled, res, dataCtx, inputs.Logger)
 	if err != nil {
 		return providerRes, false
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"brale-core/internal/decision/fsm"
@@ -130,8 +131,8 @@ func applyFlatRiskInitPatch(plan *execution.ExecutionPlan, patch *initexit.Build
 
 	plan.StopLoss = stop
 	plan.Entry = entry
-	plan.TakeProfits = append([]float64(nil), patch.TakeProfits...)
-	plan.TakeProfitRatios = append([]float64(nil), patch.TakeProfitRatios...)
+	plan.TakeProfits = slices.Clone(patch.TakeProfits)
+	plan.TakeProfitRatios = slices.Clone(patch.TakeProfitRatios)
 	plan.PlanSource = execution.PlanSourceLLM
 	return nil
 }

@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 
 	"brale-core/internal/decision/features"
@@ -56,7 +57,7 @@ func (p *Pipeline) applyRiskPlanUpdate(ctx context.Context, res SymbolResult, co
 	exec.ExitConfirmHit = updateResult.ExitConfirmHit
 	exec.PlanSource = updateResult.PlanSource
 	exec.StopLoss = updateResult.StopLoss
-	exec.TakeProfits = append([]float64(nil), updateResult.TakeProfits...)
+	exec.TakeProfits = slices.Clone(updateResult.TakeProfits)
 	exec.LLMRiskTrace = cloneLLMRiskTrace(updateResult.LLMRiskTrace)
 	if !updateResult.Executed {
 		exec.addBlocked(tightenBlockNoTightenNeeded)
@@ -190,7 +191,7 @@ func (e tightenExecution) toMap() map[string]any {
 		out["stop_loss"] = e.StopLoss
 	}
 	if len(e.TakeProfits) > 0 {
-		out["take_profits"] = append([]float64(nil), e.TakeProfits...)
+		out["take_profits"] = slices.Clone(e.TakeProfits)
 	}
 	if trace := llmRiskTraceMap(e.LLMRiskTrace); trace != nil {
 		out["llm_trace"] = trace

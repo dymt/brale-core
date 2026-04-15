@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ func newTightenUpdateResult(planSource string, stopLoss float64, takeProfits []f
 	return tightenUpdateResult{
 		PlanSource:  planSource,
 		StopLoss:    stopLoss,
-		TakeProfits: append([]float64(nil), takeProfits...),
+		TakeProfits: slices.Clone(takeProfits),
 	}
 }
 

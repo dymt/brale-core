@@ -1,6 +1,10 @@
 package initexit
 
-import "brale-core/internal/execution"
+import (
+	"slices"
+
+	"brale-core/internal/execution"
+)
 
 // BuildPatch is a narrow patch surface reserved for LLM post-processing.
 type BuildPatch struct {
@@ -20,10 +24,10 @@ func ApplyPatch(base BuildOutput, patch *BuildPatch) BuildOutput {
 		base.StopLoss = *patch.StopLoss
 	}
 	if len(patch.TakeProfits) > 0 {
-		base.TakeProfits = append([]float64(nil), patch.TakeProfits...)
+		base.TakeProfits = slices.Clone(patch.TakeProfits)
 	}
 	if len(patch.TakeProfitRatios) > 0 {
-		base.TakeProfitRatios = append([]float64(nil), patch.TakeProfitRatios...)
+		base.TakeProfitRatios = slices.Clone(patch.TakeProfitRatios)
 	}
 	return base
 }

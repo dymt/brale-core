@@ -3,6 +3,7 @@ package decisionfmt
 import (
 	"fmt"
 	"html"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -16,19 +17,19 @@ func (f DefaultFormatter) RenderDecisionHTML(report DecisionReport) string {
 	metricsSection := renderHTMLMetrics(report)
 	monitorSection := renderHTMLMonitorDetail(report)
 	riskSection := renderHTMLRiskDetail(report)
-	sections := append([]string{}, baseSections...)
+	sections := slices.Clone(baseSections)
 	sections = append(sections, metricsSection, monitorSection, riskSection)
 	assembled := joinHTMLSections(sections)
 	if utf8.RuneCountInString(assembled) > telegramHTMLLimit {
 		if riskSection != "" {
-			sections = append([]string{}, baseSections...)
+			sections = slices.Clone(baseSections)
 			sections = append(sections, metricsSection)
 			assembled = joinHTMLSections(sections)
 		}
 	}
 	if utf8.RuneCountInString(assembled) > telegramHTMLLimit {
 		if metricsSection != "" {
-			sections = append([]string{}, baseSections...)
+			sections = slices.Clone(baseSections)
 			assembled = joinHTMLSections(sections)
 		}
 	}

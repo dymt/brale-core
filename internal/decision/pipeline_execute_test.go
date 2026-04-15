@@ -245,3 +245,43 @@ func TestHandleInPositionReturnsErrorOnFSMFailure(t *testing.T) {
 		t.Fatalf("notifier messages=%v want 1 message", notifier.messages)
 	}
 }
+
+func TestHandleInPositionRecordsFinalGateInWorkingMemory(t *testing.T) {
+	wm := &stubWorkingMemory{}
+	p := &Pipeline{
+		Runner: &Runner{
+			Configs: map[string]config.SymbolConfig{
+				"BTCUSDT": {Symbol: "BTCUSDT", Intervals: []string{"15m"}},
+			},
+		},
+		WorkingMemory: wm,
+	}
+
+	out, err := p.handleInPosition(context.Background(), zap.NewNop(), PersistResult{Symbol: "BTCUSDT"}, SymbolResult{
+		Symbol:              "BTCUSDT",
+		Gate:                fund.GateDecision{DecisionAction: "VETO", GateReason: "PRE_HOLD"},
+		ConsensusDirection:  "long",
+		ConsensusScore:      0.73,
+		InPositionEvaluated: true,
+		RuleflowResult: &ruleflow.Result{
+			Gate:       fund.GateDecision{DecisionAction: "HOLD", GateReason: "HOLD"},
+			FSMNext:    fsm.StateInPosition,
+			FSMActions: []fsm.Action{{Type: fsm.ActionNoop, Reason: "GATE_HOLD"}},
+		},
+	}, 0, snapshot.MarketSnapshot{}, workingMemoryCompressionResult(123.4, 4.5), "pos-1")
+	if err != nil {
+		t.Fatalf("handleInPosition: %v", err)
+	}
+	if out.Gate != "HOLD" {
+		t.Fatalf("out.Gate=%q want HOLD", out.Gate)
+	}
+	if len(wm.entries) != 1 {
+		t.Fatalf("entries=%d want 1", len(wm.entries))
+	}
+	if got := wm.entries[0].GateReason; got != "HOLD" {
+		t.Fatalf("working memory gate_reason=%q want HOLD", got)
+	}
+	if got := wm.entries[0].GateAction; got != "HOLD" {
+		t.Fatalf("working memory gate_action=%q want HOLD", got)
+	}
+}
