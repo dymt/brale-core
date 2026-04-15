@@ -44,13 +44,19 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 	if s.recheckExternalPosition(ctx, pos, logger) {
 		return nil
 	}
-	closedPos, err := s.finalizeExternalMissing(ctx, pos, logger)
-	if err != nil {
-		return err
-	}
-	summary := s.buildExternalMissingSummary(ctx, closedPos)
-	logExternalMissingSummary(ctx, closedPos, summary)
-	if s.Notifier != nil {
+	var closedPos store.PositionRecord
+	var summary externalMissingSummary
+	if err := reconcileWithinStoreTx(ctx, s.Store, func(runCtx context.Context) error {
+		nextPos, err := s.finalizeExternalMissing(runCtx, pos, logger)
+		if err != nil {
+			return err
+		}
+		closedPos = nextPos
+		summary = s.buildExternalMissingSummary(runCtx, closedPos)
+		logExternalMissingSummary(runCtx, closedPos, summary)
+		if s.Notifier == nil {
+			return nil
+		}
 		notice := PositionCloseSummaryNotice{
 			Symbol:             closedPos.Symbol,
 			Direction:          strings.TrimSpace(closedPos.Side),
@@ -67,9 +73,13 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 			PositionID:         closedPos.PositionID,
 			ExecutorPositionID: strings.TrimSpace(closedPos.ExecutorPositionID),
 		}
-		if err := s.Notifier.SendPositionCloseSummary(ctx, notice); err != nil {
-			logging.FromContext(ctx).Named("reconcile").Error("position close summary notify failed", zap.Error(err))
+		if err := s.Notifier.SendPositionCloseSummary(runCtx, notice); err != nil {
+			logging.FromContext(runCtx).Named("reconcile").Error("position close summary notify failed", zap.Error(err))
+			return err
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if s.Reflector != nil {
 		go s.Reflector.ReflectOnClose(ctx, closedPos, summary.ExitPrice)
