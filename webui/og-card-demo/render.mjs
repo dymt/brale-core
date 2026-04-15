@@ -165,6 +165,9 @@ const valueMap = new Map([
   // SuperTrend / 情绪标签
   ['bullish', '看多'],
   ['bearish', '看空'],
+  // 斜率幅度
+  ['moderate', '温和'],
+  ['steep', '陡峭'],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -233,6 +236,8 @@ const wordMap = new Map([
   ['declined', '回落'],
   ['expanding', '扩张'],
   ['contracting', '收缩'],
+  ['moderate', '温和'],
+  ['steep', '陡峭'],
 ]);
 
 // Field-name translations: only for exact field=value or standalone field tokens.
@@ -287,6 +292,17 @@ const fieldNameMap = new Map([
   ['supertrend', 'SuperTrend指标'],
   ['tag', '情绪标签'],
   ['taker_long_short_vol_ratio', '主买/主卖成交量比'],
+  // 指标状态字段 (indicator_state.go)
+  ['rsi_slope_state', 'RSI斜率状态'],
+  ['obv_slope_state', 'OBV斜率状态'],
+  ['stc_state', 'STC状态'],
+  ['stoch_rsi_zone', '随机RSI区间'],
+  ['bb_width_state', '布林带宽度状态'],
+  ['price_vs_ema_fast', '价格vs快线EMA'],
+  ['price_vs_ema_mid', '价格vs中线EMA'],
+  ['price_vs_ema_slow', '价格vs慢线EMA'],
+  ['ema_distance_fast_atr', '快线EMA距离(ATR)'],
+  ['ema_distance_mid_atr', '中线EMA距离(ATR)'],
 ]);
 
 function mapValue(value) {
@@ -306,6 +322,12 @@ function mapSentence(text) {
     const re = new RegExp('(?<![a-zA-Z0-9_])' + escapeRegex(key) + '(?![a-zA-Z0-9_])', 'g');
     output = output.replace(re, label);
   }
+
+  // Step 1.5: TD Sequential dynamic event keys (td_buy_setup_8..13, td_sell_setup_8..13).
+  output = output.replace(/\btd_(buy|sell)_setup_(\d+)\b/g, (_m, side, n) => {
+    const sideCN = side === 'buy' ? '买入' : '卖出';
+    return `TD${sideCN}序列${n}`;
+  });
 
   // Step 2: Replace multi-word phrases (order: longest first, already ordered).
   for (const [phrase, label] of phraseMap.entries()) {
@@ -847,6 +869,8 @@ function buildDecisionModel(raw) {
 
   const sourceCard = {
     title: '判定来源说明',
+    sectionTitle: '总判定结果',
+    subtitlePrefix: '最终否决来源: ',
     tradeable,
     sourceLabel,
     lines: sourceLines,
@@ -910,6 +934,8 @@ function buildDecisionModel(raw) {
     titlePrice,
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '局部证据快照（非最终放行）',
+    analysisLabel: '分析报告',
     progressCards: [...summaryCards, ...evidenceCards],
     analysisItems,
   };
@@ -930,6 +956,8 @@ function buildPositionOpenModel(raw) {
 
   const sourceCard = {
     title: '开仓详情',
+    sectionTitle: '开仓确认',
+    subtitlePrefix: '操作类型: ',
     tradeable: true,
     sourceLabel: '仓位管理',
     verdictText: `${directionCN}开仓`,
@@ -954,6 +982,8 @@ function buildPositionOpenModel(raw) {
     titlePrice: entryPrice > 0 ? trimFloat(entryPrice) : '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '开仓概览',
+    analysisLabel: '止盈价位',
     progressCards,
     analysisItems: tpList.length > 0 ? tpList.map((tp, i) => ({
       tag: `止盈 ${i + 1}`,
@@ -1002,6 +1032,8 @@ function buildPositionCloseModel(raw) {
 
   const sourceCard = {
     title: `${headerText}详情`,
+    sectionTitle: '平仓结算',
+    subtitlePrefix: '结算方式: ',
     tradeable: false,
     sourceLabel: isFullClose ? '全部平仓' : '部分关闭',
     verdictText: `${directionCN}${headerText}`,
@@ -1020,6 +1052,8 @@ function buildPositionCloseModel(raw) {
     titlePrice: exitPrice > 0 ? trimFloat(exitPrice) : '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '交易概览',
+    analysisLabel: '',
     progressCards,
     analysisItems: [],
   };
@@ -1056,6 +1090,8 @@ function buildRiskUpdateModel(raw) {
 
   const sourceCard = {
     title: '风控计划更新',
+    sectionTitle: '风控计划变更',
+    subtitlePrefix: '更新来源: ',
     tradeable: gateSatisfied,
     sourceLabel: sourceCN,
     verdictText: `${directionCN} · ${sourceCN}`,
@@ -1075,6 +1111,8 @@ function buildRiskUpdateModel(raw) {
     titlePrice: markPrice > 0 ? trimFloat(markPrice) : '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '风控指标',
+    analysisLabel: '止盈价位',
     progressCards,
     analysisItems: tpList.length > 0 ? tpList.map((tp, i) => ({
       tag: `止盈 ${i + 1}`,
@@ -1098,6 +1136,8 @@ function buildStartupModel(raw) {
 
   const sourceCard = {
     title: '系统启动',
+    sectionTitle: '启动确认',
+    subtitlePrefix: '状态: ',
     tradeable: true,
     sourceLabel: '启动完成',
     verdictText: '🚀 Brale 已启动',
@@ -1122,6 +1162,8 @@ function buildStartupModel(raw) {
     titlePrice: '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '系统概览',
+    analysisLabel: '币种详情',
     progressCards,
     analysisItems: (symbolStatuses.length > 0 ? symbolStatuses : symbols.map((symbol) => ({ symbol }))).map((item, i) => {
       const symbol = String(item.symbol || '').trim() || '—';
@@ -1157,6 +1199,8 @@ function buildPartialCloseModel(raw) {
 
   const sourceCard = {
     title: '部分平仓详情',
+    sectionTitle: '部分平仓确认',
+    subtitlePrefix: '操作类型: ',
     tradeable: false,
     sourceLabel: '部分平仓',
     verdictText: `${directionCN} · 部分平仓`,
@@ -1181,6 +1225,8 @@ function buildPartialCloseModel(raw) {
     titlePrice: closeRate > 0 ? trimFloat(closeRate) : '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '平仓概览',
+    analysisLabel: '',
     progressCards,
     analysisItems: [],
   };
@@ -1196,6 +1242,8 @@ function buildShutdownModel(raw) {
 
   const sourceCard = {
     title: '系统停止',
+    sectionTitle: '停止确认',
+    subtitlePrefix: '状态: ',
     tradeable: false,
     sourceLabel: '停止通知',
     verdictText: '🛑 Brale 已停止',
@@ -1216,6 +1264,8 @@ function buildShutdownModel(raw) {
     titlePrice: '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '运行摘要',
+    analysisLabel: '',
     progressCards,
     analysisItems: [],
   };
@@ -1246,6 +1296,8 @@ function buildErrorModel(raw) {
 
   const sourceCard = {
     title: '错误提醒',
+    sectionTitle: '异常报告',
+    subtitlePrefix: '通知类型: ',
     tradeable: false,
     sourceLabel: '错误通知',
     verdictText: `${severityIcon} ${severityLabel}`,
@@ -1264,6 +1316,8 @@ function buildErrorModel(raw) {
     titlePrice: '',
     reportTimeCN: formatReportTime(),
     sourceCard,
+    metricsLabel: '异常概要',
+    analysisLabel: '详细信息',
     progressCards,
     analysisItems: message.length > 60 ? [{
       tag: '详情',
@@ -1726,7 +1780,7 @@ function sourceCard(card, scale) {
                 color: '#1f2937',
                 fontWeight: 800,
               },
-            }, '总判定结果'),
+            }, card.sectionTitle || '总判定结果'),
             h('div', {
               style: {
                 display: 'flex',
@@ -1749,7 +1803,7 @@ function sourceCard(card, scale) {
               color: '#334155',
               fontWeight: 700,
             },
-          }, `最终否决来源: ${card.sourceLabel}`),
+          }, `${card.subtitlePrefix || '最终否决来源: '}${card.sourceLabel}`),
         ),
       ),
     ),
@@ -2083,14 +2137,14 @@ function buildTree(model, meta, canvasHeight) {
         h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: Math.max(18, scale.gap - 6) } },
-          h(
+          ...(model.progressCards.length > 0 ? [h(
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: Math.max(10, scale.gap - 12) } },
             h(
               'div',
               { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: Math.max(16, scale.small - 2), color: '#334155', letterSpacing: '0.05em', fontWeight: 800, textTransform: 'uppercase' } },
               h('div', { style: { display: 'flex', width: 10, height: 10, borderRadius: 999, background: '#64748b' } }),
-    h('div', { style: { display: 'flex' } }, '局部证据快照（非最终放行）'),
+    h('div', { style: { display: 'flex' } }, model.metricsLabel || '局部证据快照（非最终放行）'),
             ),
             h(
               'div',
@@ -2101,15 +2155,15 @@ function buildTree(model, meta, canvasHeight) {
                 progressCard(card, scale),
               )),
             ),
-          ),
-          h(
+          )] : []),
+          ...((model.analysisLabel && model.analysisItems.length > 0) ? [h(
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: Math.max(10, scale.gap - 12) } },
             h(
               'div',
               { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: Math.max(16, scale.small - 2), color: '#334155', letterSpacing: '0.05em', fontWeight: 800, textTransform: 'uppercase' } },
               h('div', { style: { display: 'flex', width: 10, height: 10, borderRadius: 999, background: '#64748b' } }),
-              h('div', { style: { display: 'flex' } }, '分析报告'),
+              h('div', { style: { display: 'flex' } }, model.analysisLabel),
             ),
             h(
               'div',
@@ -2121,7 +2175,7 @@ function buildTree(model, meta, canvasHeight) {
                 return [analysisItem(item, scale)];
               }),
             ),
-          ),
+          )] : []),
         ),
       ),
     ),
