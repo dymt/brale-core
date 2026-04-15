@@ -1,0 +1,451 @@
+#+TITLE: Brale-Core 子系统使用指南
+#+AUTHOR: Brale Team
+#+OPTIONS: toc:3 num:t
+
+* 概述
+
+Brale-Core 包含五个核心子系统，本文档面向使用者，说明如何配置、使用和验证每个子系统。
+
+| 子系统 | 作用 | CLI 入口 | 配置节 |
+|--------|------|---------|--------|
+| 数据库 | 持久化存储 | =make migrate-up/down= | =[database]= |
+| 记忆系统 | 交易经验积累 | =bralectl memory= | 无（直连数据库） |
+| 回测系统 | Gate 决策回放 | =bralectl backtest rules= | 使用 system/index 配置 |
+| MCP 系统 | AI 工具暴露 | =bralectl mcp serve/install= | 读取 system/index 配置 |
+| 通知系统 | 推送消息 | 自动运行 | =[notification.*]= |
+
+* 数据库 (PostgreSQL / TimescaleDB)
+
+** 概述
+
+所有交易数据、决策记录、持仓信息、记忆条目均存储在 PostgreSQL 中。Schema 通过嵌入式迁移管理。
+
+** 连接配置
+
+在 =.env= 中设置:
+
+#+begin_src bash
+DATABASE_DSN=postgres://user:pass@localhost:5432/brale?sslmode=disable
+#+end_src
+
+** 迁移管理
+
+#+begin_src bash
+# 应用所有待执行迁移
+make migrate-up
+
+# 回退最新一次迁移
+make migrate-down
+
+# 或通过 brale-core 二进制
+./brale-core -migrate-up -system configs/system.toml
+./brale-core -migrate-down -system configs/system.toml
+#+end_src
+
+如果本地没有 Go 环境，=make migrate-up/down= 会自动通过 Docker 执行。
+
+** 核心数据表
+
+| 表名 | 存储内容 |
+|------|---------|
+| =gate_events= | Gate 决策记录（通过/拒绝及原因码） |
+| =agent_events= | Agent 分析结果（indicator/mechanics/structure） |
+| =provider_events= | Provider 锚点数据 |
+| =positions= | 持仓记录（开仓/平仓/盈亏） |
+| =risk_plan_history= | 风控计划版本追踪 |
+| =llm_rounds= | LLM 调用统计（延迟、Token 用量、结果） |
+| =prompt_registry= | 系统提示词版本管理 |
+| =episodic_memories= | 交易复盘记录 |
+| =semantic_memories= | 交易规则库 |
+
+** 验证方法
+
+#+begin_src bash
+# 确认数据库可连接
+psql $DATABASE_DSN -c "SELECT count(*) FROM gate_events;"
+
+# 检查迁移是否已应用
+psql $DATABASE_DSN -c "SELECT * FROM schema_migrations ORDER BY version;"
+#+end_src
+
+* 记忆系统 (Memory)
+
+** 概述
+
+三层记忆架构帮助系统从历史交易中学习：
+
+| 类型 | 作用 | 存储 | 生命周期 |
+|------|------|------|---------|
+| 工作记忆 (Working) | 最近 N 条决策快照 | 内存 | 运行时 |
+| 情景记忆 (Episodic) | 交易复盘 + 经验教训 | PostgreSQL | 持久 |
+| 语义记忆 (Semantic) | 提炼的交易规则 | PostgreSQL | 持久，可手动管理 |
+
+** CLI 使用
+
+*** 列出语义规则
+
+#+begin_src bash
+# 列出当前活跃规则
+bralectl memory list --db "postgres://user:pass@localhost:5432/brale"
+
+# 按币种筛选
+bralectl memory list --symbol BTCUSDT
+
+# 显示所有（含已禁用）
+bralectl memory list --all
+
+# 按来源筛选
+bralectl memory list --source user
+bralectl memory list --source reflector
+#+end_src
+
+*** 管理语义规则
+
+#+begin_src bash
+# 添加规则
+bralectl memory add \
+  --rule "BTC 在恐贪指数低于 20 时不做空" \
+  --symbol BTCUSDT \
+  --confidence 0.8
+
+# 编辑规则
+bralectl memory edit --id 5 --rule "更新后的规则文本" --confidence 0.9
+
+# 启用/禁用规则
+bralectl memory toggle --id 5
+
+# 删除规则
+bralectl memory delete --id 5
+#+end_src
+
+*** 查看情景记忆
+
+#+begin_src bash
+# 查看最近 10 条交易复盘
+bralectl memory episodic --symbol BTCUSDT --limit 10
+#+end_src
+
+** 验证方法
+
+#+begin_src bash
+# 确认语义规则表有数据
+bralectl memory list --all
+
+# 确认情景记忆正在记录
+bralectl memory episodic --limit 5
+
+# 直接查数据库
+psql $DATABASE_DSN -c "SELECT count(*) FROM semantic_memories WHERE active = true;"
+psql $DATABASE_DSN -c "SELECT count(*) FROM episodic_memories;"
+#+end_src
+
+* 回测系统 (Backtest)
+
+** 概述
+
+Gate Replay 回测引擎：从数据库加载历史 Agent 快照，用当前 Gate/Sieve 规则重新评估，对比原始决策与回放决策的差异。
+
+适用场景：
+- 调整 Gate 规则后验证影响范围
+- 评估某段时间的决策质量
+- 量化规则变更对开仓率的影响
+
+** CLI 使用
+
+#+begin_src bash
+bralectl backtest rules \
+  --symbol BTCUSDT \
+  --from 2025-01-01 \
+  --to 2025-06-01 \
+  --db "postgres://user:pass@localhost:5432/brale" \
+  --system configs/system.toml \
+  --index configs/symbols-index.toml \
+  --format text
+#+end_src
+
+*** 输出格式
+
+| 格式 | 说明 | 补充参数 |
+|------|------|---------|
+| =text= | 终端可读摘要（默认） | — |
+| =html= | 交互式 HTML 报告 | 必须指定 =--output report.html= |
+| =json= | 结构化 JSON | 可管道传递 |
+
+*** 核心指标解读
+
+| 指标 | 字段名 | 含义 |
+|------|--------|------|
+| 胜率 | =win_rate= | 回放中所有 =ALLOW= 决策里，方向最终判断正确的占比 |
+| 盈利因子 | =profit_factor= | 正收益总和 / 负收益总和，越高越好 |
+| 最大回撤 | =max_drawdown_pct= | 回放资金曲线的最大回撤比例 |
+| 夏普比率 | =sharpe_ratio= | 收益波动调整后的稳定性指标 |
+| Calmar 比率 | =calmar_ratio= | 累计收益 / 最大回撤 |
+| 变更率 | =change_rate= | 回放结果与原始决策不一致的比例 |
+
+*** JSON 输出示例
+
+#+begin_src json
+{
+  "symbol": "BTCUSDT",
+  "rounds": [
+    {
+      "snapshot_id": 123,
+      "timestamp": "2025-04-01T12:00:00Z",
+      "state": "FLAT",
+      "original_gate": { "action": "WAIT", "reason": "DIRECTION_UNCLEAR" },
+      "replayed_gate": { "action": "ALLOW", "reason": "PASS_STRONG" },
+      "price_at_decision": 50000.0,
+      "price_after": 50100.0,
+      "changed": true
+    }
+  ],
+  "metrics": {
+    "total_rounds": 100,
+    "replayable_rounds": 92,
+    "allow_count": 31,
+    "veto_count": 40,
+    "wait_count": 21,
+    "win_rate": 0.58,
+    "profit_factor": 1.42,
+    "max_drawdown_pct": 0.11,
+    "sharpe_ratio": 0.73,
+    "calmar_ratio": 1.65,
+    "changed_count": 5,
+    "change_rate": 0.05
+  }
+}
+#+end_src
+
+** 验证方法
+
+#+begin_src bash
+# 确认有历史数据可回放（至少需要已有 gate_events 记录）
+psql $DATABASE_DSN -c "SELECT count(*) FROM gate_events WHERE symbol = 'BTCUSDT';"
+
+# 运行一次回测
+bralectl backtest rules --symbol BTCUSDT --from 2025-01-01 --to 2025-06-01
+
+# 生成 HTML 报告
+bralectl backtest rules \
+  --symbol BTCUSDT \
+  --from 2025-01-01 --to 2025-06-01 \
+  --format html --output report.html
+#+end_src
+
+* MCP 系统 (Model Context Protocol)
+
+** 概述
+
+MCP 是 AI 工具协议，允许 LLM 客户端（Claude、Cursor 等）通过标准接口查询 Brale 数据。所有工具均为只读。
+
+** 暴露的工具
+
+| 工具名 | 功能 |
+|--------|------|
+| =analyze_market= | 市场概览 + 最新决策 + 观察报告 |
+| =get_latest_decision= | 最新 Gate 决策 |
+| =get_positions= | 当前持仓列表 |
+| =get_decision_history= | 历史决策记录 |
+| =get_account_summary= | 账户余额与盈亏概要 |
+| =get_kline= | K 线数据 |
+| =compute_indicators= | 计算技术指标 |
+| =get_config= | 系统/策略配置（脱敏） |
+
+** 暴露的资源
+
+| 资源 URI | 内容 |
+|----------|------|
+| =brale://config/system= | system.toml 配置 |
+| =brale://config/symbols= | symbols-index.toml |
+| =brale://decision/{symbol}/latest= | 最新决策 |
+| =brale://kline/{symbol}/{interval}= | K 线数据 |
+
+** CLI 使用
+
+*** 启动 MCP 服务
+
+#+begin_src bash
+# stdio 模式（用于 Claude Desktop、Cursor 等）
+bralectl mcp serve --mode stdio
+
+# SSE 模式（用于远程访问）
+bralectl mcp serve --mode sse --addr 127.0.0.1:8765
+
+# 启用审计日志
+bralectl mcp serve --mode stdio --audit-log /tmp/mcp-audit.jsonl
+#+end_src
+
+*** 安装到 LLM 客户端
+
+#+begin_src bash
+# 安装到 Claude Code
+bralectl mcp install --target claude-code
+
+# 安装到 Claude Desktop
+bralectl mcp install --target claude-desktop
+
+# 自定义路径
+bralectl mcp install \
+  --target custom \
+  --config ~/.config/my-llm/mcp.json \
+  --command /usr/local/bin/bralectl \
+  --name brale-core
+#+end_src
+
+** Docker 模式
+
+#+begin_src bash
+# 通过 docker-compose 启动 SSE 服务
+make mcp-start   # 启动
+make mcp-logs    # 查看日志
+make mcp-stop    # 停止
+#+end_src
+
+** 验证方法
+
+#+begin_src bash
+# 验证 stdio 模式
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | bralectl mcp serve --mode stdio
+
+# 验证 SSE 模式
+bralectl mcp serve --mode sse --addr 127.0.0.1:8765 &
+curl -s http://127.0.0.1:8765/sse
+
+# 检查审计日志
+cat /tmp/mcp-audit.jsonl | jq .
+#+end_src
+
+* 通知系统 (Notification)
+
+** 概述
+
+Brale 在关键事件发生时自动推送消息。默认模板开放 Telegram / 飞书，代码层还支持手工配置 Email sender：
+
+| 渠道 | 配置节 | 特点 |
+|------|--------|------|
+| Telegram | =[notification.telegram]= | Bot 推送，支持图片卡片 |
+| 飞书 | =[notification.feishu]= | 支持 Bot 推送和回调模式 |
+| Email | =[notification.email]= | 手工 TOML 配置，发送 HTML/文本，不发送 OG 图片 |
+
+注意：=webhook= 是 Freqtrade 的入站回调接口，不是出站通知渠道。
+
+** 通知事件类型
+
+| 事件 | 触发时机 | 包含图片 |
+|------|---------|---------|
+| 系统启动 | Brale 启动完成 | ✅ 启动卡片 |
+| 系统停止 | Brale 正常关闭 | ✅ 停止卡片 |
+| 错误提醒 | 关键错误发生 | ✅ 错误卡片 |
+| Gate 决策 | 每轮决策完成 | ✅ 决策卡片 |
+| 开仓 | 新仓位建立 | ✅ 开仓卡片 |
+| 平仓 | 仓位关闭 | ✅ 平仓卡片 |
+| 部分平仓 | 部分仓位关闭 | ✅ 部分平仓卡片 |
+| 风控更新 | 止损/止盈调整 | ✅ 风控卡片 |
+
+** 配置方法
+
+在 =.env= 中设置：
+
+#+begin_src bash
+# 总开关
+NOTIFICATION_ENABLED=true
+NOTIFICATION_STARTUP_NOTIFY_ENABLED=true
+
+# Telegram 配置
+NOTIFICATION_TELEGRAM_ENABLED=true
+NOTIFICATION_TELEGRAM_TOKEN=123456:ABCdef...
+NOTIFICATION_TELEGRAM_CHAT_ID=987654321
+
+# 飞书配置
+NOTIFICATION_FEISHU_ENABLED=true
+NOTIFICATION_FEISHU_APP_ID=cli_xxxxx
+NOTIFICATION_FEISHU_APP_SECRET=xxxxxxxxxx
+NOTIFICATION_FEISHU_BOT_ENABLED=true
+NOTIFICATION_FEISHU_BOT_MODE=long_connection
+NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID_TYPE=open_id
+NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID=ou_xxxxxxxxx
+#+end_src
+
+然后运行 =make prepare= 将 =.env= 变量注入 =system.toml=。
+
+Email 通道当前不走默认 =.env= 模板；需要手工补充到 =configs/system.toml=：
+
+#+begin_src toml
+[notification.email]
+enabled = true
+smtp_host = "smtp.example.com"
+smtp_port = 465
+smtp_user = "bot@example.com"
+smtp_pass = "app-password"
+from = "bot@example.com"
+to = ["ops@example.com"]
+#+end_src
+
+** 通知特性
+
+- *流程*：业务逻辑 → River 队列（=notify_render= / =notify_deliver=）→ 卡片渲染 → Telegram / 飞书 / Email sender
+- *去重*：90 秒 TTL，防止同一事件重复推送
+- *聚合*：多个平仓事件可批量合并
+- *图片渲染*：Telegram / 飞书对决策、开仓、平仓、停止、错误等事件渲染 OG 卡片；Email 使用 HTML/文本正文
+- *异步发送*：非阻塞推送，失败自动记录日志
+- *降级*：图片渲染失败时自动退回文本消息
+
+** 验证方法
+
+#+begin_src bash
+# 1. 确认通知配置已注入
+grep -A5 '\[notification\]' configs/system.toml
+
+# 2. 启动系统，检查是否收到启动通知
+make start
+# 应在 Telegram/飞书收到 "🚀 Brale 已启动" 消息
+
+# 3. 停止系统，检查是否收到停止通知
+make stop
+# 应在 Telegram/飞书收到 "🛑 Brale 已停止" 消息
+
+# 4. 检查通知日志
+make logs | grep -i "notify\|notification"
+
+# 5. 检查 River 队列
+psql $DATABASE_DSN -c "SELECT kind, state, attempt FROM river_jobs WHERE kind IN ('notify_render', 'notify_deliver') ORDER BY id DESC LIMIT 20;"
+
+# 6. 测试 OG 卡片渲染
+cd webui/og-card-demo && node test-render.mjs
+#+end_src
+
+* 常见问题
+
+** 数据库连接失败
+
+#+begin_src
+错误：dial tcp: connection refused
+解决：确认 TimescaleDB 容器已启动 → make status
+#+end_src
+
+** 回测无数据
+
+#+begin_src
+错误：no gate events found
+解决：系统需要先运行一段时间积累决策记录
+#+end_src
+
+** MCP 安装后 LLM 无法连接
+
+#+begin_src
+排查：
+1. 确认 bralectl 路径正确：which bralectl
+2. 检查 MCP 配置：cat ~/.config/claude/mcp.json
+3. 查看审计日志：--audit-log /tmp/mcp.jsonl
+#+end_src
+
+** 通知未收到
+
+#+begin_src
+排查：
+1. 确认 .env 中 NOTIFICATION_ENABLED=true
+2. 运行 make prepare 更新配置
+3. 检查日志：make logs | grep notify
+4. Telegram：确认 Bot Token 和 Chat ID 正确
+5. 飞书：确认 App ID/Secret + 接收人 ID 正确
+#+end_src
