@@ -154,6 +154,109 @@ func TestPreviewGeneratedStrategyFilesRemainLoadable(t *testing.T) {
 	}
 }
 
+func TestPreviewGeneratedSymbolFilesRemainLoadable(t *testing.T) {
+	g := NewGenerator(t.TempDir())
+	req := basePreviewRequest()
+	setPreviewEnv(t, req)
+	result, err := g.Preview(req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	for _, rel := range []string{"configs/symbols/default.toml", "configs/symbols/ETHUSDT.toml"} {
+		t.Run(rel, func(t *testing.T) {
+			content := generatedFileContent(t, result, rel)
+			path := filepath.Join(t.TempDir(), filepath.Base(rel))
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", rel, err)
+			}
+			cfg, err := config.LoadSymbolConfig(path)
+			if err != nil {
+				t.Fatalf("LoadSymbolConfig(%s) error = %v\n%s", rel, err, content)
+			}
+			if err := config.ValidateSymbolConfig(cfg); err != nil {
+				t.Fatalf("ValidateSymbolConfig(%s) error = %v\n%s", rel, err, content)
+			}
+		})
+	}
+}
+
+func TestPreviewSymbolDefaultsIncludeShadowEngineAndMemory(t *testing.T) {
+	g := NewGenerator(t.TempDir())
+	result, err := g.Preview(basePreviewRequest())
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	symbolContent := generatedFileContent(t, result, "configs/symbols/ETHUSDT.toml")
+	for _, want := range []string{
+		"engine = \"talib\"",
+		"shadow_engine = \"reference\"",
+		"stc_fast = 23",
+		"stc_slow = 50",
+		"bb_period = 20",
+		"bb_multiplier = 2.0",
+		"chop_period = 14",
+		"stoch_rsi_period = 14",
+		"aroon_period = 25",
+		"[memory]",
+		"enabled = true",
+		"working_memory_size = 5",
+		"episodic_enabled = true",
+		"episodic_ttl_days = 90",
+		"episodic_max_per_symbol = 3",
+		"semantic_enabled = true",
+		"semantic_max_rules = 10",
+	} {
+		if !strings.Contains(symbolContent, want) {
+			t.Fatalf("symbol config missing %q:\n%s", want, symbolContent)
+		}
+	}
+
+	defaultContent := generatedFileContent(t, result, "configs/symbols/default.toml")
+	for _, want := range []string{
+		"engine = \"talib\"",
+		"shadow_engine = \"\"",
+		"[memory]",
+		"enabled = true",
+		"semantic_enabled = true",
+	} {
+		if !strings.Contains(defaultContent, want) {
+			t.Fatalf("default symbol config missing %q:\n%s", want, defaultContent)
+		}
+	}
+}
+
+func TestPreviewSystemTemplateIncludesStructuredOutput(t *testing.T) {
+	g := NewGenerator(t.TempDir())
+	req := basePreviewRequest()
+	setPreviewEnv(t, req)
+	result, err := g.Preview(req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	systemContent := generatedFileContent(t, result, "configs/system.toml")
+	if strings.Count(systemContent, "structured_output = true") != 3 {
+		t.Fatalf("configs/system.toml missing structured_output flags:\n%s", systemContent)
+	}
+	if !strings.Contains(systemContent, "llm_min_interval = \"20s\"") {
+		t.Fatalf("configs/system.toml missing llm_min_interval sync:\n%s", systemContent)
+	}
+
+	path := filepath.Join(t.TempDir(), "system.toml")
+	if err := os.WriteFile(path, []byte(systemContent), 0o600); err != nil {
+		t.Fatalf("write system config: %v", err)
+	}
+	cfg, err := config.LoadSystemConfig(path)
+	if err != nil {
+		t.Fatalf("LoadSystemConfig() error = %v\n%s", err, systemContent)
+	}
+	if err := config.ValidateSystemConfig(cfg); err != nil {
+		t.Fatalf("ValidateSystemConfig() error = %v\n%s", err, systemContent)
+	}
+}
+
 func TestPreviewTemplateBackedStrategiesUseConservativeSieveFallback(t *testing.T) {
 	g := NewGenerator(t.TempDir())
 	result, err := g.Preview(basePreviewRequest())
@@ -200,4 +303,33 @@ func generatedFileContent(t *testing.T, result GenerateResult, path string) stri
 	}
 	t.Fatalf("generated file %q not found", path)
 	return ""
+}
+
+func setPreviewEnv(t *testing.T, req Request) {
+	t.Helper()
+	t.Setenv("EXEC_USERNAME", req.ExecUsername)
+	t.Setenv("EXEC_SECRET", req.ExecSecret)
+	t.Setenv("LLM_MODEL_INDICATOR", req.LLMModelIndicator)
+	t.Setenv("LLM_INDICATOR_ENDPOINT", req.LLMIndicatorEndpoint)
+	t.Setenv("LLM_INDICATOR_API_KEY", req.LLMIndicatorKey)
+	t.Setenv("LLM_MODEL_STRUCTURE", req.LLMModelStructure)
+	t.Setenv("LLM_STRUCTURE_ENDPOINT", req.LLMStructureEndpoint)
+	t.Setenv("LLM_STRUCTURE_API_KEY", req.LLMStructureKey)
+	t.Setenv("LLM_MODEL_MECHANICS", req.LLMModelMechanics)
+	t.Setenv("LLM_MECHANICS_ENDPOINT", req.LLMMechanicsEndpoint)
+	t.Setenv("LLM_MECHANICS_API_KEY", req.LLMMechanicsKey)
+	t.Setenv("NOTIFICATION_ENABLED", "false")
+	t.Setenv("NOTIFICATION_STARTUP_NOTIFY_ENABLED", "false")
+	t.Setenv("NOTIFICATION_TELEGRAM_ENABLED", "false")
+	t.Setenv("NOTIFICATION_TELEGRAM_TOKEN", "")
+	t.Setenv("NOTIFICATION_TELEGRAM_CHAT_ID", "0")
+	t.Setenv("NOTIFICATION_FEISHU_ENABLED", "false")
+	t.Setenv("NOTIFICATION_FEISHU_APP_ID", "")
+	t.Setenv("NOTIFICATION_FEISHU_APP_SECRET", "")
+	t.Setenv("NOTIFICATION_FEISHU_BOT_ENABLED", "false")
+	t.Setenv("NOTIFICATION_FEISHU_BOT_MODE", "long_connection")
+	t.Setenv("NOTIFICATION_FEISHU_VERIFICATION_TOKEN", "")
+	t.Setenv("NOTIFICATION_FEISHU_ENCRYPT_KEY", "")
+	t.Setenv("NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID_TYPE", "chat_id")
+	t.Setenv("NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID", "")
 }

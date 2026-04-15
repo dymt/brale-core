@@ -12,6 +12,10 @@ target_dir="${BRALE_DIR:-${TARGET_DIR_DEFAULT}}"
 onboarding_url="${BRALE_ONBOARDING_URL:-${ONBOARDING_URL_DEFAULT}}"
 compose_project_name="${BRALE_COMPOSE_PROJECT_NAME:-brale-core}"
 open_browser=1
+start_onboarding=1
+with_mcp=0
+run_setup=0
+setup_lang=""
 host_uid="$(id -u)"
 host_gid="$(id -g)"
 
@@ -24,6 +28,10 @@ Options:
   --ref REF           Git ref to checkout (default: master)
   --repo-url URL      Repository URL
   --onboarding-url U  Expected onboarding URL (default: http://127.0.0.1:9992)
+  --no-onboarding     Skip launching the onboarding UI
+  --with-mcp          Start the stack with the optional MCP SSE service
+  --setup             Run 'make setup' after clone/update
+  --setup-lang LANG   Preselect setup wizard language (zh or en)
   --no-open           Do not try to open the browser automatically
   -h, --help          Show this help text
 EOF
@@ -62,6 +70,29 @@ while [[ $# -gt 0 ]]; do
       ;;
     --onboarding-url)
       onboarding_url="$2"
+      shift 2
+      ;;
+    --no-onboarding)
+      start_onboarding=0
+      shift
+      ;;
+    --with-mcp)
+      with_mcp=1
+      shift
+      ;;
+    --setup)
+      run_setup=1
+      shift
+      ;;
+    --setup-lang)
+      case "$2" in
+        zh|en)
+          setup_lang="$2"
+          ;;
+        *)
+          fail "invalid --setup-lang: must be 'zh' or 'en'"
+          ;;
+      esac
       shift 2
       ;;
     --no-open)
@@ -121,6 +152,50 @@ else
   fi
 fi
 
+log "[INFO] ensuring .env exists"
+env_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make env-init 2>&1)" || {
+  printf '%s\n' "$env_output"
+  fail "failed to initialize .env from .env.example"
+}
+printf '%s\n' "$env_output"
+
+if [[ "$run_setup" -eq 1 ]]; then
+  log "[INFO] running interactive setup wizard"
+  setup_cmd=(make setup)
+  if [[ -n "$setup_lang" ]]; then
+    setup_cmd+=("SETUP_LANG=$setup_lang")
+  fi
+  if ! (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${setup_cmd[@]}"); then
+    fail "setup wizard failed"
+  fi
+fi
+
+if [[ "$start_onboarding" -ne 1 ]]; then
+  log "[INFO] onboarding disabled; checking whether the stack can start headlessly"
+  if check_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make check 2>&1)"; then
+    printf '%s\n' "$check_output"
+    log "[INFO] starting core stack"
+    start_cmd=(make start "ENABLE_ONBOARDING=0")
+    if [[ "$with_mcp" -eq 1 ]]; then
+      start_cmd+=("ENABLE_MCP=1")
+    fi
+    start_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${start_cmd[@]}" 2>&1)" || {
+      printf '%s\n' "$start_output"
+      fail "failed to start stack without onboarding"
+    }
+    printf '%s\n' "$start_output"
+    log "[OK] stack started"
+    if [[ "$with_mcp" -eq 1 ]]; then
+      log "[OPEN] MCP SSE will listen on http://127.0.0.1:8765/sse"
+    fi
+    exit 0
+  fi
+  printf '%s\n' "$check_output"
+  log "[WARN] .env is not ready for headless startup; skipping docker compose up"
+  log "[NEXT] edit .env manually, run 'make setup', or rerun bootstrap without --no-onboarding"
+  exit 0
+fi
+
 log "[INFO] building and starting onboarding container"
 make_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make init 2>&1)" || {
   printf '%s\n' "$make_output"
@@ -144,6 +219,9 @@ fi
 
 log "[OK] onboarding is ready"
 log "[OPEN] $onboarding_url"
+if [[ "$with_mcp" -eq 1 ]]; then
+  log "[INFO] MCP SSE is not started during onboarding-only bootstrap. After filling .env, run: make start ENABLE_MCP=1"
+fi
 
 if [[ "$open_browser" -eq 1 ]]; then
   if command -v open >/dev/null 2>&1; then

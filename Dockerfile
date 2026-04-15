@@ -16,6 +16,7 @@ COPY internal ./internal
 COPY webui ./webui
 COPY --from=node-runtime /usr/local/ /usr/local/
 RUN npm ci --prefix /src/webui/og-card-demo
+RUN CGO_ENABLED=0 go build -o /out/bralectl ./cmd/bralectl
 RUN CGO_ENABLED=0 go build -o /out/onboarding ./cmd/onboarding
 RUN go build -o /out/brale-core ./cmd/brale-core
 
@@ -32,6 +33,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=node-runtime /usr/local/ /usr/local/
+COPY --from=builder /out/bralectl /usr/local/bin/bralectl
 COPY --from=builder /out/brale-core /usr/local/bin/brale-core
 COPY --from=builder /src/webui/og-card-demo /app/webui/og-card-demo
 

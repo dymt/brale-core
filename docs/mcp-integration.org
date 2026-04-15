@@ -13,7 +13,7 @@
 
 ** 概述
 
-brale-core 实现了 [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] —— 由 Anthropic 提出的 AI Agent 工具交互开放标准。通过 MCP，外部 AI Agent（Claude Desktop、Cursor、自定义流水线等）可以只读访问实时行情数据、决策历史、指标快照和运行配置，*不会暴露任何写入或交易执行能力*。
+brale-core 实现了 [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] —— 由 Anthropic 提出的 AI Agent 工具交互开放标准。通过 MCP，外部 AI Agent（Claude Code、Claude Desktop、OpenCode、Codex、Cursor、自定义流水线等）可以只读访问实时行情数据、决策历史、指标快照和运行配置，*不会暴露任何写入或交易执行能力*。
 
 所有 MCP 操作均记录到本地审计日志 =data/brale/mcp-audit.jsonl=。
 
@@ -42,13 +42,16 @@ bralectl mcp serve --mode sse --addr 0.0.0.0:8765 \
 *** 自动安装
 
 #+begin_src bash
-bralectl mcp install --target claude-code     # 写入 .claude/mcp.json
-bralectl mcp install --target claude-desktop  # 写入 claude_desktop_config.json
+make setup                                    # 交互式初始化 .env + 可选安装 MCP
+bralectl mcp install --target claude-code     # 写入 ~/.config/claude/mcp_settings.json
+bralectl mcp install --target claude-desktop  # 写入平台默认 Claude Desktop 配置
+bralectl mcp install --target opencode        # 写入 ~/.config/opencode/config.json
+bralectl mcp install --target codex           # 写入 ~/.codex/config.json
 #+end_src
 
 *** 手动配置
 
-**** Claude Desktop (=~/.claude/claude_desktop_config.json=)
+**** Claude Code (=~/.config/claude/mcp_settings.json=)
 
 #+begin_src json
 {
@@ -65,7 +68,41 @@ bralectl mcp install --target claude-desktop  # 写入 claude_desktop_config.jso
 }
 #+end_src
 
-**** Cursor (=.cursor/mcp.json=)
+**** Claude Desktop （Linux 默认：=~/.config/Claude/claude_desktop_config.json=）
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** OpenCode (=~/.config/opencode/config.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** Codex (=~/.codex/config.json=)
 
 #+begin_src json
 {
@@ -152,7 +189,7 @@ SSE 端点默认监听 =127.0.0.1:8765=。
 
 ** Overview
 
-brale-core implements the [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] — an open standard for AI Agent tool interaction proposed by Anthropic. Through MCP, external AI Agents (Claude Desktop, Cursor, custom pipelines) gain read-only access to live market data, decision history, indicator snapshots, and configuration — *without exposing any write or trade-execution capability*.
+brale-core implements the [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] — an open standard for AI Agent tool interaction proposed by Anthropic. Through MCP, external AI Agents (Claude Code, Claude Desktop, OpenCode, Codex, Cursor, custom pipelines) gain read-only access to live market data, decision history, indicator snapshots, and configuration — *without exposing any write or trade-execution capability*.
 
 All MCP operations are audited to a local JSONL log (=data/brale/mcp-audit.jsonl=).
 
@@ -181,13 +218,16 @@ bralectl mcp serve --mode sse --addr 0.0.0.0:8765 \
 *** Auto-Install
 
 #+begin_src bash
-bralectl mcp install --target claude-code     # writes .claude/mcp.json
-bralectl mcp install --target claude-desktop  # writes claude_desktop_config.json
+make setup                                    # interactive .env + optional MCP bootstrap
+bralectl mcp install --target claude-code     # writes ~/.config/claude/mcp_settings.json
+bralectl mcp install --target claude-desktop  # writes the platform default Claude Desktop config
+bralectl mcp install --target opencode        # writes ~/.config/opencode/config.json
+bralectl mcp install --target codex           # writes ~/.codex/config.json
 #+end_src
 
 *** Manual Configuration
 
-**** Claude Desktop (=~/.claude/claude_desktop_config.json=)
+**** Claude Code (=~/.config/claude/mcp_settings.json=)
 
 #+begin_src json
 {
@@ -204,7 +244,41 @@ bralectl mcp install --target claude-desktop  # writes claude_desktop_config.jso
 }
 #+end_src
 
-**** Cursor (=.cursor/mcp.json=)
+**** Claude Desktop (Linux default: =~/.config/Claude/claude_desktop_config.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** OpenCode (=~/.config/opencode/config.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** Codex (=~/.codex/config.json=)
 
 #+begin_src json
 {

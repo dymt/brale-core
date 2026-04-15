@@ -218,14 +218,31 @@ func symbolConfigRegistry(symbol string, detail SymbolDetail) []tomlUpdate {
 	return []tomlUpdate{
 		{Path: []string{"symbol"}, Value: tomlQuoted(symbol)},
 		{Path: []string{"intervals"}, Value: tomlStringArray(detail.Intervals)},
+		{Path: []string{"indicators", "engine"}, Value: tomlQuoted("talib")},
+		{Path: []string{"indicators", "shadow_engine"}, Value: tomlQuoted(defaultShadowEngine(symbol))},
 		{Path: []string{"indicators", "ema_fast"}, Value: strconv.Itoa(detail.EMAFast)},
 		{Path: []string{"indicators", "ema_mid"}, Value: strconv.Itoa(detail.EMAMid)},
 		{Path: []string{"indicators", "ema_slow"}, Value: strconv.Itoa(detail.EMASlow)},
 		{Path: []string{"indicators", "rsi_period"}, Value: strconv.Itoa(detail.RSIPeriod)},
+		{Path: []string{"indicators", "atr_period"}, Value: "14"},
+		{Path: []string{"indicators", "stc_fast"}, Value: "23"},
+		{Path: []string{"indicators", "stc_slow"}, Value: "50"},
+		{Path: []string{"indicators", "bb_period"}, Value: "20"},
+		{Path: []string{"indicators", "bb_multiplier"}, Value: "2.0"},
+		{Path: []string{"indicators", "chop_period"}, Value: "14"},
+		{Path: []string{"indicators", "stoch_rsi_period"}, Value: "14"},
+		{Path: []string{"indicators", "aroon_period"}, Value: "25"},
 		{Path: []string{"indicators", "macd_fast"}, Value: strconv.Itoa(detail.MACDFast)},
 		{Path: []string{"indicators", "macd_slow"}, Value: strconv.Itoa(detail.MACDSlow)},
 		{Path: []string{"indicators", "macd_signal"}, Value: strconv.Itoa(detail.MACDSignal)},
 		{Path: []string{"indicators", "last_n"}, Value: strconv.Itoa(detail.LastN)},
+		{Path: []string{"memory", "enabled"}, Value: "true"},
+		{Path: []string{"memory", "working_memory_size"}, Value: "5"},
+		{Path: []string{"memory", "episodic_enabled"}, Value: "true"},
+		{Path: []string{"memory", "episodic_ttl_days"}, Value: "90"},
+		{Path: []string{"memory", "episodic_max_per_symbol"}, Value: "3"},
+		{Path: []string{"memory", "semantic_enabled"}, Value: "true"},
+		{Path: []string{"memory", "semantic_max_rules"}, Value: "10"},
 	}
 }
 
@@ -233,7 +250,39 @@ func defaultSymbolConfigRegistry(detail SymbolDetail) []tomlUpdate {
 	return []tomlUpdate{
 		{Path: []string{"symbol"}, Value: tomlQuoted("DEFAULT")},
 		{Path: []string{"intervals"}, Value: tomlStringArray(detail.Intervals)},
+		{Path: []string{"indicators", "engine"}, Value: tomlQuoted("talib")},
+		{Path: []string{"indicators", "shadow_engine"}, Value: tomlQuoted("")},
+		{Path: []string{"indicators", "ema_fast"}, Value: strconv.Itoa(detail.EMAFast)},
+		{Path: []string{"indicators", "ema_mid"}, Value: strconv.Itoa(detail.EMAMid)},
+		{Path: []string{"indicators", "ema_slow"}, Value: strconv.Itoa(detail.EMASlow)},
+		{Path: []string{"indicators", "rsi_period"}, Value: strconv.Itoa(detail.RSIPeriod)},
+		{Path: []string{"indicators", "atr_period"}, Value: "14"},
+		{Path: []string{"indicators", "stc_fast"}, Value: "23"},
+		{Path: []string{"indicators", "stc_slow"}, Value: "50"},
+		{Path: []string{"indicators", "bb_period"}, Value: "20"},
+		{Path: []string{"indicators", "bb_multiplier"}, Value: "2.0"},
+		{Path: []string{"indicators", "chop_period"}, Value: "14"},
+		{Path: []string{"indicators", "stoch_rsi_period"}, Value: "14"},
+		{Path: []string{"indicators", "aroon_period"}, Value: "25"},
+		{Path: []string{"indicators", "macd_fast"}, Value: strconv.Itoa(detail.MACDFast)},
+		{Path: []string{"indicators", "macd_slow"}, Value: strconv.Itoa(detail.MACDSlow)},
+		{Path: []string{"indicators", "macd_signal"}, Value: strconv.Itoa(detail.MACDSignal)},
+		{Path: []string{"indicators", "last_n"}, Value: strconv.Itoa(detail.LastN)},
+		{Path: []string{"memory", "enabled"}, Value: "true"},
+		{Path: []string{"memory", "working_memory_size"}, Value: "5"},
+		{Path: []string{"memory", "episodic_enabled"}, Value: "true"},
+		{Path: []string{"memory", "episodic_ttl_days"}, Value: "90"},
+		{Path: []string{"memory", "episodic_max_per_symbol"}, Value: "3"},
+		{Path: []string{"memory", "semantic_enabled"}, Value: "true"},
+		{Path: []string{"memory", "semantic_max_rules"}, Value: "10"},
 	}
+}
+
+func defaultShadowEngine(symbol string) string {
+	if strings.EqualFold(symbol, "ETHUSDT") {
+		return "reference"
+	}
+	return ""
 }
 
 func strategyConfigRegistry(symbol string, detail SymbolDetail, setID bool) []tomlUpdate {

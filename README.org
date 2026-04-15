@@ -50,6 +50,8 @@ Brale 是一个量化交易引擎，通过多个大语言模型智能体（LLM A
 
 #+begin_src bash
 curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
+# 或：跳过引导界面，先初始化 .env 并进入 setup 向导
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash -s -- --no-onboarding --setup
 #+end_src
 
 *** 手动部署
@@ -57,35 +59,42 @@ curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bo
 #+begin_src bash
 git clone --depth 1 https://github.com/laukkw/brale-core.git
 cd brale-core
-cp .env.example .env
-make init          # 启动引导界面，访问 127.0.0.1:9992
-# 或: make start   # 跳过引导，直接启动 Freqtrade + Brale
+make env-init                                  # 缺失时从 .env.example 创建 .env
+make setup                                     # 初始化本地环境，并可选安装 MCP 客户端配置
+make init                                      # 推荐首次使用：启动引导界面，访问 127.0.0.1:9992
+# 或：编辑好 .env 后直接启动核心栈
+make start ENABLE_MCP=1 ENABLE_ONBOARDING=0
 #+end_src
 
 *** 常用命令
 
 | 命令 | 说明 |
 |------+------|
+| =make env-init= | 缺失时复制 =.env.example= 到 =.env= |
+| =make setup= | 运行本地 setup 向导（=.env= + 可选 MCP 安装） |
 | =make status= | 容器健康检查 |
 | =make logs= | 跟踪服务日志 |
+| =make mcp-start= | 单独启动 MCP SSE 服务 |
 | =make stop= / =make down= | 停止 / 移除容器 |
-| =make rebuild= | 仅重新构建并重启 Brale |
+| =make rebuild= | 重新构建 Brale；若 =ENABLE_MCP=1= 同时重建 =mcp-sse= |
 
 *** Docker 服务
 
 | 服务 | 端口 | 说明 |
 |------+------+------|
-| onboarding | =127.0.0.1:9992= | 配置引导界面 |
+| onboarding | =127.0.0.1:9992= | 配置引导界面（=make init= 或 =ENABLE_ONBOARDING=1= 时启动） |
 | freqtrade | =127.0.0.1:8080= | 交易执行 |
 | brale | =127.0.0.1:9991= | 运行时 API / Webhook |
-| mcp-sse | =127.0.0.1:8765= | MCP SSE 端点（通过 =--profile mcp= 启用） |
+| mcp-sse | =127.0.0.1:8765= | MCP SSE 端点（=make mcp-start= 或 =ENABLE_MCP=1=） |
 
 ** 命令行工具 — bralectl
 
-=bralectl= 提供运行时管理与离线分析两大类功能，共 12 个命令组。
+=bralectl= 提供运行时管理、离线分析与本地 setup 三大类功能，共 12 个命令组。
 
 | 命令组 | 说明 |
 |--------+------|
+| =setup= | 初始化 =.env=，并可选安装 MCP 客户端配置 |
+| =add-symbol= | 从现有币种模板生成配置并注册新币种 |
 | =observe= | 触发观测、查看报告 |
 | =decision= | 查询最新及历史决策 |
 | =position= | 查看持仓与已平仓记录 |
@@ -104,11 +113,12 @@ make init          # 启动引导界面，访问 127.0.0.1:9992
 brale-core 通过 [[https://modelcontextprotocol.io][模型上下文协议（Model Context Protocol）]] 暴露 8 个只读分析工具：
 
 #+begin_src bash
-bralectl mcp install --target claude-code     # 自动配置 Claude Code
+make setup                                    # 交互式初始化 .env + 可选安装 MCP
+bralectl mcp install --target opencode        # 自动配置 OpenCode
 bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # 远程 SSE 模式
 #+end_src
 
-兼容 Claude Desktop、Cursor 及任何支持 MCP 的智能体。
+兼容 Claude Code、Claude Desktop、OpenCode、Codex、Cursor 及任何支持 MCP 的智能体。
 提供 4 个资源 URI 和 2 个提示词模板。
 详见 [[file:docs/mcp-integration.org][MCP 集成指南]]。
 
@@ -233,35 +243,42 @@ curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bo
 #+begin_src bash
 git clone --depth 1 https://github.com/laukkw/brale-core.git
 cd brale-core
-cp .env.example .env
-make init          # launches the onboarding UI at 127.0.0.1:9992
-# or: make start   # skip onboarding, start Freqtrade + Brale directly
+make env-init                                  # create .env from .env.example when missing
+make setup                                     # initialize local setup and optionally install MCP client config
+make init                                      # recommended for first-time setup: launch the UI at 127.0.0.1:9992
+# or: edit .env first, then start the core stack directly
+make start ENABLE_MCP=1 ENABLE_ONBOARDING=0
 #+end_src
 
 *** Common Commands
 
 | Command | Description |
 |---------+-------------|
+| =make env-init= | Copy =.env.example= to =.env= when missing |
+| =make setup= | Run the local setup wizard (=.env= + optional MCP install) |
 | =make status= | Container health check |
 | =make logs= | Tail service logs |
+| =make mcp-start= | Start only the MCP SSE service |
 | =make stop= / =make down= | Stop / remove containers |
-| =make rebuild= | Rebuild and restart Brale only |
+| =make rebuild= | Rebuild Brale; also rebuild =mcp-sse= when =ENABLE_MCP=1= |
 
 *** Docker Services
 
 | Service | Port | Role |
 |---------+------+------|
-| onboarding | =127.0.0.1:9992= | Setup UI |
+| onboarding | =127.0.0.1:9992= | Setup UI (started by =make init= or =ENABLE_ONBOARDING=1=) |
 | freqtrade | =127.0.0.1:8080= | Trade execution |
 | brale | =127.0.0.1:9991= | Runtime API / webhook |
-| mcp-sse | =127.0.0.1:8765= | MCP SSE endpoint (opt-in via =--profile mcp=) |
+| mcp-sse | =127.0.0.1:8765= | MCP SSE endpoint (=make mcp-start= or =ENABLE_MCP=1=) |
 
 ** CLI Tool — bralectl
 
-=bralectl= provides both live runtime management and offline analysis across 12 command groups.
+=bralectl= covers live runtime management, offline analysis, and local setup across 12 command groups.
 
 | Group | Description |
 |-------+-------------|
+| =setup= | Initialize =.env= and optionally install MCP client config |
+| =add-symbol= | Generate configs from an existing symbol template |
 | =observe= | Trigger observations, view reports |
 | =decision= | Query latest and historical decisions |
 | =position= | View open and closed positions |
@@ -281,11 +298,12 @@ brale-core exposes 8 read-only analysis tools via the
 [[https://modelcontextprotocol.io][Model Context Protocol]]:
 
 #+begin_src bash
-bralectl mcp install --target claude-code     # auto-configure Claude Code
+make setup                                    # interactive .env + MCP bootstrap
+bralectl mcp install --target opencode        # auto-configure OpenCode
 bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # remote SSE mode
 #+end_src
 
-Compatible with Claude Desktop, Cursor, and any MCP-capable Agent.
+Compatible with Claude Code, Claude Desktop, OpenCode, Codex, Cursor, and any MCP-capable Agent.
 Provides 4 resource URIs and 2 prompt templates.
 See [[file:docs/mcp-integration.org][MCP Integration Guide]].
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +15,14 @@ const (
 	defaultServerName    = "brale-core"
 	defaultEndpoint      = "http://127.0.0.1:9991"
 )
+
+var supportedInstallTargets = []string{
+	"claude-code",
+	"claude-desktop",
+	"opencode",
+	"codex",
+	"custom",
+}
 
 type InstallOptions struct {
 	Name       string
@@ -33,66 +42,19 @@ type InstallResult struct {
 	Args       []string
 }
 
+type preparedInstall struct {
+	name       string
+	command    string
+	configPath string
+	args       []string
+}
+
 func Install(opts InstallOptions) (InstallResult, error) {
-	name := strings.TrimSpace(opts.Name)
-	if name == "" {
-		name = defaultServerName
-	}
-	command := strings.TrimSpace(opts.Command)
-	if command == "" {
-		exe, err := os.Executable()
-		if err != nil {
-			return InstallResult{}, fmt.Errorf("resolve executable: %w", err)
-		}
-		command = exe
-	}
-	command, err := absoluteExecutablePath(command)
+	prepared, err := prepareInstall(opts)
 	if err != nil {
-		return InstallResult{}, fmt.Errorf("resolve command path: %w", err)
+		return InstallResult{}, err
 	}
-	configPath := strings.TrimSpace(opts.ConfigPath)
-	if configPath == "" {
-		configPath, err = defaultInstallConfigPath(strings.TrimSpace(opts.Target))
-		if err != nil {
-			return InstallResult{}, err
-		}
-	}
-	configPath, err = filepath.Abs(configPath)
-	if err != nil {
-		return InstallResult{}, fmt.Errorf("resolve config path: %w", err)
-	}
-	systemPath, err := absoluteExistingFile(defaultIfEmpty(opts.SystemPath, "configs/system.toml"))
-	if err != nil {
-		return InstallResult{}, fmt.Errorf("resolve system path: %w", err)
-	}
-	indexPath, err := absoluteExistingFile(defaultIfEmpty(opts.IndexPath, "configs/symbols-index.toml"))
-	if err != nil {
-		return InstallResult{}, fmt.Errorf("resolve index path: %w", err)
-	}
-	auditPath := strings.TrimSpace(opts.AuditPath)
-	if auditPath == "" {
-		auditPath, err = DefaultAuditLogPath()
-		if err != nil {
-			return InstallResult{}, fmt.Errorf("resolve audit log path: %w", err)
-		}
-	}
-	auditPath, err = filepath.Abs(auditPath)
-	if err != nil {
-		return InstallResult{}, fmt.Errorf("resolve audit log path: %w", err)
-	}
-	endpoint := strings.TrimSpace(opts.Endpoint)
-	if endpoint == "" {
-		endpoint = defaultEndpoint
-	}
-	args := []string{
-		"--endpoint", endpoint,
-		"mcp", "serve",
-		"--mode", "stdio",
-		"--system", systemPath,
-		"--index", indexPath,
-		"--audit-log", auditPath,
-	}
-	doc, err := loadInstallDocument(configPath)
+	doc, err := loadInstallDocument(prepared.configPath)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -100,25 +62,25 @@ func Install(opts InstallOptions) (InstallResult, error) {
 	if err != nil {
 		return InstallResult{}, err
 	}
-	servers[name] = map[string]any{
-		"command": command,
-		"args":    args,
+	servers[prepared.name] = map[string]any{
+		"command": prepared.command,
+		"args":    prepared.args,
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(prepared.configPath), 0o755); err != nil {
 		return InstallResult{}, fmt.Errorf("create install dir: %w", err)
 	}
 	raw, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return InstallResult{}, fmt.Errorf("marshal install config: %w", err)
 	}
-	if err := writeAtomic(configPath, append(raw, '\n')); err != nil {
+	if err := writeAtomic(prepared.configPath, append(raw, '\n')); err != nil {
 		return InstallResult{}, fmt.Errorf("write install config: %w", err)
 	}
 	return InstallResult{
-		ConfigPath: configPath,
-		ServerName: name,
-		Command:    command,
-		Args:       args,
+		ConfigPath: prepared.configPath,
+		ServerName: prepared.name,
+		Command:    prepared.command,
+		Args:       prepared.args,
 	}, nil
 }
 
@@ -130,10 +92,24 @@ func DefaultAuditLogPath() (string, error) {
 	return filepath.Join(base, "brale-core", "mcp-audit.jsonl"), nil
 }
 
+func SupportedInstallTargets() []string {
+	return slices.Clone(supportedInstallTargets)
+}
+
+func DefaultInstallConfigPath(target string) (string, error) {
+	return defaultInstallConfigPath(target)
+}
+
+func ValidateInstallOptions(opts InstallOptions) error {
+	_, err := prepareInstall(opts)
+	return err
+}
+
 func defaultInstallConfigPath(target string) (string, error) {
-	target = strings.ToLower(strings.TrimSpace(target))
-	if target == "" {
-		target = defaultInstallTarget
+	var err error
+	target, err = normalizeInstallTarget(target)
+	if err != nil {
+		return "", err
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -161,9 +137,97 @@ func defaultInstallConfigPath(target string) (string, error) {
 		default:
 			return filepath.Join(home, ".config", "Claude", "claude_desktop_config.json"), nil
 		}
+	case "opencode":
+		return filepath.Join(home, ".config", "opencode", "config.json"), nil
+	case "codex":
+		return filepath.Join(home, ".codex", "config.json"), nil
+	case "custom":
+		return "", fmt.Errorf("install target %q requires --config", target)
 	default:
 		return "", fmt.Errorf("unsupported install target %q", target)
 	}
+}
+
+func prepareInstall(opts InstallOptions) (preparedInstall, error) {
+	target, err := normalizeInstallTarget(opts.Target)
+	if err != nil {
+		return preparedInstall{}, err
+	}
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		name = defaultServerName
+	}
+	command := strings.TrimSpace(opts.Command)
+	if command == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve executable: %w", err)
+		}
+		command = exe
+	}
+	command, err = absoluteExecutablePath(command)
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve command path: %w", err)
+	}
+	configPath := strings.TrimSpace(opts.ConfigPath)
+	if configPath == "" {
+		configPath, err = defaultInstallConfigPath(target)
+		if err != nil {
+			return preparedInstall{}, err
+		}
+	}
+	configPath, err = filepath.Abs(configPath)
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve config path: %w", err)
+	}
+	systemPath, err := absoluteExistingFile(defaultIfEmpty(opts.SystemPath, "configs/system.toml"))
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve system path: %w", err)
+	}
+	indexPath, err := absoluteExistingFile(defaultIfEmpty(opts.IndexPath, "configs/symbols-index.toml"))
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve index path: %w", err)
+	}
+	auditPath := strings.TrimSpace(opts.AuditPath)
+	if auditPath == "" {
+		auditPath, err = DefaultAuditLogPath()
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
+		}
+	}
+	auditPath, err = filepath.Abs(auditPath)
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
+	}
+	endpoint := strings.TrimSpace(opts.Endpoint)
+	if endpoint == "" {
+		endpoint = defaultEndpoint
+	}
+	args := []string{
+		"--endpoint", endpoint,
+		"mcp", "serve",
+		"--mode", "stdio",
+		"--system", systemPath,
+		"--index", indexPath,
+		"--audit-log", auditPath,
+	}
+	return preparedInstall{
+		name:       name,
+		command:    command,
+		configPath: configPath,
+		args:       args,
+	}, nil
+}
+
+func normalizeInstallTarget(raw string) (string, error) {
+	target := strings.ToLower(strings.TrimSpace(raw))
+	if target == "" {
+		return defaultInstallTarget, nil
+	}
+	if slices.Contains(supportedInstallTargets, target) {
+		return target, nil
+	}
+	return "", fmt.Errorf("unsupported install target %q", raw)
 }
 
 func loadInstallDocument(path string) (map[string]any, error) {

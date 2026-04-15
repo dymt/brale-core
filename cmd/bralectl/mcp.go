@@ -120,7 +120,7 @@ func mcpInstallCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&target, "target", "claude-code", "安装目标：claude-code 或 claude-desktop")
+	cmd.Flags().StringVar(&target, "target", "claude-code", "安装目标：claude-code、claude-desktop、opencode、codex 或 custom")
 	cmd.Flags().StringVar(&configPath, "config", "", "显式指定 MCP 配置文件路径")
 	cmd.Flags().StringVar(&command, "command", "", "bralectl 可执行文件路径")
 	cmd.Flags().StringVar(&name, "name", "brale-core", "MCP server 名称")

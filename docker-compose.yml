@@ -2,6 +2,7 @@ name: ${COMPOSE_PROJECT_NAME:-brale-core}
 
 services:
   onboarding:
+    profiles: ["onboarding"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -134,7 +135,7 @@ services:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    entrypoint: ["/app/bralectl"]
+    entrypoint: ["bralectl"]
     command:
       - "mcp"
       - "serve"

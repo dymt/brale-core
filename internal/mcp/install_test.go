@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -119,6 +120,82 @@ func TestInstallRejectsDirectoryForSystemPath(t *testing.T) {
 		IndexPath:  indexPath,
 	})
 	if err == nil || !strings.Contains(err.Error(), "file path") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestDefaultInstallConfigPathSupportsAdditionalTargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	}
+
+	tests := []struct {
+		target string
+		want   string
+	}{
+		{
+			target: "claude-code",
+			want: func() string {
+				if runtime.GOOS == "windows" {
+					return filepath.Join(home, "AppData", "Roaming", "Claude", "mcp_settings.json")
+				}
+				return filepath.Join(home, ".config", "claude", "mcp_settings.json")
+			}(),
+		},
+		{
+			target: "opencode",
+			want:   filepath.Join(home, ".config", "opencode", "config.json"),
+		},
+		{
+			target: "codex",
+			want:   filepath.Join(home, ".codex", "config.json"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			got, err := defaultInstallConfigPath(tt.target)
+			if err != nil {
+				t.Fatalf("defaultInstallConfigPath(%q) error = %v", tt.target, err)
+			}
+			if got != tt.want {
+				t.Fatalf("defaultInstallConfigPath(%q) = %q want %q", tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultInstallConfigPathRejectsCustomWithoutExplicitPath(t *testing.T) {
+	_, err := defaultInstallConfigPath("custom")
+	if err == nil || !strings.Contains(err.Error(), "requires --config") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestInstallRejectsUnsupportedTargetEvenWithExplicitConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	systemPath := filepath.Join(dir, "system.toml")
+	indexPath := filepath.Join(dir, "symbols-index.toml")
+	commandPath := filepath.Join(dir, "bralectl")
+	configPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(systemPath, []byte("db_path = \"db.sqlite\"\n"), 0o644); err != nil {
+		t.Fatalf("write system: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("[[symbols]]\nsymbol = \"BTCUSDT\"\nconfig = \"symbols/BTCUSDT.toml\"\nstrategy = \"strategies/BTCUSDT.toml\"\n"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+	_, err := Install(InstallOptions{
+		Target:     "codxe",
+		ConfigPath: configPath,
+		Command:    commandPath,
+		SystemPath: systemPath,
+		IndexPath:  indexPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported install target") {
 		t.Fatalf("err=%v", err)
 	}
 }

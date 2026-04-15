@@ -15,16 +15,34 @@ fear_greed = true
 liquidations = false
 
 [indicators]
+engine = "talib"
+shadow_engine = "reference"
 ema_fast = {{ .EMAFast }}
 ema_mid = {{ .EMAMid }}
 ema_slow = {{ .EMASlow }}
 rsi_period = {{ .RSIPeriod }}
 atr_period = 14
+stc_fast = 23
+stc_slow = 50
+bb_period = 20
+bb_multiplier = 2.0
+chop_period = 14
+stoch_rsi_period = 14
+aroon_period = 25
 macd_fast = {{ .MACDFast }}
 macd_slow = {{ .MACDSlow }}
 macd_signal = {{ .MACDSignal }}
 last_n = {{ .LastN }}
 pretty = false
+
+[memory]
+enabled = true
+working_memory_size = 5
+episodic_enabled = true
+episodic_ttl_days = 90
+episodic_max_per_symbol = 3
+semantic_enabled = true
+semantic_max_rules = 10
 
 [consensus]
 score_threshold = 0.35

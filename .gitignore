@@ -21,6 +21,8 @@ docs/project_introduction_technical.md
 !internal/llm/openai_test.go
 !internal/llm/schema_test.go
 !internal/llmctl/probe_test.go
+!cmd/bralectl/memory_test.go
+!cmd/bralectl/setup_test.go
 AGENTS.md
 webui/og-card-demo/node_modules/*
 webui/landing-page/
