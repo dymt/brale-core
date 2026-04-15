@@ -2,6 +2,7 @@ package decisionfmt
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -114,7 +115,7 @@ var translatedTerms = map[string]string{
 	"critical":             "危急(极高风险)",
 	"stable":               "稳定",
 	"steep":                "涨跌过快(乖离大)",
-	"flat":                 "动能走平/减弱",
+	"flat":                 "走平/减弱",
 	"expanding":            "波动/动能扩张",
 	"contracting":          "波动/动能收敛",
 	"aligned":              "指标一致",
@@ -161,6 +162,42 @@ var translatedTerms = map[string]string{
 	"volatility_squeeze":   "波动挤压",
 	"dead_fish":            "低动能低波动",
 	"exit_confirm_pending": "退出确认中",
+	// 指标引擎状态值 (indicator_state.go)
+	"above":       "上方",
+	"below":       "下方",
+	"near":        "附近",
+	"bull":        "多头排列",
+	"bear":        "空头排列",
+	"rising":      "上升",
+	"falling":     "下降",
+	"up":          "上行",
+	"down":        "下行",
+	"below_lower": "低于下轨",
+	"near_lower":  "靠近下轨",
+	"mid":         "中轨区间",
+	"near_upper":  "靠近上轨",
+	"above_upper": "突破上轨",
+	"squeeze":     "挤压收窄",
+	"normal":      "正常",
+	"wide":        "宽幅",
+	"trending":    "趋势行情",
+	"choppy":      "震荡行情",
+	"transition":  "过渡阶段",
+	"oversold":    "超卖",
+	"overbought":  "超买",
+	"strong_up":   "强势上行",
+	"strong_down": "强势下行",
+	"crossover":   "交叉",
+	"conflict":    "冲突/分歧",
+	// 指标事件名
+	"price_cross_ema_fast_up":   "价格上穿快线EMA",
+	"price_cross_ema_fast_down": "价格下穿快线EMA",
+	"price_cross_ema_mid_up":    "价格上穿中线EMA",
+	"price_cross_ema_mid_down":  "价格下穿中线EMA",
+	"ema_stack_bull_flip":       "EMA转为多头排列",
+	"ema_stack_bear_flip":       "EMA转为空头排列",
+	"aroon_strong_bullish":      "阿隆指标强势看多",
+	"aroon_strong_bearish":      "阿隆指标强势看空",
 }
 
 var llmKeyLabels = map[string]string{
@@ -198,6 +235,40 @@ var llmKeyLabels = map[string]string{
 	"divergence_detected":   "背离",
 	"adverse_liquidation":   "反向清算风险",
 	"crowding_reversal":     "拥挤反转",
+	// 事件相关
+	"events": "事件",
+	// 跨周期汇总字段
+	"cross_tf_summary":    "跨周期汇总",
+	"decision_tf_bias":    "决策周期偏向",
+	"lower_tf_agreement":  "低周期一致性",
+	"higher_tf_agreement": "高周期一致性",
+	"conflict_count":      "冲突计数",
+	// Agent 方向打分
+	"movement_score":      "方向分数",
+	"movement_confidence": "方向置信度",
+	"bias":                "偏向",
+	// 多周期结构
+	"multi_tf":          "多周期数据",
+	"decision_interval": "决策间隔",
+	// 指标细分字段
+	"rsi_zone":             "RSI区间",
+	"rsi_slope_state":      "RSI斜率",
+	"stc_state":            "STC状态",
+	"obv_slope_state":      "OBV斜率",
+	"stoch_rsi_zone":       "随机RSI区间",
+	"atr_expand_state":     "ATR扩张状态",
+	"atr_change_pct":       "ATR变化率",
+	"bb_zone":              "布林带区间",
+	"bb_width_state":       "布林带宽度",
+	"chop_regime":          "震荡指数状态",
+	"ema_stack":            "EMA排列",
+	"ema_distance_fast_atr": "快线EMA距离(ATR)",
+	"ema_distance_mid_atr":  "中线EMA距离(ATR)",
+	"ema_distance_slow_atr": "慢线EMA距离(ATR)",
+	"price_vs_ema_fast":    "价格vs快线EMA",
+	"price_vs_ema_mid":     "价格vs中线EMA",
+	"price_vs_ema_slow":    "价格vs慢线EMA",
+	"freshness_sec":        "数据新鲜度(秒)",
 }
 
 var providerRoleLabels = map[string]string{
@@ -374,4 +445,136 @@ func containsHan(s string) bool {
 		}
 	}
 	return false
+}
+
+// TranslateLLMFieldRefs replaces English field paths (e.g. cross_tf_summary.alignment=mixed)
+// in LLM free-text output with Chinese labels. Handles dotted paths, field=value patterns,
+// standalone field names, and event list references (events=xxx, events含 xxx).
+func TranslateLLMFieldRefs(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	// First pass: translate "events=..." and "events含 ..." patterns.
+	result := FormatEventList(text)
+	if !containsFieldRef(result) && containsHan(result) {
+		return result
+	}
+	result = fieldRefPattern.ReplaceAllStringFunc(result, func(match string) string {
+		return translateFieldRef(match)
+	})
+	return result
+}
+
+var fieldRefPattern = regexp.MustCompile(`[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*(?:=[^\s,;，；]+)?`)
+
+func containsFieldRef(text string) bool {
+	return fieldRefPattern.MatchString(text)
+}
+
+func translateFieldRef(ref string) string {
+	eqIdx := strings.Index(ref, "=")
+	if eqIdx < 0 {
+		normalized := normalizeDirtyValue(strings.ToLower(ref))
+		if normalized != strings.ToLower(ref) {
+			if label, ok := translatedTerms[normalized]; ok {
+				return label
+			}
+		}
+		return translateFieldPath(ref)
+	}
+	fieldPart := ref[:eqIdx]
+	valuePart := ref[eqIdx+1:]
+	translatedField := translateFieldPath(fieldPart)
+	translatedValue := translateFieldValue(valuePart)
+	return translatedField + "=" + translatedValue
+}
+
+func translateFieldPath(path string) string {
+	parts := strings.Split(path, ".")
+	translated := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if label, ok := llmKeyLabels[part]; ok {
+			translated = append(translated, label)
+		} else if label, ok := translatedTerms[strings.ToLower(part)]; ok {
+			translated = append(translated, label)
+		} else {
+			translated = append(translated, part)
+		}
+	}
+	return strings.Join(translated, ".")
+}
+
+func translateFieldValue(value string) string {
+	key := strings.ToLower(strings.TrimSpace(value))
+	key = normalizeDirtyValue(key)
+	if key == "true" {
+		return "是"
+	}
+	if key == "false" {
+		return "否"
+	}
+	if label, ok := translatedTerms[key]; ok {
+		return label
+	}
+	if label, ok := directionLabels[key]; ok {
+		return label
+	}
+	return value
+}
+
+// normalizeDirtyValue fixes known misspellings and non-standard formats from LLM output.
+var dirtyValueReplacements = map[string]string{
+	"aaroon_strong_bullish": "aroon_strong_bullish",
+	"aaroon_strong_bearish": "aroon_strong_bearish",
+}
+
+var dirtyValuePatterns = []struct {
+	match   *regexp.Regexp
+	replace string
+}{
+	// rsi_zone=45_55 → rsi_zone=45-55 (underscore separator in numeric ranges)
+	{regexp.MustCompile(`^(\d+)_(\d+)$`), "${1}-${2}"},
+}
+
+func normalizeDirtyValue(value string) string {
+	if replacement, ok := dirtyValueReplacements[value]; ok {
+		return replacement
+	}
+	for _, p := range dirtyValuePatterns {
+		if p.match.MatchString(value) {
+			return p.match.ReplaceAllString(value, p.replace)
+		}
+	}
+	return value
+}
+
+// FormatEventList translates an event list string like "events=price_cross_ema_fast_down"
+// or "events含 aroon_strong_bearish" into fully translated Chinese text.
+var eventsPattern = regexp.MustCompile(`(?i)(events)\s*([=含])\s*(.+)`)
+
+func FormatEventList(text string) string {
+	return eventsPattern.ReplaceAllStringFunc(text, func(match string) string {
+		parts := eventsPattern.FindStringSubmatch(match)
+		if len(parts) < 4 {
+			return match
+		}
+		sep := parts[2]
+		if sep == "=" {
+			sep = "="
+		} else {
+			sep = "含 "
+		}
+		eventKeys := strings.Split(parts[3], ",")
+		translated := make([]string, 0, len(eventKeys))
+		for _, ek := range eventKeys {
+			ek = strings.TrimSpace(ek)
+			normalized := normalizeDirtyValue(strings.ToLower(ek))
+			if label, ok := translatedTerms[normalized]; ok {
+				translated = append(translated, label)
+			} else {
+				translated = append(translated, ek)
+			}
+		}
+		return "事件" + sep + strings.Join(translated, ", ")
+	})
 }

@@ -20,7 +20,7 @@ func (f DefaultFormatter) RenderGateText(report GateReport) string {
 			lines = append(lines, fmt.Sprintf("决策: %s", decisionText))
 		}
 	}
-	lines = append(lines, fmt.Sprintf("Grade: %d", report.Overall.Grade))
+	lines = append(lines, fmt.Sprintf("评分: %d", report.Overall.Grade))
 	reason := report.Overall.Reason
 	if strings.TrimSpace(reason) == "" {
 		reason = "—"
@@ -34,12 +34,12 @@ func (f DefaultFormatter) RenderGateText(report GateReport) string {
 		lines = append(lines, fmt.Sprintf("方向: %s", report.Overall.Direction))
 	}
 	if report.RuleHit != nil && strings.TrimSpace(report.RuleHit.Name) != "" {
-		ruleText := fmt.Sprintf("命中规则: %s (priority %d)", displayGateReasonCode(report.RuleHit.Name), report.RuleHit.Priority)
+		ruleText := fmt.Sprintf("命中规则: %s (优先级 %d)", displayGateReasonCode(report.RuleHit.Name), report.RuleHit.Priority)
 		if strings.TrimSpace(report.RuleHit.Action) != "" {
-			ruleText = fmt.Sprintf("%s, action=%s", ruleText, translateDecisionAction(report.RuleHit.Action))
+			ruleText = fmt.Sprintf("%s, 动作=%s", ruleText, translateDecisionAction(report.RuleHit.Action))
 		}
 		if strings.TrimSpace(report.RuleHit.Reason) != "" {
-			ruleText = fmt.Sprintf("%s, reason=%s", ruleText, displayGateReasonCode(report.RuleHit.Reason))
+			ruleText = fmt.Sprintf("%s, 原因=%s", ruleText, displayGateReasonCode(report.RuleHit.Reason))
 		}
 		lines = append(lines, ruleText)
 	}

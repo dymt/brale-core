@@ -83,6 +83,9 @@ func formatLLMValue(key string, v any) string {
 		}
 		return "否"
 	case string:
+		if isLLMFreeTextField(key) {
+			return TranslateLLMFieldRefs(val)
+		}
 		return translateTerm(val)
 	case []string:
 		return formatTextList(val)
@@ -211,4 +214,20 @@ func formatAnyList(values []any) string {
 		return ""
 	}
 	return strings.Join(parts, "、")
+}
+
+var llmFreeTextFields = map[string]struct{}{
+	"momentum_detail":       {},
+	"conflict_detail":       {},
+	"volume_action":         {},
+	"candle_reaction":       {},
+	"anomaly_detail":        {},
+	"open_interest_context": {},
+	"reason":                {},
+	"notes":                 {},
+}
+
+func isLLMFreeTextField(key string) bool {
+	_, ok := llmFreeTextFields[strings.ToLower(strings.TrimSpace(key))]
+	return ok
 }

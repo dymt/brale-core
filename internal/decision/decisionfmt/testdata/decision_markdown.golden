@@ -2,11 +2,11 @@
 时间: 2026-03-27 08:09:10 UTC +0000 | 价格: 27123.45
 
 Gate 决策: 继续持仓（收紧未触发） (KEEP)
-Gate Grade: 82
+Gate 评分: 82
 Gate 原因: 结构受威胁 (原因码: STRUCT_THREAT)
-Gate 命中规则: 指标噪音 (priority 7), action=保持, reason=保持
+Gate 命中规则: 指标噪音 (优先级 7), 动作=保持, 原因=保持
 Gate 过程: 指标=保持(动能停滞)；结构完整性=允许(结构仍完整)
-Derived: indicator=是, structure=是, mechanics=是
+Derived: 指标=是, 结构=是, 市场机制=是
 
 持仓监控
 当前状态: 持仓中，未放行新开仓
@@ -15,12 +15,12 @@ Derived: indicator=是, structure=是, mechanics=是
 - 结构完整性: 允许（原因：结构仍完整）
 阻断步骤: 指标=保持（原因：动能停滞）
 
-Provider:
+Provider(复核):
 - 指标
   状态：动能减弱
   动作：继续观察
 
-Agent:
+Agent(分析):
 - 结构
   状态：结构未破坏
   风险：仍有回踩风险

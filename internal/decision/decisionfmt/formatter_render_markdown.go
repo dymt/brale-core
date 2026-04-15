@@ -26,7 +26,7 @@ func (f DefaultFormatter) RenderDecisionMarkdown(report DecisionReport) string {
 			fmt.Fprintf(&b, "Gate 决策: %s\n", decisionText)
 		}
 	}
-	fmt.Fprintf(&b, "Gate Grade: %d\n", report.Gate.Overall.Grade)
+	fmt.Fprintf(&b, "Gate 评分: %d\n", report.Gate.Overall.Grade)
 	if report.Gate.Overall.Reason != "" {
 		if report.Gate.Overall.ReasonCode != "" {
 			fmt.Fprintf(&b, "Gate 原因: %s (原因码: %s)\n", report.Gate.Overall.Reason, report.Gate.Overall.ReasonCode)
@@ -35,12 +35,12 @@ func (f DefaultFormatter) RenderDecisionMarkdown(report DecisionReport) string {
 		}
 	}
 	if report.Gate.RuleHit != nil && strings.TrimSpace(report.Gate.RuleHit.Name) != "" {
-		ruleText := fmt.Sprintf("Gate 命中规则: %s (priority %d)", displayGateReasonCode(report.Gate.RuleHit.Name), report.Gate.RuleHit.Priority)
+		ruleText := fmt.Sprintf("Gate 命中规则: %s (优先级 %d)", displayGateReasonCode(report.Gate.RuleHit.Name), report.Gate.RuleHit.Priority)
 		if strings.TrimSpace(report.Gate.RuleHit.Action) != "" {
-			ruleText = fmt.Sprintf("%s, action=%s", ruleText, translateDecisionAction(report.Gate.RuleHit.Action))
+			ruleText = fmt.Sprintf("%s, 动作=%s", ruleText, translateDecisionAction(report.Gate.RuleHit.Action))
 		}
 		if strings.TrimSpace(report.Gate.RuleHit.Reason) != "" {
-			ruleText = fmt.Sprintf("%s, reason=%s", ruleText, displayGateReasonCode(report.Gate.RuleHit.Reason))
+			ruleText = fmt.Sprintf("%s, 原因=%s", ruleText, displayGateReasonCode(report.Gate.RuleHit.Reason))
 		}
 		fmt.Fprintf(&b, "%s\n", ruleText)
 	}
@@ -56,8 +56,8 @@ func (f DefaultFormatter) RenderDecisionMarkdown(report DecisionReport) string {
 	if monitor := renderMonitorMarkdown(report); strings.TrimSpace(monitor) != "" {
 		fmt.Fprintf(&b, "%s\n\n", monitor)
 	}
-	writeStageMarkdown(&b, "Provider", report.Providers)
-	writeStageMarkdown(&b, "Agent", report.Agents)
+	writeStageMarkdown(&b, "Provider(复核)", report.Providers)
+	writeStageMarkdown(&b, "Agent(分析)", report.Agents)
 	return strings.TrimSpace(b.String())
 }
 

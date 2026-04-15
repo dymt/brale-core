@@ -114,10 +114,75 @@ const valueMap = new Map([
   ['high', '高'],
   ['range', '区间震荡'],
   ['否决', '否决'],
+  // 指标引擎状态值 (indicator_state.go)
+  ['above', '上方'],
+  ['below', '下方'],
+  ['near', '附近'],
+  ['bull', '多头排列'],
+  ['bear', '空头排列'],
+  ['rising', '上升'],
+  ['falling', '下降'],
+  ['flat', '走平'],
+  ['up', '上行'],
+  ['down', '下行'],
+  ['below_lower', '低于下轨'],
+  ['near_lower', '靠近下轨'],
+  ['mid', '中轨区间'],
+  ['near_upper', '靠近上轨'],
+  ['above_upper', '突破上轨'],
+  ['squeeze', '挤压收窄'],
+  ['normal', '正常'],
+  ['wide', '宽幅'],
+  ['trending', '趋势行情'],
+  ['choppy', '震荡行情'],
+  ['transition', '过渡阶段'],
+  ['strong_up', '强势上行'],
+  ['strong_down', '强势下行'],
+  ['crossover', '交叉'],
+  ['conflict', '冲突/分歧'],
+  ['long', '多头方向'],
+  ['short', '空头方向'],
 ]);
 
-const sentenceMap = new Map([
-  // general terms
+// ---------------------------------------------------------------------------
+// Event key translation: complete event keys must be translated as whole units.
+// NEVER do substring replacement that could turn "aroon_strong_bearish" into
+// "aroon_strong_看空" or "price_cross_ema_mid_down" into "price_cross_中线EMA_down".
+// ---------------------------------------------------------------------------
+const eventKeyMap = new Map([
+  ['price_cross_ema_fast_up', '价格上穿快线EMA'],
+  ['price_cross_ema_fast_down', '价格下穿快线EMA'],
+  ['price_cross_ema_mid_up', '价格上穿中线EMA'],
+  ['price_cross_ema_mid_down', '价格下穿中线EMA'],
+  ['ema_stack_bull_flip', 'EMA转为多头排列'],
+  ['ema_stack_bear_flip', 'EMA转为空头排列'],
+  ['aroon_strong_bullish', '阿隆指标强势看多'],
+  ['aroon_strong_bearish', '阿隆指标强势看空'],
+]);
+
+// Multi-word phrases: matched as complete phrases only, longest first.
+const phraseMap = new Map([
+  ['OI increased', '持仓量上升'],
+  ['OI decreased', '持仓量下降'],
+  ['OI declined', '持仓量回落'],
+  ['OI stable', '持仓量稳定'],
+  ['funding rate negative', '资金费率为负'],
+  ['funding rate positive', '资金费率为正'],
+  ['funding rate', '资金费率'],
+  ['negative funding', '负资金费率'],
+  ['open interest', '持仓量'],
+  ['long crowding', '多头拥挤'],
+  ['short crowding', '空头拥挤'],
+  ['in 15m', '在15分钟内'],
+  ['in 1h', '在1小时内'],
+  ['in 4h', '在4小时内'],
+  ['over 4h', '4小时以上'],
+  ['over 1h', '1小时以上'],
+]);
+
+// Word-level translations: applied with word-boundary matching only.
+// Keys must be single tokens (no spaces). Matched as \bKEY\b.
+const wordMap = new Map([
   ['stable', '稳定'],
   ['medium', '中'],
   ['low', '低'],
@@ -135,41 +200,36 @@ const sentenceMap = new Map([
   ['versus', '对比'],
   ['but', '但'],
   ['and', '且'],
-  // EMA / indicator terms
+  ['increased', '上升'],
+  ['decreased', '下降'],
+  ['declined', '回落'],
+  ['expanding', '扩张'],
+  ['contracting', '收缩'],
+]);
+
+// Field-name translations: only for exact field=value or standalone field tokens.
+const fieldNameMap = new Map([
   ['ema_fast', '快线EMA'],
   ['ema_mid', '中线EMA'],
   ['ema_slow', '慢线EMA'],
   ['delta_pct', '变化率'],
+  ['fear_greed', '恐贪指数'],
+  ['cross_tf_summary', '跨周期汇总'],
+  ['decision_tf_bias', '决策周期偏向'],
+  ['lower_tf_agreement', '低周期一致性'],
+  ['higher_tf_agreement', '高周期一致性'],
+  ['movement_score', '方向分数'],
+  ['movement_confidence', '方向置信度'],
+  ['rsi_zone', 'RSI区间'],
+  ['bb_zone', '布林带区间'],
+  ['chop_regime', '震荡指数状态'],
+  ['ema_stack', 'EMA排列'],
+  ['atr_expand_state', 'ATR扩张状态'],
+  ['events', '事件'],
   ['BB', '布林带'],
   ['CHOP', '震荡指数'],
   ['Aroon', '阿隆指标'],
   ['StochRSI', '随机RSI'],
-  // OI / funding / mechanics
-  ['OI increased', '持仓量上升'],
-  ['OI decreased', '持仓量下降'],
-  ['OI declined', '持仓量回落'],
-  ['OI stable', '持仓量稳定'],
-  ['increased', '上升'],
-  ['decreased', '下降'],
-  ['declined', '回落'],
-  ['funding rate negative', '资金费率为负'],
-  ['funding rate positive', '资金费率为正'],
-  ['funding rate', '资金费率'],
-  ['negative funding', '负资金费率'],
-  ['open interest', '持仓量'],
-  // crowding / anomaly
-  ['long crowding', '多头拥挤'],
-  ['short crowding', '空头拥挤'],
-  ['fear_greed', '恐贪指数'],
-  // time frames
-  ['in 15m', '在15分钟内'],
-  ['in 1h', '在1小时内'],
-  ['in 4h', '在4小时内'],
-  ['over 4h', '4小时以上'],
-  ['over 1h', '1小时以上'],
-  // structure
-  ['expanding', '扩张'],
-  ['contracting', '收缩'],
 ]);
 
 function mapValue(value) {
@@ -178,13 +238,52 @@ function mapValue(value) {
   return valueMap.get(key) ?? valueMap.get(key.toLowerCase()) ?? key;
 }
 
+// Token-safe sentence translation.
+// Order: (1) event keys, (2) multi-word phrases, (3) field=value refs, (4) word-boundary words.
 function mapSentence(text) {
   let output = String(text ?? '').trim();
   if (!output) return '—';
-  for (const [source, target] of sentenceMap.entries()) {
-    output = output.replaceAll(source, target);
+
+  // Step 1: Replace complete event keys (exact match on token boundary).
+  for (const [key, label] of eventKeyMap.entries()) {
+    const re = new RegExp('(?<![a-zA-Z0-9_])' + escapeRegex(key) + '(?![a-zA-Z0-9_])', 'g');
+    output = output.replace(re, label);
   }
+
+  // Step 2: Replace multi-word phrases (order: longest first, already ordered).
+  for (const [phrase, label] of phraseMap.entries()) {
+    output = output.replaceAll(phrase, label);
+  }
+
+  // Step 3: Replace field=value and standalone field-name references.
+  // Match patterns like "field_name=value" or "field_name " at word boundaries.
+  output = output.replace(/(?<![a-zA-Z0-9_])([a-zA-Z][a-zA-Z0-9_]*)(?:=([^\s,;，；]+))?(?![a-zA-Z0-9_])/g,
+    (match, fieldPart, valuePart) => {
+      const fieldLabel = fieldNameMap.get(fieldPart);
+      if (valuePart !== undefined) {
+        // field=value pattern
+        const fld = fieldLabel ?? fieldPart;
+        const val = eventKeyMap.get(valuePart) ?? valueMap.get(valuePart) ?? valueMap.get(valuePart.toLowerCase()) ?? valuePart;
+        return fld + '=' + val;
+      }
+      if (fieldLabel) {
+        return fieldLabel;
+      }
+      return match;
+    }
+  );
+
+  // Step 4: Replace standalone English words with word-boundary safety.
+  for (const [word, label] of wordMap.entries()) {
+    const re = new RegExp('\\b' + escapeRegex(word) + '\\b', 'g');
+    output = output.replace(re, label);
+  }
+
   return output;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function emptyDash(value) {
@@ -2011,4 +2110,5 @@ export {
   EXPORT_SCALE,
   DEFAULT_RENDER_HEIGHT,
   estimateRenderHeight,
+  mapSentence,
 };

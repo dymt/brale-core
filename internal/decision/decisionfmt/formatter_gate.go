@@ -82,13 +82,13 @@ func formatDerivedSummary(data map[string]any) string {
 	}
 	parts := make([]string, 0, 3)
 	if val, ok := lookupBool(data, "indicator.tradeable"); ok {
-		parts = append(parts, fmt.Sprintf("indicator=%s", translateBoolStatus(val)))
+		parts = append(parts, fmt.Sprintf("指标=%s", translateBoolStatus(val)))
 	}
 	if val, ok := lookupBool(data, "structure.tradeable"); ok {
-		parts = append(parts, fmt.Sprintf("structure=%s", translateBoolStatus(val)))
+		parts = append(parts, fmt.Sprintf("结构=%s", translateBoolStatus(val)))
 	}
 	if val, ok := lookupBool(data, "mechanics.tradeable"); ok {
-		parts = append(parts, fmt.Sprintf("mechanics=%s", translateBoolStatus(val)))
+		parts = append(parts, fmt.Sprintf("市场机制=%s", translateBoolStatus(val)))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -197,18 +197,18 @@ func formatSieveSuffix(trace string, data map[string]any) string {
 	if action == "" && reason == "" {
 		return trace
 	}
-	label := "Sieve"
+	label := "风控筛选"
 	parts := make([]string, 0, 2)
 	if action != "" {
 		actionLabel := translateDecisionAction(action)
 		if strings.TrimSpace(actionLabel) == "" {
 			actionLabel = action
 		}
-		parts = append(parts, fmt.Sprintf("action=%s", actionLabel))
+		parts = append(parts, fmt.Sprintf("动作=%s", actionLabel))
 	}
 	if reason != "" {
 		reasonLabel := translateSieveReasonCode(reason)
-		parts = append(parts, fmt.Sprintf("reason=%s", reasonLabel))
+		parts = append(parts, fmt.Sprintf("原因=%s", reasonLabel))
 	}
 	suffix := fmt.Sprintf("%s(%s)", label, strings.Join(parts, ", "))
 	if trace == "" {

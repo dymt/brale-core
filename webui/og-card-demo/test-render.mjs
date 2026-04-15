@@ -216,6 +216,50 @@ async function main() {
   await fs.access(sampleOutputPath);
 
   console.log(`ok scale=${EXPORT_SCALE} short=${result.width}x${result.height} open-success tightened-risk sample=${sampleResult.width}x${sampleResult.height}`);
+
+  // ---------- Translation regression tests ----------
+  // These verify that mapSentence never produces half-translated event keys.
+  const { mapSentence: mapSentenceFn } = await import('./render.mjs');
+
+  const translationTests = [
+    {
+      in: 'events=price_cross_ema_mid_down',
+      bad: ['price_cross_中线EMA_down', 'price_cross_中线EMA'],
+      desc: 'event key ema_mid must not be partially translated',
+    },
+    {
+      in: 'events=price_cross_ema_fast_down',
+      bad: ['price_cross_快线EMA_down', 'price_cross_快线EMA'],
+      desc: 'event key ema_fast must not be partially translated',
+    },
+    {
+      in: 'aroon_strong_bearish signal detected',
+      bad: ['aroon_strong_看空'],
+      desc: 'aroon event key must not be split by bearish→看空',
+    },
+    {
+      in: 'aroon_strong_bullish signal detected',
+      bad: ['aroon_strong_看多'],
+      desc: 'aroon event key must not be split by bullish→看多',
+    },
+    {
+      in: 'price_cross_ema_mid_down triggers entry',
+      bad: ['price_cross_中线EMA_down'],
+      desc: 'inline event key must remain whole',
+    },
+  ];
+
+  if (typeof mapSentenceFn === 'function') {
+    for (const tc of translationTests) {
+      const got = mapSentenceFn(tc.in);
+      for (const bad of tc.bad) {
+        assert.ok(!got.includes(bad), `mapSentence(${JSON.stringify(tc.in)}) produced half-translated output: ${JSON.stringify(got)} (must not contain ${JSON.stringify(bad)}) — ${tc.desc}`);
+      }
+    }
+    console.log(`ok translation-regression: ${translationTests.length} cases passed`);
+  } else {
+    console.log('warn: mapSentence not exported, skipping translation regression tests');
+  }
 }
 
 main().catch((error) => {
