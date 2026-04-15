@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -17,6 +18,7 @@ import (
 	"brale-core/internal/execution"
 	"brale-core/internal/risk/initexit"
 	"brale-core/internal/strategy"
+	"brale-core/internal/memory"
 )
 
 type Runner struct {
@@ -29,6 +31,9 @@ type Runner struct {
 	Bindings        map[string]strategy.StrategyBinding
 	Configs         map[string]config.SymbolConfig
 	Enabled         map[string]AgentEnabled
+	WorkingMemory   memory.Store
+	EpisodicMemory  memory.EpisodicStore
+	SemanticMemory  memory.SemanticStore
 	Ruleflow        ruleflow.Evaluator
 	mu              sync.Mutex
 }
@@ -115,8 +120,8 @@ func appendPlanDerived(gate *fund.GateDecision, plan *execution.ExecutionPlan) {
 		"risk_pct":           plan.RiskPct,
 		"position_size":      plan.PositionSize,
 		"leverage":           plan.Leverage,
-		"take_profits":       append([]float64(nil), plan.TakeProfits...),
-		"take_profit_ratios": append([]float64(nil), plan.TakeProfitRatios...),
+		"take_profits":       slices.Clone(plan.TakeProfits),
+		"take_profit_ratios": slices.Clone(plan.TakeProfitRatios),
 		"liquidation_price":  plan.RiskAnnotations.LiqPrice,
 		"plan_source":        planSource,
 	}

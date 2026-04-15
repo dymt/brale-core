@@ -314,8 +314,10 @@ func (s LLMAgentService) runIndicatorStage(ctx context.Context, symbol string, i
 		stageErr := s.logStageError(ctx, "indicator", err)
 		return agent.IndicatorSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr
 	}
+	sysInd, userInd = applyMemoryPromptContext(ctx, s.Prompts.UserFormat, sysInd, userInd)
+	cacheInput := promptCacheInput(sysInd, userInd)
 	prompt := decision.LLMStagePrompt{System: sysInd, User: userInd}
-	if out, ok := loadAgentCache(s.Cache, symbol, "agent_indicator", indJSON.RawJSON); ok {
+	if out, ok := loadAgentCache(s.Cache, symbol, "agent_indicator", cacheInput); ok {
 		return out, prompt, nil
 	}
 	indOut, err := s.runIndicatorWithLaneSession(ctx, symbol, sysInd, userInd)
@@ -327,7 +329,7 @@ func (s LLMAgentService) runIndicatorStage(ctx context.Context, symbol string, i
 	if s.Tracker != nil {
 		s.Tracker.MarkAgent()
 	}
-	cacheAgentOutput(s.Cache, symbol, "agent_indicator", indOut, indJSON.RawJSON)
+	cacheAgentOutput(s.Cache, symbol, "agent_indicator", indOut, cacheInput)
 	return indOut, prompt, nil
 }
 
@@ -340,7 +342,8 @@ func (s LLMAgentService) runStructureStage(ctx context.Context, symbol string, t
 		stageErr := s.logStageError(ctx, "structure", err)
 		return agent.StructureSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr
 	}
-	input := append([]byte{}, trInput...)
+	sysSt, userSt = applyMemoryPromptContext(ctx, s.Prompts.UserFormat, sysSt, userSt)
+	input := promptCacheInput(sysSt, userSt)
 	prompt := decision.LLMStagePrompt{System: sysSt, User: userSt}
 	if out, ok := loadStructureCache(s.Cache, symbol, "agent_structure", input); ok {
 		return out, prompt, nil
@@ -461,8 +464,10 @@ func (s LLMAgentService) runMechanicsStage(ctx context.Context, symbol string, m
 		stageErr := s.logStageError(ctx, "mechanics", err)
 		return agent.MechanicsSummary{}, decision.LLMStagePrompt{Error: stageErr.Error()}, stageErr
 	}
+	sysMech, userMech = applyMemoryPromptContext(ctx, s.Prompts.UserFormat, sysMech, userMech)
+	mechInputCache := promptCacheInput(sysMech, userMech)
 	prompt := decision.LLMStagePrompt{System: sysMech, User: userMech}
-	if out, ok := loadMechanicsCache(s.Cache, symbol, "agent_mechanics", mechInput); ok {
+	if out, ok := loadMechanicsCache(s.Cache, symbol, "agent_mechanics", mechInputCache); ok {
 		return out, prompt, nil
 	}
 	mechOut, err := s.runMechanicsWithLaneSession(ctx, symbol, sysMech, userMech)
@@ -474,7 +479,7 @@ func (s LLMAgentService) runMechanicsStage(ctx context.Context, symbol string, m
 	if s.Tracker != nil {
 		s.Tracker.MarkAgent()
 	}
-	cacheAgentOutput(s.Cache, symbol, "agent_mechanics", mechOut, mechInput)
+	cacheAgentOutput(s.Cache, symbol, "agent_mechanics", mechOut, mechInputCache)
 	return mechOut, prompt, nil
 }
 

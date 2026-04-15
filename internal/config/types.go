@@ -97,6 +97,7 @@ type SymbolConfig struct {
 	Agent      AgentConfig     `mapstructure:"agent"`
 	Require    SymbolRequire   `mapstructure:"require"`
 	Indicators IndicatorConfig `mapstructure:"indicators"`
+	Memory     MemoryConfig    `mapstructure:"memory"`
 	Consensus  ConsensusConfig `mapstructure:"consensus"`
 	Cooldown   CooldownConfig  `mapstructure:"cooldown"`
 	LLM        SymbolLLMConfig `mapstructure:"llm"`
@@ -122,6 +123,8 @@ type SymbolRequire struct {
 }
 
 type IndicatorConfig struct {
+	Engine         string  `mapstructure:"engine"`
+	ShadowEngine   string  `mapstructure:"shadow_engine"`
 	EMAFast        int     `mapstructure:"ema_fast"`
 	EMAMid         int     `mapstructure:"ema_mid"`
 	EMASlow        int     `mapstructure:"ema_slow"`
@@ -137,6 +140,16 @@ type IndicatorConfig struct {
 	SkipSTC        bool    `mapstructure:"skip_stc"`
 	LastN          int     `mapstructure:"last_n"`
 	Pretty         bool    `mapstructure:"pretty"`
+}
+
+type MemoryConfig struct {
+	Enabled              bool `mapstructure:"enabled"`
+	WorkingMemorySize    int  `mapstructure:"working_memory_size"`
+	EpisodicEnabled      bool `mapstructure:"episodic_enabled"`
+	EpisodicTTLDays      int  `mapstructure:"episodic_ttl_days"`
+	EpisodicMaxPerSymbol int  `mapstructure:"episodic_max_per_symbol"`
+	SemanticEnabled      bool `mapstructure:"semantic_enabled"`
+	SemanticMaxRules     int  `mapstructure:"semantic_max_rules"`
 }
 
 type CooldownConfig struct {

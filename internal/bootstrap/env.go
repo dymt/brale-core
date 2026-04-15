@@ -16,11 +16,12 @@ import (
 )
 
 type appEnv struct {
-	ctx      context.Context
-	logger   *zap.Logger
-	sys      config.SystemConfig
-	index    config.SymbolIndexConfig
-	notifier notify.Notifier
+	ctx             context.Context
+	logger          *zap.Logger
+	sys             config.SystemConfig
+	index           config.SymbolIndexConfig
+	symbolIndexPath string
+	notifier        notify.Notifier
 }
 
 func bootstrapAppEnv(baseCtx context.Context, systemPath, symbolIndexPath string) (appEnv, error) {
@@ -55,11 +56,12 @@ func bootstrapAppEnv(baseCtx context.Context, systemPath, symbolIndexPath string
 		return appEnv{}, fmt.Errorf("load symbols index config %s: %w", symbolIndexPath, err)
 	}
 	return appEnv{
-		ctx:      ctx,
-		logger:   logger,
-		sys:      sys,
-		index:    index,
-		notifier: notifier,
+		ctx:             ctx,
+		logger:          logger,
+		sys:             sys,
+		index:           index,
+		symbolIndexPath: symbolIndexPath,
+		notifier:        notifier,
 	}, nil
 }
 

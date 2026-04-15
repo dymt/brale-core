@@ -18,6 +18,7 @@ import (
 	"brale-core/internal/execution"
 	"brale-core/internal/llm"
 	"brale-core/internal/market"
+	"brale-core/internal/memory"
 
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/position"
@@ -44,6 +45,9 @@ type Pipeline struct {
 	Notifier                Notifier
 	RoundIDFactory          func() (llm.RoundID, error)
 	TightenRiskLLM          TightenRiskUpdateLLM
+	WorkingMemory           memory.Store
+	EpisodicMemory          memory.EpisodicStore
+	SemanticMemory          memory.SemanticStore
 }
 
 type PipelineCoreDeps struct {

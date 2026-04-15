@@ -17,6 +17,10 @@ import (
 	"go.uber.org/zap"
 )
 
+type PositionReflector interface {
+	ReflectOnClose(ctx context.Context, pos store.PositionRecord, exitPrice float64)
+}
+
 type ReconcileService struct {
 	Store              store.Store
 	Executor           execution.Executor
@@ -29,6 +33,7 @@ type ReconcileService struct {
 	PlanCache          *position.PlanCache
 	RiskPlans          *position.RiskPlanService
 	AllowSymbol        func(symbol string) bool
+	Reflector          PositionReflector
 }
 
 func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {

@@ -49,15 +49,17 @@ type positionServiceBuildDeps struct {
 }
 
 type reconcileServiceBuildDeps struct {
-	sys           config.SystemConfig
-	store         store.Store
-	executor      *execution.FreqtradeAdapter
-	notifier      notify.Notifier
-	positionCache *position.PositionCache
-	planCache     *position.PlanCache
-	riskPlanSvc   *position.RiskPlanService
-	allowSymbol   func(string) bool
-	priceSource   *binance.MarkPriceStream
+	sys             config.SystemConfig
+	index           config.SymbolIndexConfig
+	symbolIndexPath string
+	store           store.Store
+	executor        *execution.FreqtradeAdapter
+	notifier        notify.Notifier
+	positionCache   *position.PositionCache
+	planCache       *position.PlanCache
+	riskPlanSvc     *position.RiskPlanService
+	allowSymbol     func(string) bool
+	priceSource     *binance.MarkPriceStream
 }
 
 type riskMonitorBuildDeps struct {
@@ -87,17 +89,22 @@ func buildCoreDeps(env appEnv) (coreDeps, error) {
 	positionCache, riskPlanSvc, positioner := buildPositionServices(positionServiceBuildDeps{store: st, executor: executor, notifier: env.notifier})
 	priceSource := buildPriceSource(env.index)
 
-	recovery, reconciler := buildReconcileServices(reconcileServiceBuildDeps{
-		sys:           env.sys,
-		store:         st,
-		executor:      executor,
-		notifier:      env.notifier,
-		positionCache: positionCache,
-		planCache:     positioner.PlanCache,
-		riskPlanSvc:   riskPlanSvc,
-		allowSymbol:   allowSymbol,
-		priceSource:   priceSource,
+	recovery, reconciler, err := buildReconcileServices(reconcileServiceBuildDeps{
+		sys:             env.sys,
+		index:           env.index,
+		symbolIndexPath: env.symbolIndexPath,
+		store:           st,
+		executor:        executor,
+		notifier:        env.notifier,
+		positionCache:   positionCache,
+		planCache:       positioner.PlanCache,
+		riskPlanSvc:     riskPlanSvc,
+		allowSymbol:     allowSymbol,
+		priceSource:     priceSource,
 	})
+	if err != nil {
+		return coreDeps{}, err
+	}
 
 	freqtradeAccount := newFreqtradeAccountFetcher(executor)
 	riskMonitor := buildRiskMonitor(riskMonitorBuildDeps{store: st, priceSource: priceSource, positioner: positioner, accountFetcher: freqtradeAccount})
@@ -165,7 +172,7 @@ func buildPriceSource(index config.SymbolIndexConfig) *binance.MarkPriceStream {
 	})
 }
 
-func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.RecoveryService, *reconcile.ReconcileService) {
+func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.RecoveryService, *reconcile.ReconcileService, error) {
 	recovery := &reconcile.RecoveryService{
 		Store:       deps.store,
 		Executor:    deps.executor,
@@ -189,7 +196,12 @@ func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.Recovery
 		AuthType:  deps.sys.ExecAuth,
 	}
 	reconciler.PriceSource = deps.priceSource
-	return recovery, reconciler
+	reflector, err := buildPositionReflector(deps.sys, deps.symbolIndexPath, deps.index, deps.store)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build position reflector: %w", err)
+	}
+	reconciler.Reflector = reflector
+	return recovery, reconciler, nil
 }
 
 func buildRiskMonitor(deps riskMonitorBuildDeps) *position.RiskMonitor {

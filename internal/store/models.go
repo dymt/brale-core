@@ -102,3 +102,29 @@ type PositionRecord struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
+
+type EpisodicMemoryRecord struct {
+	ID            uint      `gorm:"primaryKey"`
+	Symbol        string    `gorm:"index:idx_episodic_symbol_time,priority:1"`
+	PositionID    string    `gorm:"uniqueIndex:idx_episodic_position"`
+	Direction     string
+	EntryPrice    string
+	ExitPrice     string
+	PnLPercent    string
+	Duration      string
+	Reflection    string    `gorm:"type:text"`
+	KeyLessons    string    `gorm:"type:text"`
+	MarketContext string    `gorm:"type:text"`
+	CreatedAt     time.Time `gorm:"index:idx_episodic_symbol_time,priority:2,sort:desc"`
+}
+
+type SemanticMemoryRecord struct {
+	ID         uint      `gorm:"primaryKey"`
+	Symbol     string    `gorm:"index:idx_semantic_symbol"`
+	RuleText   string    `gorm:"type:text"`
+	Source     string
+	Confidence float64
+	Active     bool      `gorm:"default:true"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}

@@ -8,6 +8,7 @@ import (
 	"brale-core/internal/decision"
 	llmapp "brale-core/internal/llm/app"
 	"brale-core/internal/market"
+	"brale-core/internal/memory"
 	"brale-core/internal/position"
 	"brale-core/internal/reconcile"
 	"brale-core/internal/snapshot"
@@ -16,7 +17,7 @@ import (
 	"brale-core/internal/transport/notify"
 )
 
-func buildRunner(sys config.SystemConfig, fetcher *snapshot.Fetcher, compressor *decision.FeatureCompressor, agentSvc decision.AgentService, providerSvc decision.ProviderService, runtimeCfg symbolRuntimeConfig) decision.Runner {
+func buildRunner(sys config.SystemConfig, fetcher *snapshot.Fetcher, compressor decision.Compressor, agentSvc decision.AgentService, providerSvc decision.ProviderService, runtimeCfg symbolRuntimeConfig, workingMemory memory.Store, episodicMemory memory.EpisodicStore, semanticMemory memory.SemanticStore) decision.Runner {
 	defaults := config.DefaultPromptDefaults()
 	riskPrompts := llmapp.LLMPromptBuilder{
 		RiskFlatInitSystem: defaults.RiskFlatInit,
@@ -37,10 +38,13 @@ func buildRunner(sys config.SystemConfig, fetcher *snapshot.Fetcher, compressor 
 		Bindings:        map[string]strategy.StrategyBinding{runtimeCfg.Symbol.Symbol: runtimeCfg.Binding},
 		Configs:         map[string]config.SymbolConfig{runtimeCfg.Symbol.Symbol: runtimeCfg.Symbol},
 		Enabled:         runtimeCfg.EnabledMap,
+		WorkingMemory:   workingMemory,
+		EpisodicMemory:  episodicMemory,
+		SemanticMemory:  semanticMemory,
 	}
 }
 
-func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource, barInterval time.Duration, symbol string, bind strategy.StrategyBinding, symbolCfg config.SymbolConfig, stratCfg config.StrategyConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache) (*decision.Pipeline, error) {
+func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *reconcile.FSMStateProvider, positioner *position.PositionService, riskPlanSvc *position.RiskPlanService, priceSource market.PriceSource, barInterval time.Duration, symbol string, bind strategy.StrategyBinding, symbolCfg config.SymbolConfig, stratCfg config.StrategyConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache, workingMemory memory.Store, episodicMemory memory.EpisodicStore, semanticMemory memory.SemanticStore) (*decision.Pipeline, error) {
 	runtimeCfg := symbolRuntimeConfig{
 		Symbol:      symbolCfg,
 		Strategy:    stratCfg,
@@ -48,10 +52,10 @@ func buildPipeline(sys config.SystemConfig, st store.Store, stateProvider *recon
 		BarInterval: barInterval,
 	}
 	deps := NewSymbolRuntimeBuildDeps(st, stateProvider, positioner, riskPlanSvc, priceSource)
-	return buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, runner, exitConfirmCache)
+	return buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, runner, exitConfirmCache, workingMemory, episodicMemory, semanticMemory)
 }
 
-func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeBuildDeps, runtimeCfg symbolRuntimeConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache) (*decision.Pipeline, error) {
+func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeBuildDeps, runtimeCfg symbolRuntimeConfig, runner *decision.Runner, exitConfirmCache *decision.ExitConfirmCache, workingMemory memory.Store, episodicMemory memory.EpisodicStore, semanticMemory memory.SemanticStore) (*decision.Pipeline, error) {
 	formatter := decision.NewFormatter()
 	notifier, err := notify.NewManager(notify.FromConfig(sys.Notification), formatter)
 	if err != nil {
@@ -90,5 +94,8 @@ func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeB
 		GateStore:               hooks.SaveGate,
 		Notifier:                notifier,
 		TightenRiskLLM:          runner.TightenRiskLLM,
+		WorkingMemory:           workingMemory,
+		EpisodicMemory:          episodicMemory,
+		SemanticMemory:          semanticMemory,
 	}, nil
 }

@@ -80,12 +80,18 @@ func buildSymbolRuntimeFromConfig(metricsCtx context.Context, sys config.SystemC
 }
 
 func buildSymbolRuntimeFromRuntimeConfig(metricsCtx context.Context, sys config.SystemConfig, runtimeCfg symbolRuntimeConfig, deps SymbolRuntimeBuildDeps) (SymbolRuntime, error) {
+	workingMemory := buildWorkingMemory(runtimeCfg.Symbol)
+	episodicMemory := buildEpisodicMemory(runtimeCfg.Symbol, deps.Store)
+	semanticMemory := buildSemanticMemory(runtimeCfg.Symbol, deps.Store)
 	agentSvc, providerSvc, tracker := buildSymbolAgents(sys, runtimeCfg.Symbol)
 	fetcher := buildSnapshotFetcher(runtimeCfg.Symbol, runtimeCfg.RequireMechanics)
-	compressor, services := buildCompressor(runtimeCfg.Symbol, runtimeCfg.EnabledConfig, runtimeCfg.EnabledMap)
+	compressor, services, err := buildCompressor(runtimeCfg.Symbol, runtimeCfg.EnabledConfig, runtimeCfg.EnabledMap)
+	if err != nil {
+		return SymbolRuntime{}, err
+	}
 	exitConfirmCache := decision.NewExitConfirmCache()
-	runner := buildRunner(sys, fetcher, compressor, agentSvc, providerSvc, runtimeCfg)
-	pipeline, err := buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, &runner, exitConfirmCache)
+	runner := buildRunner(sys, fetcher, compressor, agentSvc, providerSvc, runtimeCfg, workingMemory, episodicMemory, semanticMemory)
+	pipeline, err := buildPipelineFromRuntimeConfig(sys, deps, runtimeCfg, &runner, exitConfirmCache, workingMemory, episodicMemory, semanticMemory)
 	if err != nil {
 		return SymbolRuntime{}, err
 	}

@@ -19,15 +19,22 @@ type ProviderBundle = fund.ProviderBundle
 type GateDecision = fund.GateDecision
 
 type FeatureCompressor = features.Compressor
+type IndicatorComputer = features.IndicatorComputer
 type DefaultIndicatorBuilder = features.DefaultIndicatorBuilder
 type IntervalTrendBuilder = features.IntervalTrendBuilder
 type DefaultMechanicsBuilder = features.DefaultMechanicsBuilder
 type TrendCompressOptions = features.TrendCompressOptions
 type MechanicsCompressOptions = features.MechanicsCompressOptions
 type IndicatorCompressOptions = features.IndicatorCompressOptions
+type TalibComputer = features.TalibComputer
+type ReferenceComputer = features.ReferenceComputer
 
 type Formatter = decisionfmt.Formatter
 
 func NewFormatter() decisionfmt.Formatter {
 	return decisionfmt.New()
+}
+
+func IndicatorComputerForEngine(engine string) (features.IndicatorComputer, error) {
+	return features.IndicatorComputerForEngine(engine)
 }

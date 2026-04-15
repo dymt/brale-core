@@ -89,6 +89,7 @@ type symbolHashInput struct {
 	Agent      symbolAgentHash       `json:"agent,omitempty"`
 	Require    SymbolRequire         `json:"require,omitempty"`
 	Indicators IndicatorConfig       `json:"indicators,omitempty"`
+	Memory     MemoryConfig          `json:"memory,omitempty"`
 	Consensus  ConsensusConfig       `json:"consensus,omitempty"`
 	Cooldown   CooldownConfig        `json:"cooldown,omitempty"`
 	LLM        llmRoleSetByStageHash `json:"llm,omitempty"`
@@ -150,6 +151,7 @@ func buildSymbolHashInput(cfg SymbolConfig) symbolHashInput {
 		Agent:      buildSymbolAgentHash(cfg.Agent),
 		Require:    cfg.Require,
 		Indicators: cfg.Indicators,
+		Memory:     cfg.Memory,
 		Consensus:  cfg.Consensus,
 		Cooldown:   cfg.Cooldown,
 		LLM:        buildSymbolLLMHashInput(cfg.LLM),

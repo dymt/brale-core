@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,8 +62,8 @@ func (h StoreHooks) roundTraceFilePath(symbol string, snapshotID uint) string {
 }
 
 func renderRoundTraceMarkdown(h StoreHooks, gateRec *store.GateEventRecord, agentEvents []store.AgentEventRecord, providerEvents []store.ProviderEventRecord) string {
-	agentEvents = append([]store.AgentEventRecord(nil), agentEvents...)
-	providerEvents = append([]store.ProviderEventRecord(nil), providerEvents...)
+	agentEvents = slices.Clone(agentEvents)
+	providerEvents = slices.Clone(providerEvents)
 	sort.SliceStable(agentEvents, func(i, j int) bool {
 		if agentEvents[i].Timestamp == agentEvents[j].Timestamp {
 			return stageOrder(agentEvents[i].Stage) < stageOrder(agentEvents[j].Stage)

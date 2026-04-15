@@ -3,10 +3,13 @@ package llmapp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/features"
+	"brale-core/internal/memory"
+	"brale-core/internal/decision/agent"
 )
 
 func TestPickInputsUsesDecisionIntervalForIndicator(t *testing.T) {
@@ -90,6 +93,108 @@ func TestStripTrendGlobalContextRemovesEmptyMap(t *testing.T) {
 
 	if _, exists := obj["global_context"]; exists {
 		t.Fatalf("expected empty global_context to be removed")
+	}
+}
+
+func TestLLMAgentServiceAnalyzeBypassesCacheWhenWorkingMemoryContextChanges(t *testing.T) {
+	indicatorStub := &stubRiskSessionProvider{callResp: `{"expansion":"expanding","alignment":"aligned","noise":"low"}`}
+	service := LLMAgentService{
+		Runner: &agent.Runner{Indicator: indicatorStub},
+		Prompts: LLMPromptBuilder{
+			AgentIndicatorSystem: "indicator-system",
+			UserFormat:           UserPromptFormatBullet,
+		},
+		Cache:            NewLLMStageCache(),
+		DecisionInterval: "15m",
+	}
+	data := features.CompressionResult{
+		Indicators: map[string]map[string]features.IndicatorJSON{
+			"BTCUSDT": llmAgentIndicatorInputsForTest(t),
+		},
+	}
+
+	if _, _, _, _, _, err := service.Analyze(context.Background(), "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	ctx := memory.WithPromptContext(context.Background(), "- [1h前] dir=long")
+	if _, _, _, _, _, err := service.Analyze(ctx, "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() with memory error = %v", err)
+	}
+
+	if indicatorStub.callCount != 2 {
+		t.Fatalf("call_count=%d want 2 when memory context changes", indicatorStub.callCount)
+	}
+	if !strings.Contains(indicatorStub.lastUser, "近期决策记忆（仅供参考，禁止直接复用结论）") {
+		t.Fatalf("user prompt missing memory block: %s", indicatorStub.lastUser)
+	}
+	if !strings.Contains(indicatorStub.lastUser, "dir=long") {
+		t.Fatalf("user prompt missing memory payload: %s", indicatorStub.lastUser)
+	}
+}
+
+func TestLLMAgentServiceAnalyzeBypassesCacheWhenEpisodicContextChanges(t *testing.T) {
+	indicatorStub := &stubRiskSessionProvider{callResp: `{"expansion":"expanding","alignment":"aligned","noise":"low"}`}
+	service := LLMAgentService{
+		Runner: &agent.Runner{Indicator: indicatorStub},
+		Prompts: LLMPromptBuilder{
+			AgentIndicatorSystem: "indicator-system",
+			UserFormat:           UserPromptFormatBullet,
+		},
+		Cache:            NewLLMStageCache(),
+		DecisionInterval: "15m",
+	}
+	data := features.CompressionResult{
+		Indicators: map[string]map[string]features.IndicatorJSON{
+			"BTCUSDT": llmAgentIndicatorInputsForTest(t),
+		},
+	}
+
+	if _, _, _, _, _, err := service.Analyze(context.Background(), "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	ctx := memory.WithEpisodicContext(context.Background(), "[1] 上次追高后回撤")
+	if _, _, _, _, _, err := service.Analyze(ctx, "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() with episodic memory error = %v", err)
+	}
+
+	if indicatorStub.callCount != 2 {
+		t.Fatalf("call_count=%d want 2 when episodic context changes", indicatorStub.callCount)
+	}
+	if !strings.Contains(indicatorStub.lastUser, "历史交易经验（仅供参考，禁止直接复用结论）") {
+		t.Fatalf("user prompt missing episodic block: %s", indicatorStub.lastUser)
+	}
+}
+
+func TestLLMAgentServiceAnalyzeAppendsSemanticRulesToSystem(t *testing.T) {
+	indicatorStub := &stubRiskSessionProvider{callResp: `{"expansion":"expanding","alignment":"aligned","noise":"low"}`}
+	service := LLMAgentService{
+		Runner: &agent.Runner{Indicator: indicatorStub},
+		Prompts: LLMPromptBuilder{
+			AgentIndicatorSystem: "indicator-system",
+			UserFormat:           UserPromptFormatBullet,
+		},
+		Cache:            NewLLMStageCache(),
+		DecisionInterval: "15m",
+	}
+	data := features.CompressionResult{
+		Indicators: map[string]map[string]features.IndicatorJSON{
+			"BTCUSDT": llmAgentIndicatorInputsForTest(t),
+		},
+	}
+
+	if _, _, _, _, _, err := service.Analyze(context.Background(), "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	ctx := memory.WithSemanticContext(context.Background(), "交易规则与经验:\n[1] 不追突破后的第三根阳线")
+	if _, _, _, _, _, err := service.Analyze(ctx, "BTCUSDT", data, decision.AgentEnabled{Indicator: true}); err != nil {
+		t.Fatalf("Analyze() with semantic rules error = %v", err)
+	}
+
+	if indicatorStub.callCount != 2 {
+		t.Fatalf("call_count=%d want 2 when semantic rules change", indicatorStub.callCount)
+	}
+	if !strings.Contains(indicatorStub.lastSystem, "不追突破后的第三根阳线") {
+		t.Fatalf("system prompt missing semantic rules: %s", indicatorStub.lastSystem)
 	}
 }
 

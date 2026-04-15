@@ -43,7 +43,7 @@ func buildSymbolAgents(sys config.SystemConfig, symbolCfg config.SymbolConfig) (
 	return llmapp.LLMAgentService{Runner: agentRunner, Prompts: builder, Cache: cache, Tracker: tracker, DecisionInterval: decisionInterval}, llmapp.LLMProviderService{Runner: providerRunner, Prompts: builder, Cache: cache, Tracker: tracker}, tracker
 }
 
-func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {
+func NewLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {
 	temp := 0.0
 	if role.Temperature != nil {
 		temp = *role.Temperature
@@ -65,4 +65,8 @@ func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenA
 		Temperature:      temp,
 		StructuredOutput: structuredOutput,
 	}
+}
+
+func newLLMClient(sys config.SystemConfig, role config.LLMRoleConfig) *llm.OpenAIClient {
+	return NewLLMClient(sys, role)
 }

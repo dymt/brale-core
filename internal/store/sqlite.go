@@ -45,6 +45,8 @@ func migratePositionTables(db *gorm.DB) error {
 		&GateEventRecord{},
 		&RiskPlanHistoryRecord{},
 		&PositionRecord{},
+		&EpisodicMemoryRecord{},
+		&SemanticMemoryRecord{},
 	)
 }
 

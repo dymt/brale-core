@@ -22,8 +22,15 @@ import (
 )
 
 func (p *Pipeline) handleInPosition(ctx context.Context, logger *zap.Logger, out PersistResult, res SymbolResult, snapID uint, snap snapshot.MarketSnapshot, comp features.CompressionResult, posID string) (PersistResult, error) {
+	recordMemory := p != nil && p.WorkingMemory != nil
+	defer func() {
+		if recordMemory {
+			p.recordWorkingMemory(ctx, res, comp)
+		}
+	}()
 	rfResult, indHold, stHold, mechHold, prompts, evaluated, err := p.resolveHoldGate(ctx, res, comp, posID, logger)
 	if err != nil {
+		recordMemory = false
 		out.Err = err
 		return out, err
 	}
@@ -47,11 +54,13 @@ func (p *Pipeline) handleInPosition(ctx context.Context, logger *zap.Logger, out
 	p.applyExitConfirmFromTighten(&res, posID, execResult, logger)
 	out.Gate = res.Gate.GateReason
 	if err := p.persistInPositionStores(ctx, snapID, snap, res, indHold, stHold, mechHold, prompts, logger); err != nil {
+		recordMemory = false
 		return out, err
 	}
 	fsmNext, fsmActions, fsmHit, err := p.evaluateFSM(ctx, res, res.Gate, nil, fsm.StateInPosition, posID, logger)
 	out.NextState = fsmNext
 	if err != nil {
+		recordMemory = false
 		logger.Error("fsm eval failed", zap.Error(err))
 		p.notifyError(ctx, err)
 		out.Err = err
@@ -270,6 +279,7 @@ func (p *Pipeline) judgeInPositionWithFallback(ctx context.Context, symbol strin
 	}
 	runCtx := llm.WithSessionSymbol(ctx, symbol)
 	runCtx = llm.WithSessionFlow(runCtx, llm.LLMFlowInPosition)
+	runCtx = p.withWorkingMemoryPromptContext(runCtx, symbol, comp)
 	dataCtx := BuildProviderDataContext(res.AgentInputs)
 	indOut, stOut, mechOut, prompts, err := p.Runner.Provider.JudgeInPosition(runCtx, symbol, res.AgentIndicator, res.AgentStructure, res.AgentMechanics, summary, providerEnabled, dataCtx)
 	if err != nil {

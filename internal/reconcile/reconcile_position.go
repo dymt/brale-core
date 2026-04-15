@@ -70,6 +70,9 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 			logging.FromContext(ctx).Named("reconcile").Error("position close summary notify failed", zap.Error(err))
 		}
 	}
+	if s.Reflector != nil {
+		go s.Reflector.ReflectOnClose(ctx, closedPos, summary.ExitPrice)
+	}
 	return nil
 }
 

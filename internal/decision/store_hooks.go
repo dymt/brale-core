@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -278,7 +279,7 @@ func cloneJSONBytes(raw []byte) []byte {
 	if len(raw) == 0 {
 		return nil
 	}
-	return append([]byte(nil), raw...)
+	return slices.Clone(raw)
 }
 
 func marshalContextJSON(data any) ([]byte, error) {

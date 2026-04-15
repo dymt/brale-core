@@ -77,7 +77,7 @@ func TestBuildSymbolRuntimeInjectsCoreDependencies(t *testing.T) {
 		t.Fatalf("provider cache should not be nil")
 	}
 
-	pipeline, err := buildPipeline(config.SystemConfig{}, nil, nil, &position.PositionService{PlanCache: position.NewPlanCache()}, nil, nil, time.Minute, symbolCfg.Symbol, strategy.StrategyBinding{}, symbolCfg, config.StrategyConfig{}, &decision.Runner{}, decision.NewExitConfirmCache())
+	pipeline, err := buildPipeline(config.SystemConfig{}, nil, nil, &position.PositionService{PlanCache: position.NewPlanCache()}, nil, nil, time.Minute, symbolCfg.Symbol, strategy.StrategyBinding{}, symbolCfg, config.StrategyConfig{}, &decision.Runner{}, decision.NewExitConfirmCache(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("build pipeline: %v", err)
 	}
@@ -132,6 +132,41 @@ func TestBuildSymbolRuntimeWiresRiskCallbacks(t *testing.T) {
 	}
 	if rt.Pipeline.TightenRiskLLM == nil {
 		t.Fatalf("pipeline tighten risk callback should be wired")
+	}
+}
+
+func TestBuildSymbolRuntimeWiresEpisodicAndSemanticMemory(t *testing.T) {
+	sys := testRuntimeSystemConfig()
+	symbolCfg := testRuntimeSymbolConfig()
+	symbolCfg.Memory = config.MemoryConfig{
+		Enabled:              true,
+		WorkingMemorySize:    config.DefaultWorkingMemorySize,
+		EpisodicEnabled:      true,
+		EpisodicTTLDays:      config.DefaultEpisodicTTLDays,
+		EpisodicMaxPerSymbol: config.DefaultEpisodicMaxPerSymbol,
+		SemanticEnabled:      true,
+		SemanticMaxRules:     config.DefaultSemanticMaxRules,
+	}
+	stratCfg := config.StrategyConfig{Symbol: "BTCUSDT"}
+	enabledCfg := config.AgentEnabled{Indicator: true, Structure: true, Mechanics: false}
+	enabledApp := decision.AgentEnabled{Indicator: true, Structure: true, Mechanics: false}
+	positioner := &position.PositionService{PlanCache: position.NewPlanCache()}
+
+	rt, err := buildSymbolRuntimeFromConfig(context.TODO(), sys, symbolCfg, stratCfg, strategy.StrategyBinding{}, nil, nil, positioner, &position.RiskPlanService{}, nil, time.Minute, enabledCfg, enabledApp, false)
+	if err != nil {
+		t.Fatalf("build symbol runtime: %v", err)
+	}
+	if rt.Pipeline == nil || rt.Pipeline.Runner == nil {
+		t.Fatalf("pipeline or runner should not be nil")
+	}
+	if rt.Pipeline.WorkingMemory == nil {
+		t.Fatalf("working memory should be wired")
+	}
+	if rt.Pipeline.EpisodicMemory == nil || rt.Pipeline.Runner.EpisodicMemory == nil {
+		t.Fatalf("episodic memory should be wired on pipeline and runner")
+	}
+	if rt.Pipeline.SemanticMemory == nil || rt.Pipeline.Runner.SemanticMemory == nil {
+		t.Fatalf("semantic memory should be wired on pipeline and runner")
 	}
 }
 
