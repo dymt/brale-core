@@ -27,9 +27,10 @@ liquidations = false
 
 [indicators]
 # engine: primary indicator computation backend.
-#   "talib" (default) — uses go-talib for all indicators.
-#   "reference" — uses the pure-Go cinar/indicator library.
-engine = "talib"
+#   "ta" (default) — pure-Go implementation, no CGO required.
+#   "talib" — uses go-talib (CGO); retained for parity diff only.
+#   "reference" — pure-Go reference implementation.
+engine = "ta"
 
 # shadow_engine: optional second engine that runs in parallel for cross-validation.
 # Results are logged but never affect trading decisions.
