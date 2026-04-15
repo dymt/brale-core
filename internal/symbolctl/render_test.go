@@ -25,7 +25,7 @@ strategy = "strategies/ETHUSDT.toml"
 	if strings.Contains(symbolToml, `symbol = "ETHUSDT"`) {
 		t.Fatalf("symbol TOML still contains template symbol:\n%s", symbolToml)
 	}
-	if !strings.Contains(symbolToml, `# 拉取的 K 线周期列表`) {
+	if !strings.Contains(symbolToml, `# Candlestick intervals to collect`) {
 		t.Fatalf("symbol TOML should preserve template comments:\n%s", symbolToml)
 	}
 	if !strings.Contains(strategyToml, `symbol = "XAGUSDT"`) {

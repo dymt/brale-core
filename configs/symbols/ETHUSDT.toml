@@ -1,114 +1,132 @@
-# ETHUSDT 币种配置示例（每个币种必须单独配置）
-# 说明：本文件控制单币种的采集、LLM 解析、映射、Gate、FSM 与 Plan 生成逻辑。
+# ETHUSDT symbol configuration
+# Each actively traded symbol requires its own config file.
 
-# 币种标识（必须与交易所/行情源一致）。
+# Symbol identifier (must match the exchange/market data source exactly).
 symbol = "ETHUSDT"
-# 拉取的 K 线周期列表，顺序仅影响展示，不影响逻辑。
+# Candlestick intervals to collect. Order affects display only, not logic.
 intervals = ["1h","4h"]
-# 每个周期拉取的 K 线数量，越大越耗时但结构更完整。
+# Number of candles to fetch per interval. Higher = slower but better structure detection.
 kline_limit = 300
 
 [agent]
-# 是否启用指标 Agent（输出技术指标摘要）。
+# Enable indicator Agent (outputs technical indicator summary).
 indicator = true
-# 是否启用结构 Agent（输出结构/形态摘要）。
+# Enable structure Agent (outputs market structure / pattern summary).
 structure = true
-# 是否启用力学 Agent（输出衍生品/情绪摘要）。
+# Enable mechanics Agent (outputs derivatives / sentiment summary).
 mechanics = true
 
 [require]
-# 是否强制要求 OI 数据，缺失则该币种本轮不跑。
+# Data requirements — if a required field is missing, this symbol skips the round.
 oi = true
-# 是否强制要求 Funding 数据，缺失则该币种本轮不跑。
 funding = true
-# 是否强制要求多空比数据，缺失则该币种本轮不跑。
 long_short = true
-# 是否强制要求恐惧贪婪指数，缺失则该币种本轮不跑。
 fear_greed = true
-# 是否强制要求清算数据；如策略不依赖可关闭。
+# Liquidation data is optional; disable if your strategy does not depend on it.
 liquidations = false
 
 [indicators]
-# EMA 快线周期（用于指标特征计算）。
+# engine: primary indicator computation backend.
+#   "talib" (default) — uses go-talib for all indicators.
+#   "reference" — uses the pure-Go cinar/indicator library.
+engine = "talib"
+
+# shadow_engine: optional second engine that runs in parallel for cross-validation.
+# Results are logged but never affect trading decisions.
+# Set to "reference" to verify talib output, or leave empty to disable.
+# Use 'bralectl indicator diff' to compare the two engines offline.
+shadow_engine = "reference"
+
+# EMA periods: fast/mid/slow used for trend and crossover features.
 ema_fast = 21
-# EMA 中线周期。
 ema_mid = 50
-# EMA 慢线周期。
 ema_slow = 200
-# RSI 计算周期。
+
+# RSI period (Relative Strength Index — momentum oscillator 0–100).
 rsi_period = 14
-# ATR 计算周期。
+# ATR period (Average True Range — volatility, also used for stop-loss distance).
 atr_period = 14
-# STC 快线周期（Schaff Trend Cycle）。
+
+# STC periods (Schaff Trend Cycle — combines MACD + stochastic smoothing).
 stc_fast = 23
-# STC 慢线周期。
 stc_slow = 50
-# Bollinger Bands 周期。
+
+# Bollinger Bands: period and standard deviation multiplier.
 bb_period = 20
-# Bollinger Bands 标准差倍数。
 bb_multiplier = 2.0
-# CHOP（Choppiness Index）周期。
+
+# CHOP period (Choppiness Index — 0–100, high = ranging, low = trending).
 chop_period = 14
-# Stoch RSI 周期。
+# Stochastic RSI period.
 stoch_rsi_period = 14
-# Aroon 周期。
+# Aroon period (trend strength indicator).
 aroon_period = 25
-# 指标序列取最近 N 根窗口用于 LLM 总结。
+
+# last_n: how many recent candles of indicator data to include in LLM context.
 last_n = 5
-# 是否格式化输出 JSON（会增加体积）。
+# pretty: format indicator JSON output (increases token usage, useful for debugging).
 pretty = false
 
-# consensus：三路共识方向判定阈值。
+# memory: three-layer memory system that feeds past experience into LLM prompts.
+# Working memory = recent decision context (always active when enabled).
+# Episodic memory = structured reflections on closed trades (requires reflector LLM call).
+# Semantic memory = persistent trading rules extracted from experience.
+[memory]
+# Master toggle. When false, no memory context is injected into prompts.
+enabled = true
+# Number of recent decision summaries kept in working memory.
+working_memory_size = 5
+# Enable episodic memory (trade reflections stored on position close).
+episodic_enabled = true
+# Auto-expire episodic records older than this many days.
+episodic_ttl_days = 90
+# Maximum episodic entries per symbol (oldest pruned first).
+episodic_max_per_symbol = 3
+# Enable semantic memory (long-term trading rules).
+# Rules are managed via 'bralectl memory add-rule' and injected into system prompts.
+semantic_enabled = true
+# Maximum semantic rules per symbol.
+semantic_max_rules = 10
+
+# consensus: multi-Agent agreement thresholds for generating a directional signal.
 [consensus]
-# score_threshold：共识总分门槛（|score| >= threshold 才允许有方向）。
-# 建议原因：避免“方向分数很弱”时误开仓。
+# score_threshold: minimum absolute consensus score for a directional signal.
+# Prevents opening positions on weak or ambiguous signals.
 score_threshold = 0.5
-# confidence_threshold：共识置信门槛（confidence >= threshold 才允许有方向）。
-# 建议原因：当前 confidence = coverage * agreement，且权重含 C^1.5 惩罚，
-# 0.60 在实盘会偏严，容易长期不过门槛；默认 0.52 更平衡“机会”和“噪声过滤”。
+# confidence_threshold: minimum confidence for a directional signal.
+# confidence = coverage * agreement (with C^1.5 penalty). 0.52 balances opportunity vs noise.
 confidence_threshold = 0.52
 
-
-# cooldown：节流与防抖设置（避免短时间重复开仓）。
+# cooldown: throttle / debounce to prevent rapid repeated entries.
 [cooldown]
-# enabled：是否启用冷却控制。
+# Enable cooldown control.
 enabled = false
-# entry_cooldown_sec：两次开仓之间的最小间隔（秒）。
+# Minimum seconds between two entries.
 entry_cooldown_sec = 120
 
-# llm：为各个 Agent/Provider 指定模型与采样温度。
+# llm: model and temperature for each Agent / Provider role.
 [llm.agent.indicator]
-# model：模型路由名，格式通常为“供应商/模型”。
+# Model routing name, typically "provider/model".
 model = '${LLM_MODEL_INDICATOR}'
-# temperature：采样温度，越高越发散，越低越稳定。
+# Sampling temperature — lower = more deterministic, higher = more creative.
 temperature = 0.2
 
 [llm.agent.structure]
-# model：结构 Agent 使用的模型。
 model = '${LLM_MODEL_STRUCTURE}'
-# temperature：结构 Agent 采样温度。
 temperature = 0.2
 
 [llm.agent.mechanics]
-# model：力学 Agent 使用的模型。
 model = '${LLM_MODEL_MECHANICS}'
-# temperature：力学 Agent 采样温度。
 temperature = 0.2
 
 [llm.provider.indicator]
-# model：指标 Provider 使用的模型。
 model = '${LLM_MODEL_INDICATOR}'
-# temperature：指标 Provider 采样温度。
 temperature = 0.2
 
 [llm.provider.structure]
-# model：结构 Provider 使用的模型。
 model = '${LLM_MODEL_STRUCTURE}'
-# temperature：结构 Provider 采样温度。
 temperature = 0.2
 
 [llm.provider.mechanics]
-# model：力学 Provider 使用的模型。
 model = '${LLM_MODEL_MECHANICS}'
-# temperature：力学 Provider 采样温度。
 temperature = 0.2
