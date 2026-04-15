@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"text/tabwriter"
 
+	"brale-core/internal/config"
 	"brale-core/internal/memory"
 	"brale-core/internal/pgstore"
 
@@ -33,7 +34,7 @@ func memoryStoreFromFlags() (*pgstore.PGStore, error) {
 	if dsn == "" {
 		dsn = "postgres://brale:brale@localhost:5432/brale?sslmode=disable"
 	}
-	pool, err := pgstore.OpenPool(context.Background(), dsn)
+	pool, err := pgstore.OpenPool(context.Background(), config.DatabaseConfig{DSN: dsn})
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}

@@ -135,7 +135,7 @@ func buildRuleReplay(ctx context.Context, systemPath, indexPath, dsn, symbol, fr
 	if resolvedDSN == "" {
 		return backtest.RuleReplay{}, backtest.TimeRange{}, fmt.Errorf("database DSN is empty")
 	}
-	pool, err := pgstore.OpenPool(ctx, resolvedDSN)
+	pool, err := pgstore.OpenPool(ctx, config.DatabaseConfig{DSN: resolvedDSN})
 	if err != nil {
 		return backtest.RuleReplay{}, backtest.TimeRange{}, fmt.Errorf("open database: %w", err)
 	}
