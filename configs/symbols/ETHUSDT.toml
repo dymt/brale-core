@@ -1,114 +1,112 @@
-# ETHUSDT symbol configuration
-# Each actively traded symbol requires its own config file.
+# ETHUSDT 币种配置 / ETHUSDT Symbol Configuration
+# 每个活跃交易品种需要独立的配置文件。
 
-# Symbol identifier (must match the exchange/market data source exactly).
+# 交易对标识（必须与交易所数据源完全一致）。
 symbol = "ETHUSDT"
-# Candlestick intervals to collect. Order affects display only, not logic.
+# K 线周期。第一个元素（最短周期）同时作为 decisionInterval 注入 Agent prompt。
 intervals = ["15m","1h","4h"]
-# Number of candles to fetch per interval. Higher = slower but better structure detection.
+# 每个周期拉取的 K 线数量。越大结构检测越好，但速度越慢。
 kline_limit = 300
 
 [agent]
-# Enable indicator Agent (outputs technical indicator summary).
+# 指标智能体（输出技术指标摘要）。
 indicator = true
-# Enable structure Agent (outputs market structure / pattern summary).
+# 结构智能体（输出市场结构 / 形态摘要）。
 structure = true
-# Enable mechanics Agent (outputs derivatives / sentiment summary).
+# 力学智能体（输出衍生品 / 情绪摘要）。
 mechanics = true
 
 [require]
-# Data requirements — if a required field is missing, this symbol skips the round.
+# 数据依赖 — 必填字段缺失时跳过本轮决策。
 oi = true
 funding = true
 long_short = true
 fear_greed = true
-# Liquidation data is optional; disable if your strategy does not depend on it.
+# 清算数据可选；策略不依赖时关闭。
 liquidations = false
 
 [indicators]
-# engine: primary indicator computation backend.
-#   "ta" (default) — pure-Go implementation, no CGO required.
-#   "talib" — uses go-talib (CGO); retained for parity diff only.
-#   "reference" — pure-Go reference implementation.
+# 指标计算引擎：
+#   "ta"（默认）— 纯 Go 实现，无 CGO 依赖。
+#   "talib" — 使用 go-talib（CGO），仅保留用于对比校验。
+#   "reference" — 纯 Go 参考实现。
 engine = "ta"
 
-# shadow_engine: optional second engine that runs in parallel for cross-validation.
-# Results are logged but never affect trading decisions.
-# Leave empty to disable. Use 'bralectl indicator diff' to compare offline.
+# 影子引擎：并行运行的第二引擎，用于交叉校验。
+# 结果仅记录日志，不影响交易。留空禁用。
+# 可用 'bralectl indicator diff' 离线对比。
 shadow_engine = ""
 
-# EMA periods: fast/mid/slow used for trend and crossover features.
+# EMA 周期：快 / 中 / 慢，用于趋势与交叉特征。
 ema_fast = 21
 ema_mid = 50
 ema_slow = 200
 
-# RSI period (Relative Strength Index — momentum oscillator 0–100).
+# RSI 周期（相对强弱指标 — 动量振荡器，范围 0–100）。
 rsi_period = 14
-# ATR period (Average True Range — volatility, also used for stop-loss distance).
+# ATR 周期（真实波幅均值 — 波动率指标，同时用于止损距离计算）。
 atr_period = 14
 
-# STC periods (Schaff Trend Cycle — combines MACD + stochastic smoothing).
+# STC 周期（Schaff 趋势周期 — 结合 MACD + 随机平滑）。
 stc_fast = 23
 stc_slow = 50
 
-# Bollinger Bands: period and standard deviation multiplier.
+# 布林带：周期与标准差倍数。
 bb_period = 20
 bb_multiplier = 2.0
 
-# CHOP period (Choppiness Index — 0–100, high = ranging, low = trending).
+# CHOP 周期（波动性指数 — 0–100，高值=震荡，低值=趋势）。
 chop_period = 14
-# Stochastic RSI period.
+# 随机 RSI 周期。
 stoch_rsi_period = 14
-# Aroon period (trend strength indicator).
+# Aroon 周期（趋势强度指标）。
 aroon_period = 25
 
-# last_n: how many recent candles of indicator data to include in LLM context.
+# last_n：注入 LLM 上下文的最近 K 线指标数据条数。
 last_n = 5
-# pretty: format indicator JSON output (increases token usage, useful for debugging).
+# pretty：格式化指标 JSON 输出（增加 token 用量，调试时有用）。
 pretty = false
 
-# memory: three-layer memory system that feeds past experience into LLM prompts.
-# Working memory = recent decision context (always active when enabled).
-# Episodic memory = structured reflections on closed trades (requires reflector LLM call).
-# Semantic memory = persistent trading rules extracted from experience.
+# 三层记忆系统：将历史经验注入 LLM prompt。
+# 工作记忆 = 最近决策上下文（启用后始终生效）。
+# 情景记忆 = 已平仓交易的结构化复盘（需要 LLM 反思调用）。
+# 语义记忆 = 从经验中提炼的持久交易规则。
 [memory]
-# Master toggle. When false, no memory context is injected into prompts.
+# 总开关。关闭后不向 prompt 注入任何记忆上下文。
 enabled = true
-# Number of recent decision summaries kept in working memory.
+# 工作记忆保留的最近决策摘要条数。
 working_memory_size = 5
-# Enable episodic memory (trade reflections stored on position close).
+# 情景记忆开关（平仓时存储交易复盘）。
 episodic_enabled = true
-# Auto-expire episodic records older than this many days.
+# 情景记忆自动过期天数。
 episodic_ttl_days = 90
-# Maximum episodic entries per symbol (oldest pruned first).
+# 每个币种最大情景记忆条数（超出后裁剪最旧的）。
 episodic_max_per_symbol = 3
-# Enable semantic memory (long-term trading rules).
-# Rules are managed via 'bralectl memory add-rule' and injected into system prompts.
+# 语义记忆开关（长期交易规则）。
+# 通过 'bralectl memory add-rule' 管理，注入系统 prompt。
 semantic_enabled = true
-# Maximum semantic rules per symbol.
+# 每个币种最大语义规则条数。
 semantic_max_rules = 10
 
-# consensus: multi-Agent agreement thresholds for generating a directional signal.
+# 多智能体共识阈值 — 决定何时产生方向性信号。
 [consensus]
-# score_threshold: minimum absolute consensus score for a directional signal.
-# Prevents opening positions on weak or ambiguous signals.
-score_threshold = 0.5
-# confidence_threshold: minimum confidence for a directional signal.
-# confidence = coverage * agreement (with C^1.5 penalty). 0.52 balances opportunity vs noise.
-confidence_threshold = 0.52
+# 最小绝对共识分数。防止在弱信号或模糊信号下开仓。
+score_threshold = 0.3
+# 最小置信度。confidence = coverage × agreement（含 C^1.5 惩罚）。
+confidence_threshold = 0.3
 
-# cooldown: throttle / debounce to prevent rapid repeated entries.
+# 冷却控制 — 防止快速重复开仓。
 [cooldown]
-# Enable cooldown control.
+# 开启冷却控制。
 enabled = false
-# Minimum seconds between two entries.
+# 两次开仓之间的最小间隔（秒）。
 entry_cooldown_sec = 120
 
-# llm: model and temperature for each Agent / Provider role.
+# LLM 模型与温度配置 — 每个 Agent / Provider 角色独立配置。
 [llm.agent.indicator]
-# Model routing name, typically "provider/model".
+# 模型路由名称，通常为 "provider/model" 格式。
 model = '${LLM_MODEL_INDICATOR}'
-# Sampling temperature — lower = more deterministic, higher = more creative.
+# 采样温度 — 越低越确定，越高越发散。
 temperature = 0.2
 
 [llm.agent.structure]
