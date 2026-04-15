@@ -221,6 +221,7 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 		go func() {
 			hist, err := s.source.GetOpenInterestHistory(ctx, symbol, s.baseOIHistoryPeriod, s.oiHistoryLimit)
 			if err != nil {
+				err = fmt.Errorf("get OI history for %s: %w", symbol, err)
 				logger.Warn("metrics OI history failed", zap.Error(err))
 			}
 			oiCh <- oiResult{hist: hist, err: err}
@@ -231,6 +232,7 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 	go func() {
 		rate, err := s.source.GetFundingRate(ctx, symbol)
 		if err != nil {
+			err = fmt.Errorf("get funding rate for %s: %w", symbol, err)
 			logger.Warn("metrics funding failed", zap.Error(err))
 		}
 		fundCh <- fundingResult{rate: rate, err: err}

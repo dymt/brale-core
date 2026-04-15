@@ -148,10 +148,10 @@ func (s *MarkPriceStream) run(ctx context.Context) {
 		logger.Info("mark price ws connected")
 		select {
 		case <-ctx.Done():
-			stopC <- struct{}{}
+			signalMarkPriceStop(doneC, stopC)
 			return
 		case <-s.stopCh:
-			stopC <- struct{}{}
+			signalMarkPriceStop(doneC, stopC)
 			return
 		case <-doneC:
 			if connectedOnce {
@@ -188,6 +188,21 @@ func (s *MarkPriceStream) serve(ctx context.Context) (doneC, stopC chan struct{}
 		rates[sym] = s.rate
 	}
 	return futures.WsCombinedMarkPriceServeWithRate(rates, handler, errHandler)
+}
+
+func signalMarkPriceStop(doneC, stopC chan struct{}) bool {
+	if stopC == nil {
+		return false
+	}
+	if doneC != nil {
+		select {
+		case <-doneC:
+			return false
+		default:
+		}
+	}
+	close(stopC)
+	return true
 }
 
 func (s *MarkPriceStream) handleEvent(event *futures.WsMarkPriceEvent) {
