@@ -46,9 +46,9 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 	}
 
 	cfg := &river.Config{
-		Workers:      workers,
-		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
-		PeriodicJobs: periodicJobs,
+		Workers:       workers,
+		Queues:        map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
+		PeriodicJobs:  periodicJobs,
 		FetchCooldown: 200 * time.Millisecond,
 	}
 
@@ -70,10 +70,9 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the River client.
-func (c *Client) Stop(ctx context.Context) error {
+func (c *Client) Stop(ctx context.Context) {
 	c.inner.Stop(ctx)
 	c.logger.Info("river job client stopped")
-	return nil
 }
 
 // Inner returns the underlying river.Client for InsertTx operations.

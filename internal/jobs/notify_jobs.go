@@ -8,7 +8,6 @@ import (
 
 	"brale-core/internal/pkg/logging"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"go.uber.org/zap"
 )
@@ -27,7 +26,8 @@ func (NotifyRenderArgs) Kind() string { return "notify_render" }
 // NotifyRenderWorker renders a notification payload into a deliverable format.
 type NotifyRenderWorker struct {
 	river.WorkerDefaults[NotifyRenderArgs]
-	Render func(ctx context.Context, eventType, symbol string, payload json.RawMessage) (rendered json.RawMessage, err error)
+	Render         func(ctx context.Context, eventType, symbol string, payload json.RawMessage) (rendered json.RawMessage, err error)
+	EnqueueDeliver func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error
 }
 
 func (w *NotifyRenderWorker) Work(ctx context.Context, job *river.Job[NotifyRenderArgs]) error {
@@ -46,13 +46,10 @@ func (w *NotifyRenderWorker) Work(ctx context.Context, job *river.Job[NotifyRend
 		return err
 	}
 
-	// Enqueue a delivery job with the rendered payload.
-	// We use the same River client from the job context.
-	_, err = river.ClientFromContext[pgx.Tx](ctx).Insert(ctx, NotifyDeliverArgs{
-		EventType: job.Args.EventType,
-		Symbol:    job.Args.Symbol,
-		Rendered:  rendered,
-	}, nil)
+	if w.EnqueueDeliver == nil {
+		return fmt.Errorf("enqueue deliver function not configured")
+	}
+	err = w.EnqueueDeliver(ctx, job.Args.EventType, job.Args.Symbol, rendered)
 	if err != nil {
 		logger.Error("enqueue deliver job failed", zap.Error(err))
 		return err

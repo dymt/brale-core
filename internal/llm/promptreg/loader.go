@@ -55,8 +55,10 @@ func (l *Loader) Resolve(ctx context.Context, role, stage string) (text string, 
 	if l.store != nil {
 		entry, found, dbErr := l.store.FindActivePrompt(ctx, role, stage)
 		if dbErr != nil {
-			l.logger.Warn("prompt registry query failed, using default",
-				zap.String("role", role), zap.String("stage", stage), zap.Error(dbErr))
+			if l.logger != nil {
+				l.logger.Warn("prompt registry query failed, using default",
+					zap.String("role", role), zap.String("stage", stage), zap.Error(dbErr))
+			}
 		} else if found {
 			l.mu.Lock()
 			l.cache[key] = cachedPrompt{text: entry.SystemPrompt, version: entry.Version}

@@ -3,11 +3,13 @@ package otel
 import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 )
 
 // Meters for brale-core core metrics.
 var (
-	meter = otel.Meter("brale-core")
+	meter     = otel.Meter("brale-core")
+	noopMeter = metricnoop.NewMeterProvider().Meter("brale-core")
 
 	// Pipeline metrics
 	PipelineRoundsTotal   metric.Int64Counter
@@ -33,67 +35,39 @@ var (
 )
 
 func init() {
-	var err error
+	PipelineRoundsTotal = newInt64Counter("brale.pipeline.rounds.total", "Total decision pipeline rounds")
+	PipelineLatencyMs = newInt64Histogram("brale.pipeline.latency_ms", "Pipeline round latency in ms")
+	PipelineTokensTotal = newInt64Counter("brale.pipeline.tokens.total", "Total tokens consumed by pipeline rounds")
+	PipelineErrorsTotal = newInt64Counter("brale.pipeline.errors.total", "Total pipeline round errors")
+	PipelineGateDecisions = newInt64Counter("brale.pipeline.gate.decisions", "Gate decisions by action")
 
-	PipelineRoundsTotal, err = meter.Int64Counter("brale.pipeline.rounds.total",
-		metric.WithDescription("Total decision pipeline rounds"))
-	must(err)
+	LLMCallLatencyMs = newInt64Histogram("brale.llm.call.latency_ms", "Individual LLM call latency")
+	LLMCallTokenIn = newInt64Counter("brale.llm.call.token_in", "LLM input tokens")
+	LLMCallTokenOut = newInt64Counter("brale.llm.call.token_out", "LLM output tokens")
+	LLMCallErrors = newInt64Counter("brale.llm.call.errors", "LLM call errors")
 
-	PipelineLatencyMs, err = meter.Int64Histogram("brale.pipeline.latency_ms",
-		metric.WithDescription("Pipeline round latency in ms"))
-	must(err)
+	NotifyEnqueueTotal = newInt64Counter("brale.notify.enqueue.total", "Notifications enqueued")
+	NotifyDeliverTotal = newInt64Counter("brale.notify.deliver.total", "Notifications delivered")
+	NotifyFailTotal = newInt64Counter("brale.notify.fail.total", "Notification delivery failures")
 
-	PipelineTokensTotal, err = meter.Int64Counter("brale.pipeline.tokens.total",
-		metric.WithDescription("Total tokens consumed by pipeline rounds"))
-	must(err)
-
-	PipelineErrorsTotal, err = meter.Int64Counter("brale.pipeline.errors.total",
-		metric.WithDescription("Total pipeline round errors"))
-	must(err)
-
-	PipelineGateDecisions, err = meter.Int64Counter("brale.pipeline.gate.decisions",
-		metric.WithDescription("Gate decisions by action"))
-	must(err)
-
-	LLMCallLatencyMs, err = meter.Int64Histogram("brale.llm.call.latency_ms",
-		metric.WithDescription("Individual LLM call latency"))
-	must(err)
-
-	LLMCallTokenIn, err = meter.Int64Counter("brale.llm.call.token_in",
-		metric.WithDescription("LLM input tokens"))
-	must(err)
-
-	LLMCallTokenOut, err = meter.Int64Counter("brale.llm.call.token_out",
-		metric.WithDescription("LLM output tokens"))
-	must(err)
-
-	LLMCallErrors, err = meter.Int64Counter("brale.llm.call.errors",
-		metric.WithDescription("LLM call errors"))
-	must(err)
-
-	NotifyEnqueueTotal, err = meter.Int64Counter("brale.notify.enqueue.total",
-		metric.WithDescription("Notifications enqueued"))
-	must(err)
-
-	NotifyDeliverTotal, err = meter.Int64Counter("brale.notify.deliver.total",
-		metric.WithDescription("Notifications delivered"))
-	must(err)
-
-	NotifyFailTotal, err = meter.Int64Counter("brale.notify.fail.total",
-		metric.WithDescription("Notification delivery failures"))
-	must(err)
-
-	PositionOpenTotal, err = meter.Int64Counter("brale.position.open.total",
-		metric.WithDescription("Positions opened"))
-	must(err)
-
-	PositionCloseTotal, err = meter.Int64Counter("brale.position.close.total",
-		metric.WithDescription("Positions closed"))
-	must(err)
+	PositionOpenTotal = newInt64Counter("brale.position.open.total", "Positions opened")
+	PositionCloseTotal = newInt64Counter("brale.position.close.total", "Positions closed")
 }
 
-func must(err error) {
-	if err != nil {
-		panic("otel metric init: " + err.Error())
+func newInt64Counter(name, description string) metric.Int64Counter {
+	counter, err := meter.Int64Counter(name, metric.WithDescription(description))
+	if err == nil {
+		return counter
 	}
+	counter, _ = noopMeter.Int64Counter(name, metric.WithDescription(description))
+	return counter
+}
+
+func newInt64Histogram(name, description string) metric.Int64Histogram {
+	histogram, err := meter.Int64Histogram(name, metric.WithDescription(description))
+	if err == nil {
+		return histogram
+	}
+	histogram, _ = noopMeter.Int64Histogram(name, metric.WithDescription(description))
+	return histogram
 }

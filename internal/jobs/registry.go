@@ -15,6 +15,7 @@ func RegisterWorkers(
 	reconcileExec func(ctx context.Context, symbol string) error,
 	riskMonitorExec func(ctx context.Context, symbol string) error,
 	renderFn func(ctx context.Context, eventType, symbol string, payload json.RawMessage) (json.RawMessage, error),
+	enqueueDeliverFn func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error,
 	deliverFn func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error,
 ) *river.Workers {
 	workers := river.NewWorkers()
@@ -22,7 +23,7 @@ func RegisterWorkers(
 	river.AddWorker(workers, &DecideWorker{Execute: decideExec})
 	river.AddWorker(workers, &ReconcileWorker{Execute: reconcileExec})
 	river.AddWorker(workers, &RiskMonitorWorker{Execute: riskMonitorExec})
-	river.AddWorker(workers, &NotifyRenderWorker{Render: renderFn})
+	river.AddWorker(workers, &NotifyRenderWorker{Render: renderFn, EnqueueDeliver: enqueueDeliverFn})
 	river.AddWorker(workers, &NotifyDeliverWorker{Deliver: deliverFn})
 	return workers
 }

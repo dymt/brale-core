@@ -540,6 +540,7 @@ function resolveScale(model) {
   const scaled = (v, min) => Math.max(min, Math.round(v * factor));
   return {
     title: scaled(58, 42),
+    heading: scaled(42, 32),
     subtitle: scaled(26, 20),
     body: scaled(20, 15),
     small: scaled(17, 13),

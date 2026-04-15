@@ -42,10 +42,11 @@ func (n *RiverNotifier) enqueue(ctx context.Context, eventType, symbol string, p
 	}
 
 	if n.client == nil {
+		err := fmt.Errorf("river client is required for %s notification", eventType)
 		if n.logger != nil {
-			n.logger.Debug("notification skipped (no river client)", zap.String("event_type", eventType))
+			n.logger.Warn("notification enqueue skipped", zap.String("event_type", eventType), zap.Error(err))
 		}
-		return nil
+		return err
 	}
 
 	args := jobs.NotifyRenderArgs{
@@ -111,11 +112,13 @@ func TxFromContext(ctx context.Context) pgx.Tx {
 // NoopNotifier discards all notifications. Useful for tests and backtest mode.
 type NoopNotifier struct{}
 
-func (NoopNotifier) NotifyPositionOpen(context.Context, PositionOpenNotice) error              { return nil }
-func (NoopNotifier) NotifyPositionClose(context.Context, PositionCloseNotice) error            { return nil }
-func (NoopNotifier) NotifyPositionCloseSummary(context.Context, PositionCloseSummaryNotice) error { return nil }
-func (NoopNotifier) NotifyRiskPlanUpdate(context.Context, RiskPlanUpdateNotice) error          { return nil }
-func (NoopNotifier) NotifyError(context.Context, ErrorNotice) error                            { return nil }
+func (NoopNotifier) NotifyPositionOpen(context.Context, PositionOpenNotice) error   { return nil }
+func (NoopNotifier) NotifyPositionClose(context.Context, PositionCloseNotice) error { return nil }
+func (NoopNotifier) NotifyPositionCloseSummary(context.Context, PositionCloseSummaryNotice) error {
+	return nil
+}
+func (NoopNotifier) NotifyRiskPlanUpdate(context.Context, RiskPlanUpdateNotice) error { return nil }
+func (NoopNotifier) NotifyError(context.Context, ErrorNotice) error                   { return nil }
 
 var _ Notifier = (*RiverNotifier)(nil)
 var _ Notifier = NoopNotifier{}

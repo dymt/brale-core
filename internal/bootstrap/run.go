@@ -86,15 +86,21 @@ func Run(baseCtx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	defer scheduler.Stop()
 	if migrateErr := jobs.RunMigrations(env.ctx, deps.persistence.pool); migrateErr != nil {
 		return fmt.Errorf("river migration failed: %w", migrateErr)
 	}
 	riverWorkers := jobs.RegisterWorkers(
 		func(ctx context.Context, symbol string) error { return runtime.RunObserveOnce(ctx, scheduler, symbol) },
 		func(ctx context.Context, symbol string) error { return runtime.RunDecideOnce(ctx, scheduler, symbol) },
-		func(ctx context.Context, symbol string) error { return runtime.RunReconcileOnce(ctx, scheduler, symbol) },
-		func(ctx context.Context, symbol string) error { return runtime.RunRiskMonitorOnce(ctx, scheduler, symbol) },
+		func(ctx context.Context, symbol string) error {
+			return runtime.RunReconcileOnce(ctx, scheduler, symbol)
+		},
+		func(ctx context.Context, symbol string) error {
+			return runtime.RunRiskMonitorOnce(ctx, scheduler, symbol)
+		},
 		asyncNotifier.Render,
+		asyncNotifier.EnqueueRendered,
 		asyncNotifier.Deliver,
 	)
 	periodicJobs := jobs.BuildPeriodicJobs(buildRiverPeriodicSchedules(env.sys, runtimes))
@@ -109,10 +115,8 @@ func Run(baseCtx context.Context, opts Options) error {
 	defer func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = riverClient.Stop(stopCtx)
+		riverClient.Stop(stopCtx)
 	}()
-
-	sendStartupNotify(env.ctx, env.logger, env.sys, env.index, runtimes, scheduler, deps, env.notifier)
 
 	resolver := buildRuntimeResolver(env.ctx, env.logger, env.sys, symbolIndexPath, env.index, deps, runtimes)
 	symbolConfigs := loadSymbolConfigs(env.logger, env.sys, symbolIndexPath, env.index)
@@ -128,8 +132,11 @@ func Run(baseCtx context.Context, opts Options) error {
 		return fmt.Errorf("http addr missing")
 	}
 	startFeishuBot(env.ctx, env.logger, env.sys, addr, topMux)
-	transport.StartHTTPServer(env.ctx, addr, topMux, env.logger)
+	if _, err := transport.StartHTTPServer(env.ctx, addr, topMux, env.logger); err != nil {
+		return fmt.Errorf("start http server: %w", err)
+	}
 	startTelegramBot(env.ctx, env.logger, env.sys, addr)
+	sendStartupNotify(env.ctx, env.logger, env.sys, env.index, runtimes, scheduler, deps, env.notifier)
 
 	<-env.ctx.Done()
 	sendShutdownNotify(env.logger, env.notifier, startedAt)

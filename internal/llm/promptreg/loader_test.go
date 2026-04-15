@@ -2,8 +2,25 @@ package promptreg
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"brale-core/internal/store"
 )
+
+type errPromptStore struct{}
+
+func (errPromptStore) SavePromptEntry(context.Context, *store.PromptRegistryEntry) error {
+	return nil
+}
+
+func (errPromptStore) FindActivePrompt(context.Context, string, string) (store.PromptRegistryEntry, bool, error) {
+	return store.PromptRegistryEntry{}, false, errors.New("boom")
+}
+
+func (errPromptStore) ListPromptEntries(context.Context, string, bool) ([]store.PromptRegistryEntry, error) {
+	return nil, nil
+}
 
 func TestLoaderFallsBackToDefaults(t *testing.T) {
 	defaults := map[string]string{
@@ -66,5 +83,22 @@ func TestLoaderInvalidateCache(t *testing.T) {
 	}
 	if text != "prompt v1" {
 		t.Fatalf("expected prompt v1, got: %s", text)
+	}
+}
+
+func TestLoaderResolveWithNilLoggerAndStoreErrorFallsBack(t *testing.T) {
+	loader := NewLoader(errPromptStore{}, map[string]string{
+		"agent/indicator": "fallback prompt",
+	}, nil)
+
+	text, version, err := loader.Resolve(context.Background(), "agent", "indicator")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text != "fallback prompt" {
+		t.Fatalf("text=%q want fallback", text)
+	}
+	if version != "builtin" {
+		t.Fatalf("version=%q want builtin", version)
 	}
 }

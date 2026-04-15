@@ -13,8 +13,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
@@ -154,7 +154,7 @@ func (s *PGStore) WithinTx(ctx context.Context, fn func(context.Context) error) 
 	txCtx := notifyport.ContextWithTx(ctx, tx)
 	if err := fn(txCtx); err != nil {
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && rollbackErr != pgx.ErrTxClosed {
-			return fmt.Errorf("rollback tx: %v (original: %w)", rollbackErr, err)
+			return fmt.Errorf("transaction failed: %w; rollback also failed: %v", err, rollbackErr)
 		}
 		return err
 	}

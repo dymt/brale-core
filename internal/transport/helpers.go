@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -13,17 +14,22 @@ import (
 	"go.uber.org/zap"
 )
 
-func StartHTTPServer(ctx context.Context, addr string, handler http.Handler, logger *zap.Logger) {
+func StartHTTPServer(ctx context.Context, addr string, handler http.Handler, logger *zap.Logger) (*http.Server, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", addr, err)
+	}
 	httpSrv := &http.Server{
 		Addr:    addr,
 		Handler: handler,
 	}
 	go func() {
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Warn("http server failed", zap.Error(err))
+		if serveErr := httpSrv.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			logger.Warn("http server failed", zap.Error(serveErr))
 		}
 	}()
 	ShutdownServerOnContext(ctx, httpSrv, 5*time.Second)
+	return httpSrv, nil
 }
 
 func ShutdownServerOnContext(ctx context.Context, server *http.Server, timeout time.Duration) {

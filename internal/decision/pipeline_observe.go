@@ -77,10 +77,7 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 	ctx, recorder := p.attachRoundRecorder(ctx, roundID, "observe", symbols)
 	roundOutcome := "ok"
 	defer func() {
-		if recorder == nil {
-			return
-		}
-		if err := recorder.Finish(ctx, roundOutcome); err != nil {
+		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
 			logger.Warn("save llm round failed", zap.Error(err))
 		}
 	}()
@@ -187,10 +184,7 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 	ctx, recorder := p.attachRoundRecorder(ctx, roundID, "observe", []string{symbol})
 	roundOutcome := "ok"
 	defer func() {
-		if recorder == nil {
-			return
-		}
-		if err := recorder.Finish(ctx, roundOutcome); err != nil {
+		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
 			logger.Warn("save llm round failed", zap.Error(err))
 		}
 	}()

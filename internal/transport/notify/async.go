@@ -79,17 +79,44 @@ func (m *AsyncManager) enqueue(ctx context.Context, eventType, symbol string, pa
 		Symbol:    symbol,
 		Payload:   json.RawMessage(data),
 	}
-	if tx := notifyport.TxFromContext(ctx); tx != nil {
-		_, err = m.client.InsertTx(ctx, tx, args, nil)
-	} else {
-		_, err = m.client.Insert(ctx, args, nil)
-	}
-	if err != nil {
+	if err := m.enqueueJob(ctx, args); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("enqueue async notification: %w", err)
 	}
 	braleOtel.NotifyEnqueueTotal.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("event_type", eventType)))
+	return nil
+}
+
+func (m *AsyncManager) enqueueJob(ctx context.Context, args jobs.NotifyRenderArgs) error {
+	if tx := notifyport.TxFromContext(ctx); tx != nil {
+		_, err := m.client.InsertTx(ctx, tx, args, nil)
+		return err
+	}
+	_, err := m.client.Insert(ctx, args, nil)
+	return err
+}
+
+func (m *AsyncManager) EnqueueRendered(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error {
+	if m == nil || m.client == nil {
+		return fmt.Errorf("river client is required for notify delivery enqueue")
+	}
+	args := jobs.NotifyDeliverArgs{
+		EventType: eventType,
+		Symbol:    symbol,
+		Rendered:  rendered,
+	}
+	if tx := notifyport.TxFromContext(ctx); tx != nil {
+		_, err := m.client.InsertTx(ctx, tx, args, nil)
+		if err != nil {
+			return fmt.Errorf("enqueue deliver notification: %w", err)
+		}
+		return nil
+	}
+	_, err := m.client.Insert(ctx, args, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue deliver notification: %w", err)
+	}
 	return nil
 }
 

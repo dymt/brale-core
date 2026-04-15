@@ -72,7 +72,7 @@ func (r *Recorder) ObserveCall(_ context.Context, stats llm.CallStats) {
 	if stats.PromptVersion != "" {
 		r.promptVersion[stats.PromptVersion] = struct{}{}
 	}
-	if stats.Err != nil {
+	if stats.Err != nil && r.errMessage == "" {
 		r.errMessage = stats.Err.Error()
 	}
 }
@@ -118,7 +118,7 @@ func (r *Recorder) TotalTokenOut() int {
 
 // Finish persists the round summary to the database.
 func (r *Recorder) Finish(ctx context.Context, outcome string) error {
-	if r.store == nil {
+	if r == nil || r.store == nil {
 		return nil
 	}
 

@@ -4,11 +4,14 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"brale-core/internal/decision/decisionutil"
 	"brale-core/internal/llm"
 	"brale-core/internal/llm/llmround"
 )
+
+const detachedRoundRecorderTimeout = 5 * time.Second
 
 func (p *Pipeline) attachRoundRecorder(ctx context.Context, roundID llm.RoundID, roundType string, symbols []string) (context.Context, *llmround.Recorder) {
 	if p == nil || p.store() == nil || len(symbols) == 0 {
@@ -57,6 +60,19 @@ func applyRoundSummary(recorder *llmround.Recorder, snapID uint, results []Symbo
 		recorder.SetSnapshotID(snapID)
 	}
 	recorder.SetRoundSummary(countAgentPrompts(results), countProviderPrompts(results), summarizeGateActions(results))
+}
+
+func finishRoundRecorder(ctx context.Context, recorder *llmround.Recorder, outcome string) error {
+	if recorder == nil {
+		return nil
+	}
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	finishCtx, cancel := context.WithTimeout(baseCtx, detachedRoundRecorderTimeout)
+	defer cancel()
+	return recorder.Finish(finishCtx, outcome)
 }
 
 func countAgentPrompts(results []SymbolResult) int {
