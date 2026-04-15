@@ -104,7 +104,8 @@ func Run(baseCtx context.Context, opts Options) error {
 		asyncNotifier.Deliver,
 	)
 	periodicJobs := jobs.BuildPeriodicJobs(buildRiverPeriodicSchedules(env.sys, runtimes))
-	riverClient, err := jobs.NewClient(env.ctx, deps.persistence.pool, riverWorkers, periodicJobs, env.logger)
+	riverJobTimeout := maxLLMJobTimeout(env.sys)
+	riverClient, err := jobs.NewClient(env.ctx, deps.persistence.pool, riverWorkers, periodicJobs, riverJobTimeout, env.logger)
 	if err != nil {
 		return fmt.Errorf("river client init failed: %w", err)
 	}
@@ -161,6 +162,46 @@ func buildRiverPeriodicSchedules(sys config.SystemConfig, runtimes map[string]ru
 		})
 	}
 	return schedules
+}
+
+const (
+	defaultLLMClientTimeout   = 30 * time.Second
+	fallbackLLMRequestTimeout = 300 * time.Second
+	llmRequestMaxAttempts     = 3
+	llmParseRetryBudget       = 30 * time.Second
+	riverDecisionLLMPhases    = 3
+	riverJobTimeoutBuffer     = 2 * time.Minute
+	minRiverJobTimeout        = 10 * time.Minute
+)
+
+func maxLLMJobTimeout(sys config.SystemConfig) time.Duration {
+	maxTimeout := defaultLLMClientTimeout
+	for _, cfg := range sys.LLMModels {
+		timeout := effectiveLLMCallTimeout(cfg)
+		if timeout > maxTimeout {
+			maxTimeout = timeout
+		}
+	}
+	// A single decide job runs up to three serial LLM-backed phases (agent, provider, risk).
+	// Stages within agent/provider run in parallel, so the phase budget is the slowest stage:
+	// 3 network attempts plus one parse-retry window, then a small non-LLM buffer.
+	timeout := (maxTimeout * llmRequestMaxAttempts * riverDecisionLLMPhases) +
+		(llmParseRetryBudget * riverDecisionLLMPhases) +
+		riverJobTimeoutBuffer
+	if timeout < minRiverJobTimeout {
+		return minRiverJobTimeout
+	}
+	return timeout
+}
+
+func effectiveLLMCallTimeout(cfg config.LLMModelConfig) time.Duration {
+	if cfg.TimeoutSec == nil {
+		return defaultLLMClientTimeout
+	}
+	if *cfg.TimeoutSec <= 0 {
+		return fallbackLLMRequestTimeout
+	}
+	return time.Duration(*cfg.TimeoutSec) * time.Second
 }
 
 func sendStartupNotify(ctx context.Context, logger *zap.Logger, sys config.SystemConfig, index config.SymbolIndexConfig, runtimes map[string]runtime.SymbolRuntime, scheduler *runtime.RuntimeScheduler, deps coreDeps, notifier startupNotifier) {

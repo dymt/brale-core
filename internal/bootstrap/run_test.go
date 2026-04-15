@@ -90,3 +90,45 @@ func TestSendStartupNotify_ErrorStillCalls(t *testing.T) {
 		t.Fatalf("expected startup notify call once on error, got %d", n.calls)
 	}
 }
+
+func TestEffectiveLLMCallTimeout(t *testing.T) {
+	custom := 45
+	zero := 0
+	tests := []struct {
+		name string
+		cfg  config.LLMModelConfig
+		want time.Duration
+	}{
+		{name: "nil timeout uses client default", cfg: config.LLMModelConfig{}, want: 30 * time.Second},
+		{name: "zero timeout uses request fallback", cfg: config.LLMModelConfig{TimeoutSec: &zero}, want: 300 * time.Second},
+		{name: "positive timeout uses configured value", cfg: config.LLMModelConfig{TimeoutSec: &custom}, want: 45 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveLLMCallTimeout(tt.cfg); got != tt.want {
+				t.Fatalf("effectiveLLMCallTimeout()=%v want=%v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaxLLMJobTimeout(t *testing.T) {
+	t.Run("empty config keeps safe minimum", func(t *testing.T) {
+		if got := maxLLMJobTimeout(config.SystemConfig{}); got != 10*time.Minute {
+			t.Fatalf("maxLLMJobTimeout(empty)=%v want=%v", got, 10*time.Minute)
+		}
+	})
+
+	t.Run("configured model budgets retries phases and buffer", func(t *testing.T) {
+		timeout := 300
+		sys := config.SystemConfig{
+			LLMModels: map[string]config.LLMModelConfig{
+				"slow": {TimeoutSec: &timeout},
+			},
+		}
+		want := 48*time.Minute + 30*time.Second
+		if got := maxLLMJobTimeout(sys); got != want {
+			t.Fatalf("maxLLMJobTimeout()=%v want=%v", got, want)
+		}
+	})
+}

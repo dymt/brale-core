@@ -40,7 +40,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 // NewClient creates a River client backed by the given pgx pool.
 // Workers must be added before calling Start.
-func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, logger *zap.Logger) (*Client, error) {
+func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, jobTimeout time.Duration, logger *zap.Logger) (*Client, error) {
 	if logger == nil {
 		logger = logging.L().Named("river")
 	}
@@ -50,6 +50,7 @@ func NewClient(ctx context.Context, pool *pgxpool.Pool, workers *river.Workers, 
 		Queues:        map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
 		PeriodicJobs:  periodicJobs,
 		FetchCooldown: 200 * time.Millisecond,
+		JobTimeout:    jobTimeout,
 	}
 
 	client, err := river.NewClient(riverpgxv5.New(pool), cfg)
