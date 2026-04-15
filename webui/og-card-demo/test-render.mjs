@@ -217,6 +217,57 @@ async function main() {
 
   console.log(`ok scale=${EXPORT_SCALE} short=${result.width}x${result.height} open-success tightened-risk sample=${sampleResult.width}x${sampleResult.height}`);
 
+  // ---------- Shutdown card test ----------
+  const shutdownInput = {
+    card_type: 'shutdown',
+    data: {
+      reason: '正常停止',
+      uptime: '3h25m12s',
+    },
+  };
+  const shutdownModel = buildModel(shutdownInput);
+  assert.equal(shutdownModel.symbol, 'BRALE');
+  assert.equal(shutdownModel.title, 'Brale 系统停止');
+  assert.equal(shutdownModel.sourceCard.verdictText, '🛑 Brale 已停止');
+  assert.equal(shutdownModel.sourceCard.lines.length, 2);
+  assert.match(shutdownModel.sourceCard.lines[0].text, /停止原因/);
+  assert.match(shutdownModel.sourceCard.lines[1].text, /运行时长/);
+  await renderScenario({ tmpDir, name: 'shutdown', input: shutdownInput });
+
+  // ---------- Error card test ----------
+  const errorInput = {
+    card_type: 'error',
+    data: {
+      severity: 'critical',
+      component: 'execution',
+      symbol: 'BTCUSDT',
+      message: 'Freqtrade API 超时：GET /api/v1/status 连接失败，已重试3次',
+    },
+  };
+  const errorModel = buildModel(errorInput);
+  assert.equal(errorModel.symbol, 'BTCUSDT');
+  assert.match(errorModel.title, /危急/);
+  assert.match(errorModel.sourceCard.lines[0].text, /危急/);
+  assert.match(errorModel.sourceCard.lines[1].text, /execution/);
+  assert.match(errorModel.sourceCard.lines[2].text, /BTCUSDT/);
+  await renderScenario({ tmpDir, name: 'error-critical', input: errorInput });
+
+  // Error card with warn severity and no symbol
+  const warnInput = {
+    card_type: 'error',
+    data: {
+      severity: 'warn',
+      component: 'market',
+      message: 'Fear & Greed API 返回空数据',
+    },
+  };
+  const warnModel = buildModel(warnInput);
+  assert.equal(warnModel.symbol, 'BRALE');
+  assert.match(warnModel.sourceCard.lines[0].text, /警告/);
+  await renderScenario({ tmpDir, name: 'error-warn', input: warnInput });
+
+  console.log('ok shutdown + error card tests passed');
+
   // ---------- Translation regression tests ----------
   // These verify that mapSentence never produces half-translated event keys.
   const { mapSentence: mapSentenceFn } = await import('./render.mjs');

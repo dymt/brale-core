@@ -588,6 +588,10 @@ export function buildModel(raw) {
       return buildStartupModel(raw);
     case 'partial_close':
       return buildPartialCloseModel(raw);
+    case 'shutdown':
+      return buildShutdownModel(raw);
+    case 'error':
+      return buildErrorModel(raw);
     default:
       return buildDecisionModel(raw);
   }
@@ -1183,6 +1187,94 @@ function buildPartialCloseModel(raw) {
 }
 
 // ===== Shared Helpers for Card Models =====
+
+// ===== Shutdown Card =====
+function buildShutdownModel(raw) {
+  const d = raw?.data ?? {};
+  const reason = String(d.reason || '正常停止').trim();
+  const uptime = String(d.uptime || '-').trim();
+
+  const sourceCard = {
+    title: '系统停止',
+    tradeable: false,
+    sourceLabel: '停止通知',
+    verdictText: '🛑 Brale 已停止',
+    lines: [
+      { text: `停止原因：${reason}`, note: false, kind: reason === '正常停止' ? 'default' : 'danger' },
+      { text: `运行时长：${uptime}`, note: false, kind: 'default' },
+    ],
+  };
+
+  const progressCards = [
+    buildSimpleInfoCard('运行时长', uptime, 'amber'),
+    buildSimpleInfoCard('停止原因', reason.length > 8 ? reason.slice(0, 8) + '…' : reason, reason === '正常停止' ? 'emerald' : 'rose'),
+  ];
+
+  return {
+    symbol: 'BRALE',
+    title: 'Brale 系统停止',
+    titlePrice: '',
+    reportTimeCN: formatReportTime(),
+    sourceCard,
+    progressCards,
+    analysisItems: [],
+  };
+}
+
+// ===== Error Card =====
+function buildErrorModel(raw) {
+  const d = raw?.data ?? {};
+  const severity = String(d.severity || 'error').trim();
+  const component = String(d.component || '').trim();
+  const symbol = String(d.symbol || '').trim();
+  const message = String(d.message || '未知错误').trim();
+
+  const severityIcon = severity === 'critical' ? '🔴' : severity === 'warn' ? '🟡' : '🟠';
+  const severityLabel = severity === 'critical' ? '危急' : severity === 'warn' ? '警告' : '错误';
+  const severityTone = severity === 'critical' ? 'rose' : severity === 'warn' ? 'amber' : 'rose';
+
+  const lines = [
+    { text: `${severityIcon} 级别：${severityLabel}`, note: false, kind: severity === 'critical' ? 'danger' : severity === 'warn' ? 'note' : 'danger' },
+  ];
+  if (component) {
+    lines.push({ text: `组件：${component}`, note: false, kind: 'default' });
+  }
+  if (symbol) {
+    lines.push({ text: `币种：${symbol}`, note: false, kind: 'default' });
+  }
+  lines.push({ text: `详情：${message}`, note: false, kind: 'default' });
+
+  const sourceCard = {
+    title: '错误提醒',
+    tradeable: false,
+    sourceLabel: '错误通知',
+    verdictText: `${severityIcon} ${severityLabel}`,
+    lines,
+  };
+
+  const progressCards = [
+    buildSimpleInfoCard('级别', severityLabel, severityTone),
+    ...(component ? [buildSimpleInfoCard('组件', component, 'amber')] : []),
+    ...(symbol ? [buildSimpleInfoCard('币种', symbol, 'amber')] : []),
+  ];
+
+  return {
+    symbol: symbol || 'BRALE',
+    title: `${severityLabel} — ${component || '系统'}`,
+    titlePrice: '',
+    reportTimeCN: formatReportTime(),
+    sourceCard,
+    progressCards,
+    analysisItems: message.length > 60 ? [{
+      tag: '详情',
+      text: message,
+      variant: 'indicator',
+      isCategory: true,
+    }] : [],
+  };
+}
+
+
 function buildSimpleInfoCard(title, value, tone) {
   return {
     key: title,

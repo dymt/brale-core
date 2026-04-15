@@ -320,11 +320,12 @@ func (m Manager) SendShutdown(ctx context.Context, info ShutdownInfo) error {
 	}
 	body := strings.Join(lines, "\n")
 	body = prependNoticeHeader("🛑 Brale 已停止", body)
-	msg := Message{
-		Title:    "Brale 已停止",
-		Markdown: body,
-		Plain:    body,
+
+	data := map[string]any{
+		"reason": reason,
+		"uptime": uptimeText,
 	}
+	msg := m.renderCardMessage(ctx, "shutdown", "", data, "Brale 已停止", body)
 	return m.sendWithKey(ctx, msg, "shutdown")
 }
 
@@ -1096,11 +1097,13 @@ func (m Manager) SendError(ctx context.Context, notice ErrorNotice) error {
 		title = fmt.Sprintf("%s %s", title, component)
 	}
 
-	msg := Message{
-		Title:    title,
-		Markdown: body,
-		Plain:    body,
+	data := map[string]any{
+		"severity":  severity,
+		"component": component,
+		"symbol":    symbol,
+		"message":   msgText,
 	}
+	msg := m.renderCardMessage(ctx, "error", symbol, data, title, body)
 	return m.send(ctx, msg)
 }
 
