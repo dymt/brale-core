@@ -26,7 +26,25 @@ func ValidateSystemConfig(cfg SystemConfig) error {
 			return validationErrorf("llm_min_interval must be > 0")
 		}
 	}
-	for model, modelCfg := range cfg.LLMModels {
+	if err := validateLLMModelConfigs(cfg.LLMModels); err != nil {
+		return err
+	}
+	if err := validateWebhookConfig(cfg.Webhook); err != nil {
+		return err
+	}
+	if err := validateNotificationConfig(cfg.Notification); err != nil {
+		return err
+	}
+	switch cfg.Scheduler.Backend {
+	case "", "river", "builtin":
+	default:
+		return validationErrorf("scheduler.backend must be one of river/builtin")
+	}
+	return nil
+}
+
+func validateLLMModelConfigs(models map[string]LLMModelConfig) error {
+	for model, modelCfg := range models {
 		if strings.TrimSpace(model) == "" {
 			return validationErrorf("llm_models contains empty model name")
 		}
@@ -42,17 +60,6 @@ func ValidateSystemConfig(cfg SystemConfig) error {
 		if modelCfg.Concurrency != nil && *modelCfg.Concurrency <= 0 {
 			return validationErrorf("llm_models.%s.concurrency must be > 0", model)
 		}
-	}
-	if err := validateWebhookConfig(cfg.Webhook); err != nil {
-		return err
-	}
-	if err := validateNotificationConfig(cfg.Notification); err != nil {
-		return err
-	}
-	switch cfg.Scheduler.Backend {
-	case "", "river", "builtin":
-	default:
-		return validationErrorf("scheduler.backend must be one of river/builtin")
 	}
 	return nil
 }

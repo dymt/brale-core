@@ -39,6 +39,31 @@ func LoadSystemConfig(path string) (SystemConfig, error) {
 	cfg.Hash = hash
 	return cfg, nil
 }
+
+func LoadSystemConfigForLLMProbe(path string) (SystemConfig, error) {
+	type probeConfig struct {
+		LLMModels map[string]LLMModelConfig `mapstructure:"llm_models"`
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return SystemConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	subset := extractTomlTableBlocks(data, "llm_models")
+	resolved, err := resolveTomlEnvPlaceholders(path, subset)
+	if err != nil {
+		return SystemConfig{}, err
+	}
+	cfg, err := decodeTomlConfig[probeConfig](path, resolved)
+	if err != nil {
+		return SystemConfig{}, err
+	}
+	if err := validateLLMModelConfigs(cfg.LLMModels); err != nil {
+		return SystemConfig{}, err
+	}
+	return SystemConfig{LLMModels: cfg.LLMModels}, nil
+}
+
 func applyWebhookDefaults(cfg *WebhookConfig) {
 	if cfg == nil {
 		return
@@ -128,6 +153,11 @@ func loadFromFile[T any](path string) (T, error) {
 	if err != nil {
 		return cfg, err
 	}
+	return decodeTomlConfig[T](path, resolved)
+}
+
+func decodeTomlConfig[T any](path string, resolved []byte) (T, error) {
+	var cfg T
 	normalized := deduplicateTomlTables(resolved)
 	// Preserve dots in keys like model names (e.g. "openai/gpt-5.2").
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
@@ -150,6 +180,28 @@ func loadFromFile[T any](path string) (T, error) {
 		ApplyStrategyDefaults(stratCfg, defaults)
 	}
 	return cfg, nil
+}
+
+func extractTomlTableBlocks(data []byte, table string) []byte {
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	header := "[" + table + "]"
+	prefix := "[" + table + "."
+	active := false
+	selected := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isTomlTableHeader(trimmed) {
+			active = trimmed == header || strings.HasPrefix(trimmed, prefix)
+		}
+		if active {
+			selected = append(selected, line)
+		}
+	}
+	return []byte(strings.Join(selected, "\n"))
+}
+
+func isTomlTableHeader(line string) bool {
+	return strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]")
 }
 
 func resolveTomlEnvPlaceholders(configPath string, data []byte) ([]byte, error) {

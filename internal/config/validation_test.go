@@ -443,3 +443,46 @@ func TestLoadSystemConfigParsesStructuredOutputFlag(t *testing.T) {
 		t.Fatalf("structured_output=%v want true", model.StructuredOutput)
 	}
 }
+
+func TestLoadSystemConfigForLLMProbeIgnoresUnrelatedEnvPlaceholders(t *testing.T) {
+	t.Setenv("PROBE_LLM_MODEL", "gpt-4o-mini")
+	t.Setenv("PROBE_LLM_ENDPOINT", "https://api.openai.example/v1")
+	t.Setenv("PROBE_LLM_API_KEY", "secret")
+
+	path := filepath.Join(t.TempDir(), "system.toml")
+	data := []byte(strings.Join([]string{
+		`execution_system = "freqtrade"`,
+		`exec_endpoint = "${PROBE_UNUSED_EXEC_ENDPOINT}"`,
+		`exec_api_key = "${PROBE_UNUSED_EXEC_USERNAME}"`,
+		``,
+		`[database]`,
+		`dsn = "${PROBE_UNUSED_DATABASE_DSN}"`,
+		``,
+		`[llm_models.'${PROBE_LLM_MODEL}']`,
+		`endpoint = "${PROBE_LLM_ENDPOINT}"`,
+		`api_key = "${PROBE_LLM_API_KEY}"`,
+		`structured_output = true`,
+	}, "\n"))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write system.toml: %v", err)
+	}
+
+	if _, err := LoadSystemConfig(path); err == nil {
+		t.Fatal("LoadSystemConfig() error = nil, want unrelated env placeholder failure")
+	}
+
+	cfg, err := LoadSystemConfigForLLMProbe(path)
+	if err != nil {
+		t.Fatalf("LoadSystemConfigForLLMProbe() error = %v", err)
+	}
+	model, ok := cfg.LLMModels["gpt-4o-mini"]
+	if !ok {
+		t.Fatalf("LLMModels=%v want gpt-4o-mini entry", cfg.LLMModels)
+	}
+	if model.Endpoint != "https://api.openai.example/v1" {
+		t.Fatalf("endpoint=%q want https://api.openai.example/v1", model.Endpoint)
+	}
+	if model.APIKey != "secret" {
+		t.Fatalf("api_key=%q want secret", model.APIKey)
+	}
+}

@@ -32,7 +32,7 @@ func LoadProbeTargets(repoRoot, stage string) ([]ProbeTarget, error) {
 	systemPath := filepath.Join(repoRoot, "configs", "system.toml")
 	symbolPath := filepath.Join(repoRoot, "configs", "symbols", "default.toml")
 
-	sys, err := config.LoadSystemConfig(systemPath)
+	sys, err := config.LoadSystemConfigForLLMProbe(systemPath)
 	if err != nil {
 		return nil, err
 	}
