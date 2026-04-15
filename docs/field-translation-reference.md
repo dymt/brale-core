@@ -284,9 +284,91 @@
 | bullish | 看多 | SuperTrend 方向向上 | 支持做多 |
 | bearish | 看空 | SuperTrend 方向向下 | 支持做空 |
 
+### 5.5 Aroon 指标
+
+| 原字段值 | 中文 | 含义 | 对决策的意义 |
+|---------|------|------|------------|
+| strong_up | 强势上行 | Aroon Up 高位 | 多头趋势明确 |
+| strong_down | 强势下行 | Aroon Down 高位 | 空头趋势明确 |
+| crossover | 交叉 | Aroon 线交叉 | 可能的趋势切换 |
+
 ---
 
-## 六、通用状态值
+## 六、Agent 输出字段
+
+以下字段出现在 Agent 分析结果（indicator / mechanics / structure）中：
+
+### 6.1 指标综合（Indicator Agent）
+
+| 字段名 | 中文名 | 含义 | 取值示例 |
+|--------|--------|------|---------|
+| expansion | 扩张状态 | 波动率方向 | expanding / contracting |
+| alignment | 指标一致性 | 跨指标方向一致度 | aligned / mixed / divergent |
+| noise | 噪音水平 | 指标信号噪音 | low / medium / high |
+| momentum_detail | 动能细节 | EMA delta 明细文本 | ema_fast delta_pct 0.19 positive... |
+| conflict_detail | 冲突细节 | 指标冲突说明 | 未观察到明显冲突 |
+| movement_score | 方向分数 | 综合方向评分 | -1.0 ~ 1.0 |
+| movement_confidence | 方向置信度 | 评分可信度 | 0.0 ~ 1.0 |
+
+### 6.2 市场机制（Mechanics Agent）
+
+| 字段名 | 中文名 | 含义 | 取值示例 |
+|--------|--------|------|---------|
+| leverage_state | 杠杆状态 | 市场杠杆水平 | stable / increasing / overheated |
+| crowding | 拥挤度 | 多空拥挤状态 | balanced / long_crowded / short_crowded |
+| risk_level | 风险等级 | 综合风险评级 | low / medium / high |
+| open_interest_context | 持仓量背景 | OI 变化自然语言描述 | OI increased slightly in 15m... |
+| anomaly_detail | 异常说明 | 市场异常检测 | fear_greed=8 versus long crowding |
+| movement_score | 方向分数 | 综合方向评分 | -1.0 ~ 1.0 |
+| movement_confidence | 方向置信度 | 评分可信度 | 0.0 ~ 1.0 |
+
+### 6.3 结构分析（Structure Agent）
+
+| 字段名 | 中文名 | 含义 | 取值示例 |
+|--------|--------|------|---------|
+| regime | 结构状态 | 市场结构类型 | trend_up / trend_down / range / mixed |
+| last_break | 最近结构变化 | 最新突破事件 | break_up / bos_down / choch_up |
+| quality | 结构质量 | 结构可靠度 | clean / messy / unclear |
+| pattern | 主导形态 | 识别的图表形态 | double_top / flag / triangle_asc |
+| volume_action | 量能表现 | 成交量表现 | 自然语言描述 |
+| candle_reaction | K线反应 | 价格对关键位的反应 | 自然语言描述 |
+| movement_score | 方向分数 | 综合方向评分 | -1.0 ~ 1.0 |
+| movement_confidence | 方向置信度 | 评分可信度 | 0.0 ~ 1.0 |
+
+---
+
+## 七、图表形态识别
+
+| 原字段值 | 中文 | 含义 | 类型 |
+|---------|------|------|------|
+| double_top | 双顶形态 | 经典反转形态 | 反转 |
+| double_bottom | 双底形态 | 经典反转形态 | 反转 |
+| head_shoulders | 头肩形态 | 顶部反转形态 | 反转 |
+| inv_head_shoulders | 反头肩形态 | 底部反转形态 | 反转 |
+| triangle_sym | 对称三角形 | 整理形态 | 整理 |
+| triangle_asc | 上升三角形 | 看涨整理形态 | 整理 |
+| triangle_desc | 下降三角形 | 看跌整理形态 | 整理 |
+| wedge_rising | 上升楔形 | 看跌反转形态 | 反转 |
+| wedge_falling | 下降楔形 | 看涨反转形态 | 反转 |
+| flag | 旗形整理 | 趋势延续形态 | 延续 |
+| pennant | 三角旗形 | 趋势延续形态 | 延续 |
+| channel_up | 上行通道 | 趋势通道 | 趋势 |
+| channel_down | 下行通道 | 趋势通道 | 趋势 |
+
+### 结构状态值
+
+| 原字段值 | 中文 | 含义 |
+|---------|------|------|
+| breakout_confirmed | 突破确认 | 突破事件已被量能确认 |
+| support_retest | 回踩确认 | 支撑位成功回踩 |
+| fakeout_rejection | 假突破回落 | 突破被否定，价格回落 |
+| structure_broken | 结构失效 | 原有结构已被破坏 |
+| clean | 结构清晰 | 结构明确可辨 |
+| messy | 结构杂乱 | 结构复杂难辨 |
+
+---
+
+## 八、通用状态值
 
 | 原字段值 | 中文 | 适用场景 |
 |---------|------|---------|
@@ -296,13 +378,18 @@
 | low | 低 | 风险/压力等级 |
 | medium | 中 | 风险/压力等级 |
 | high | 高 | 风险/压力等级 |
+| critical | 危急(极高风险) | 风险/压力等级 |
 | aligned | 指标一致 | 多周期一致性 |
 | divergent | 指标分歧/不一致 | 多周期一致性 |
+| conflict | 冲突/分歧 | 信号冲突 |
 | unknown | 无法判断 | 数据缺失 |
+| stable | 稳定 | 杠杆/波动状态 |
+| expanding | 波动/动能扩张 | 波动率方向 |
+| contracting | 波动/动能收敛 | 波动率方向 |
 
 ---
 
-## 七、Gate 原因码
+## 九、Gate 原因码
 
 | 原字段值 | 中文 | 含义 |
 |---------|------|------|
@@ -310,14 +397,63 @@
 | PASS_WEAK | 弱通过 | 低置信通过 |
 | CONSENSUS_NOT_PASSED | 三路共识未通过 | 指标/结构/机制未达成一致 |
 | DIRECTION_UNCLEAR | 方向不明确 | 无法确定多空方向 |
+| STRUCT_INVALID | 结构无效 | 结构数据无效 |
+| STRUCT_NO_BIAS | 结构无方向 | 结构无法给出方向偏好 |
 | STRUCT_BREAK | 结构失效 | 趋势结构被破坏 |
 | STRUCT_HARD_INVALIDATION | 结构硬失效 | 趋势结构严重破坏 |
+| STRUCT_THREAT | 结构受威胁 | 结构面临破坏风险 |
 | MECH_RISK | 清算风险过高 | 市场机制风险超标 |
 | LIQUIDATION_CASCADE | 连锁清算风险 | 可能出现连环清算 |
+| MOMENTUM_WEAK | 动能走弱 | 动能指标不支持 |
 | INDICATOR_NOISE | 指标噪音 | 指标信号混乱 |
 | INDICATOR_MIXED | 指标分歧 | 多个指标信号矛盾 |
 | QUALITY_TOO_LOW | 建仓质量不足 | 综合评分不足 |
 | EDGE_TOO_LOW | 执行价值不足 | 风险收益比不佳 |
+| ENTRY_COOLDOWN_ACTIVE | 开仓冷却中 | 冷却期未结束 |
+| GATE_MISSING | Gate 事件缺失 | 缺少 Gate 评估数据 |
+| BINDING_MISSING | 策略绑定缺失 | 符号未绑定策略 |
+| ENABLED_MISSING | 启用配置缺失 | 符号未启用决策 |
+| DATA_MISSING | 数据缺失 | 所需数据不完整 |
+
+---
+
+## 十、Sieve 决策码
+
+Sieve 在 Gate 允许后进一步细化决策：
+
+| 原字段值 | 中文 | 含义 |
+|---------|------|------|
+| SIEVE_MATCH | Sieve 命中 | Sieve 规则匹配 |
+| SIEVE_DEFAULT | Sieve 默认 | 无规则匹配，使用默认 |
+| FUEL_HIGH | 燃料充分/高置信 | 高动能 + 高置信度 |
+| FUEL_LOW | 燃料充分/低置信 | 高动能 + 低置信度 |
+| FUEL_HIGH_ALIGN | 燃料充分/高置信/同向拥挤 | 高动能 + 高置信 + 拥挤同向 |
+| FUEL_LOW_ALIGN | 燃料充分/低置信/同向拥挤 | 高动能 + 低置信 + 拥挤同向 |
+| NEUTRAL_HIGH | 中性/高置信 | 中性动能 + 高置信度 |
+| NEUTRAL_LOW | 中性/低置信 | 中性动能 + 低置信度 |
+| NEUTRAL_HIGH_ALIGN | 中性/高置信/同向拥挤 | 中性 + 高置信 + 拥挤同向 |
+| NEUTRAL_LOW_ALIGN | 中性/低置信/同向拥挤 | 中性 + 低置信 + 拥挤同向 |
+| CROWD_ALIGN_HIGH | 同向拥挤/高置信 | 拥挤与方向一致 + 高置信 |
+| CROWD_ALIGN_LOW | 同向拥挤/低置信 | 拥挤与方向一致 + 低置信 |
+| CROWD_ALIGN_LOW_BLOCK | 同向拥挤/低置信/拦截 | 同上 + 触发拦截 |
+| CROWD_COUNTER_HIGH | 反向拥挤/高置信 | 拥挤与方向相反 + 高置信 |
+| CROWD_COUNTER_LOW | 反向拥挤/低置信 | 拥挤与方向相反 + 低置信 |
+| CROWD_LONG_ALIGN_HIGH | 多头同向拥挤/高置信 | 多头拥挤同向 + 高置信 |
+| CROWD_LONG_ALIGN_LOW | 多头同向拥挤/低置信 | 多头拥挤同向 + 低置信 |
+| CROWD_SHORT_ALIGN_HIGH | 空头同向拥挤/高置信 | 空头拥挤同向 + 高置信 |
+| CROWD_SHORT_ALIGN_LOW | 空头同向拥挤/低置信 | 空头拥挤同向 + 低置信 |
+| CROWD_LONG_COUNTER_HIGH | 多头反向拥挤/高置信 | 多头拥挤反向 + 高置信 |
+| CROWD_LONG_COUNTER_LOW | 多头反向拥挤/低置信 | 多头拥挤反向 + 低置信 |
+| CROWD_SHORT_COUNTER_HIGH | 空头反向拥挤/高置信 | 空头拥挤反向 + 高置信 |
+| CROWD_SHORT_COUNTER_LOW | 空头反向拥挤/低置信 | 空头拥挤反向 + 低置信 |
+| BLOCK_CROWD_LONG_ALIGN | 同向拥挤(多)/拦截 | 多头同向拥挤触发拦截 |
+| BLOCK_CROWD_SHORT_ALIGN | 同向拥挤(空)/拦截 | 空头同向拥挤触发拦截 |
+| BLOCK_LIQ_CASCADE | 链式风险/拦截 | 清算级联风险触发拦截 |
+| ALLOW_TREND_BREAKOUT_FUEL | 趋势突破/燃料充分 | 突破 + 足够动能 |
+| ALLOW_TREND_BREAKOUT_NEUTRAL | 趋势突破/中性 | 突破 + 中性动能 |
+| ALLOW_PULLBACK_FUEL | 回踩确认/燃料充分 | 回踩入场 + 足够动能 |
+| ALLOW_PULLBACK_NEUTRAL | 回踩确认/中性 | 回踩入场 + 中性动能 |
+| ALLOW_DIV_REV_HIGH | 背离反转/高置信 | 背离反转信号 + 高置信 |
 
 ---
 
