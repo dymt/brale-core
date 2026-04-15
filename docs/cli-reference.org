@@ -1,0 +1,493 @@
+#+TITLE: bralectl CLI Reference / bralectl 命令行参考
+#+AUTHOR: brale-core
+
+- [[#中文版][中文版]]
+- [[#english][English]]
+
+-----
+
+* 中文版
+:PROPERTIES:
+:CUSTOM_ID: 中文版
+:END:
+
+** 概述
+
+=bralectl= 是 brale-core 量化交易引擎的命令行管理工具。它通过 Runtime API（默认
+=http://127.0.0.1:9991=）连接运行中的 brale-core 实例，执行运维操作；同时也支持
+离线操作——回测（Backtest）、指标对比（Indicator Diff）、MCP 服务——只需配置文件
+和本地数据库。
+
+** 全局参数
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--endpoint= | =http://127.0.0.1:9991= | Runtime API 地址 |
+| =--json= | =false= | 以 JSON 格式输出 |
+
+** 命令
+
+*** llm — LLM 诊断
+
+探测当前配置的 LLM 端点是否支持 structured output。
+
+#+begin_src bash
+bralectl llm probe [--repo .] [--stage indicator|structure|mechanics]
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--repo= | =.= | 项目根目录路径，用于读取配置 |
+| =--stage= | （空，探测全部） | 只探测单个 stage：=indicator=, =structure=, =mechanics= |
+
+输出示例：
+
+#+begin_src text
+indicator   OK    model=gpt-4o   endpoint=https://api.openai.com/v1
+structure   OK    model=gpt-4o   endpoint=https://api.openai.com/v1
+mechanics   FAIL  model=gpt-4o   endpoint=https://api.openai.com/v1  err=timeout
+#+end_src
+
+*** add-symbol — 添加交易币种
+
+从现有币种模板生成配置文件，注册新的交易对。
+
+#+begin_src bash
+bralectl add-symbol ETHUSDT [--repo .] [--template-symbol BTCUSDT] [--dry-run]
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =SYMBOL= | （必填，位置参数） | 要添加的交易对，如 =ETHUSDT= |
+| =--repo= | =.= | 项目根目录路径 |
+| =--template-symbol= | （空，交互选择） | 模板币种；为空时进入交互选择 |
+| =--dry-run= | =false= | 只预览生成内容，不写入文件 |
+
+*** schedule — 调度控制
+
+| 子命令 | 说明 |
+|--------+------|
+| =schedule enable [--yes]= | 启用自动调度。=--yes= 跳过确认提示。 |
+| =schedule disable [--yes]= | 停用自动调度。=--yes= 跳过确认提示。 |
+| =schedule status [--json]= | 查看调度状态，显示模式、是否启用以及各币种下次执行时间。 |
+
+*** position — 持仓查询
+
+| 子命令 | 说明 |
+|--------+------|
+| =position list [--json]= | 查看当前持仓，输出币种、方向、入场价、现价、盈亏。 |
+| =position history [--json]= | 查看已平仓历史，输出币种、方向、开仓时间、持仓时长、盈亏。 |
+
+*** decision — 决策查询
+
+| 子命令 | 说明 |
+|--------+------|
+| =decision latest --symbol SYM [--json]= | 查看指定币种最新一轮决策。 |
+| =decision history --symbol SYM [--limit N] [--snapshot-id ID] [--json]= | 查询历史决策记录。=--limit= 限制返回条数（默认 20）；=--snapshot-id= 指定快照 ID 时返回该轮详情。 |
+
+*** config — 配置管理
+
+| 子命令 | 说明 |
+|--------+------|
+| =config show [--json]= | 展示当前运行配置摘要（已监控币种、K 线间隔、风控比例、杠杆上限、下次运行时间）。 |
+| =config validate [--system PATH] [--index PATH]= | 离线验证配置文件树（system → index → symbol → strategy），不需要运行中的实例。 |
+
+=config validate= 参数：
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--system= | =configs/system.toml= | system.toml 路径 |
+| =--index= | =configs/symbols-index.toml= | symbols-index.toml 路径 |
+
+*** observe — 市场观察
+
+| 子命令 | 说明 |
+|--------+------|
+| =observe run --symbol SYM [--yes]= | 手动触发一次观察轮次。=--yes= 跳过确认提示。 |
+| =observe report --symbol SYM [--json]= | 查看最近一次观察报告（Markdown 格式）。 |
+
+*** indicator — 指标引擎工具
+
+对比 Talib 引擎和纯 Go 参考引擎（Reference）的指标输出差异。
+
+#+begin_src bash
+bralectl indicator diff --symbol BTCUSDT \
+  [--index PATH] [--baseline talib] [--candidate reference] [--format text|json]
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--symbol= | （必填） | 交易对 |
+| =--index= | =configs/symbols-index.toml= | symbols-index.toml 路径 |
+| =--baseline= | =talib= | 基准引擎：=talib= 或 =reference= |
+| =--candidate= | =reference= | 对比引擎：=talib= 或 =reference= |
+| =--format= | =text= | 输出格式：=text= 或 =json= |
+
+*** backtest — Gate 规则回放
+
+将历史决策轮次重放进当前 Gate/Sieve 规则引擎，无需调用 LLM。
+
+#+begin_src bash
+bralectl backtest rules --symbol BTCUSDT \
+  --from 2025-01-01 --to 2025-06-01 \
+  [--format text|json|html] [--output report.html] \
+  [--system PATH] [--index PATH] [--db PATH]
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--symbol= | （必填） | 交易对 |
+| =--from= / =--to= | （必填） | 日期范围，支持 =YYYY-MM-DD= 或 RFC 3339 |
+| =--system= | =configs/system.toml= | system.toml 路径 |
+| =--index= | =configs/symbols-index.toml= | symbols-index.toml 路径 |
+| =--db= | 从 system.toml 读取 | SQLite 数据库路径 |
+| =--format= | =text= | 输出格式：=text=, =json=, =html= |
+| =--output= | stdout | 报告输出文件路径（=html= 格式必须指定） |
+
+*** memory — 记忆系统管理
+
+管理语义规则（Semantic Rule）存储，查看情景式交易反思（Episodic Reflection）。
+所有 memory 子命令支持 =--db= 参数指定数据库路径（默认 =data/brale/brale.db=）。
+
+| 子命令 | 说明 |
+|--------+------|
+| =memory list [--symbol SYM] [--source user\vert{}reflector] [--all]= | 列出语义规则。=--source= 按来源筛选；=--all= 包含已禁用的规则。 |
+| =memory add --rule TEXT [--symbol SYM] [--confidence 0.8]= | 添加语义规则。=--symbol= 为空表示全局规则。 |
+| =memory edit --id N [--rule TEXT] [--confidence F]= | 编辑已有规则的文本或置信度。 |
+| =memory delete --id N= | 删除规则。 |
+| =memory toggle --id N= | 切换规则启用/禁用状态。 |
+| =memory episodic [--symbol SYM] [--limit N] [--json]= | 查看 LLM 生成的交易反思记录，包含方向、入场/出场价、盈亏百分比和反思文本。 |
+
+*** mcp — MCP 服务
+
+通过 Model Context Protocol 将 brale-core 分析能力暴露给 AI Agent。
+
+**** mcp serve — 启动 MCP 服务器
+
+#+begin_src bash
+# stdio 模式（用于 Claude Code / Claude Desktop）
+bralectl mcp serve --mode stdio --system PATH --index PATH
+
+# SSE 模式（用于远程或容器化访问）
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765 --system PATH --index PATH
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--mode= | =stdio= | 传输模式：=stdio= 或 =sse= |
+| =--addr= | =127.0.0.1:8765= | SSE 模式监听地址 |
+| =--system= | =configs/system.toml= | system.toml 路径 |
+| =--index= | =configs/symbols-index.toml= | symbols-index.toml 路径 |
+| =--audit-log= | 自动生成 | MCP 审计日志文件路径 |
+
+**** mcp install — 自动写入 MCP 客户端配置
+
+#+begin_src bash
+bralectl mcp install --target claude-code
+bralectl mcp install --target claude-desktop
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--target= | =claude-code= | 安装目标：=claude-code= 或 =claude-desktop= |
+| =--config= | （自动检测） | 显式指定 MCP 配置文件路径 |
+| =--command= | （自动检测） | bralectl 可执行文件路径 |
+| =--name= | =brale-core= | MCP server 名称 |
+| =--system= | =configs/system.toml= | system.toml 路径 |
+| =--index= | =configs/symbols-index.toml= | symbols-index.toml 路径 |
+| =--audit-log= | （空） | MCP 审计日志文件路径 |
+
+** 使用示例
+
+*** 日常运维
+
+#+begin_src bash
+bralectl schedule status                    # 查看调度状态
+bralectl position list --json               # 当前持仓（JSON）
+bralectl decision latest --symbol BTCUSDT   # 最新决策
+bralectl config show                        # 运行配置摘要
+#+end_src
+
+*** 回测与验证
+
+#+begin_src bash
+# Gate 规则回放——用当前规则重放历史决策
+bralectl backtest rules --symbol BTCUSDT \
+  --from 2025-01-01 --to 2025-06-01 --format html --output report.html
+
+# 指标引擎交叉校验
+bralectl indicator diff --symbol BTCUSDT
+
+# 离线配置验证
+bralectl config validate
+#+end_src
+
+*** 记忆系统
+
+#+begin_src bash
+bralectl memory add --symbol BTCUSDT --rule "RSI > 80 时不做多" --confidence 0.9
+bralectl memory list --source reflector      # 查看自动生成的规则
+bralectl memory toggle --id 3                # 禁用某条规则
+bralectl memory episodic --symbol BTCUSDT    # 查看交易反思
+#+end_src
+
+*** MCP 集成
+
+#+begin_src bash
+bralectl mcp install --target claude-code    # 一键安装到 Claude Code
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # 远程 SSE 模式
+#+end_src
+
+*** LLM 诊断与币种管理
+
+#+begin_src bash
+bralectl llm probe                           # 探测所有 stage
+bralectl llm probe --stage indicator         # 只探测 indicator stage
+bralectl add-symbol ETHUSDT --dry-run        # 预览新币种配置
+bralectl add-symbol SOLUSDT --template-symbol BTCUSDT  # 以 BTC 为模板
+#+end_src
+
+-----
+
+* English
+:PROPERTIES:
+:CUSTOM_ID: english
+:END:
+
+** Overview
+
+=bralectl= is the command-line management tool for the brale-core quantitative trading
+engine. It connects to a running brale-core instance via the Runtime API (default
+=http://127.0.0.1:9991=) for operational tasks, and supports offline operations —
+backtesting, indicator comparison, MCP serving — that require only config files and a
+local database.
+
+** Global Flags
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--endpoint= | =http://127.0.0.1:9991= | Runtime API address |
+| =--json= | =false= | Emit machine-readable JSON output |
+
+** Commands
+
+*** llm — LLM Diagnostics
+
+Probe configured LLM endpoints for structured output support.
+
+#+begin_src bash
+bralectl llm probe [--repo .] [--stage indicator|structure|mechanics]
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--repo= | =.= | Project root for config resolution |
+| =--stage= | (empty — probe all) | Probe a single stage: =indicator=, =structure=, =mechanics= |
+
+Example output:
+
+#+begin_src text
+indicator   OK    model=gpt-4o   endpoint=https://api.openai.com/v1
+structure   OK    model=gpt-4o   endpoint=https://api.openai.com/v1
+mechanics   FAIL  model=gpt-4o   endpoint=https://api.openai.com/v1  err=timeout
+#+end_src
+
+*** add-symbol — Register a Trading Pair
+
+Generate config files from an existing symbol template and register a new trading pair.
+
+#+begin_src bash
+bralectl add-symbol ETHUSDT [--repo .] [--template-symbol BTCUSDT] [--dry-run]
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =SYMBOL= | (required, positional) | Trading pair to add, e.g. =ETHUSDT= |
+| =--repo= | =.= | Project root directory |
+| =--template-symbol= | (empty — interactive) | Template symbol; prompts interactively when empty |
+| =--dry-run= | =false= | Preview generated content without writing files |
+
+*** schedule — Scheduler Control
+
+| Subcommand | Description |
+|------------+-------------|
+| =schedule enable [--yes]= | Enable the decision scheduler. =--yes= skips the confirmation prompt. |
+| =schedule disable [--yes]= | Disable the decision scheduler. =--yes= skips the confirmation prompt. |
+| =schedule status [--json]= | Show scheduler state: mode, enabled flag, and per-symbol next execution times. |
+
+*** position — Position Queries
+
+| Subcommand | Description |
+|------------+-------------|
+| =position list [--json]= | Show open positions with symbol, side, entry price, current price, and PnL. |
+| =position history [--json]= | Show closed trade history with symbol, side, open time, duration, and profit. |
+
+*** decision — Decision Log Queries
+
+| Subcommand | Description |
+|------------+-------------|
+| =decision latest --symbol SYM [--json]= | Show the latest decision round for a symbol. |
+| =decision history --symbol SYM [--limit N] [--snapshot-id ID] [--json]= | Query historical decisions. =--limit= caps result count (default 20); =--snapshot-id= returns detail for a specific round. |
+
+*** config — Configuration Management
+
+| Subcommand | Description |
+|------------+-------------|
+| =config show [--json]= | Print the active runtime config summary (monitored symbols, kline interval, risk %, max leverage, next run). |
+| =config validate [--system PATH] [--index PATH]= | Validate the full config tree offline (system → index → symbol → strategy). No running instance required. |
+
+=config validate= flags:
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--system= | =configs/system.toml= | System config path |
+| =--index= | =configs/symbols-index.toml= | Symbol index path |
+
+*** observe — Market Observation
+
+| Subcommand | Description |
+|------------+-------------|
+| =observe run --symbol SYM [--yes]= | Trigger a single observation round. =--yes= skips the confirmation prompt. |
+| =observe report --symbol SYM [--json]= | Print the most recent observation report (Markdown format). |
+
+*** indicator — Indicator Engine Tools
+
+Compare indicator outputs between the Talib engine and the pure-Go reference engine.
+
+#+begin_src bash
+bralectl indicator diff --symbol BTCUSDT \
+  [--index PATH] [--baseline talib] [--candidate reference] [--format text|json]
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--symbol= | (required) | Trading pair |
+| =--index= | =configs/symbols-index.toml= | Symbol index path |
+| =--baseline= | =talib= | Baseline engine: =talib= or =reference= |
+| =--candidate= | =reference= | Comparison engine: =talib= or =reference= |
+| =--format= | =text= | Output format: =text= or =json= |
+
+*** backtest — Gate Rule Replay
+
+Replay historical decision rounds through the current Gate/Sieve rule engine without
+invoking any LLM calls.
+
+#+begin_src bash
+bralectl backtest rules --symbol BTCUSDT \
+  --from 2025-01-01 --to 2025-06-01 \
+  [--format text|json|html] [--output report.html] \
+  [--system PATH] [--index PATH] [--db PATH]
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--symbol= | (required) | Trading pair |
+| =--from= / =--to= | (required) | Date range — =YYYY-MM-DD= or RFC 3339 |
+| =--system= | =configs/system.toml= | System config path |
+| =--index= | =configs/symbols-index.toml= | Symbol index path |
+| =--db= | from system config | SQLite database path |
+| =--format= | =text= | Output format: =text=, =json=, or =html= |
+| =--output= | stdout | Write report to file (required for =html= format) |
+
+*** memory — Memory System Management
+
+Manage the semantic rule store and view episodic trade reflections.
+All memory subcommands accept =--db= to specify the database path (default =data/brale/brale.db=).
+
+| Subcommand | Description |
+|------------+-------------|
+| =memory list [--symbol SYM] [--source user\vert{}reflector] [--all]= | List semantic rules. =--source= filters by origin; =--all= includes disabled rules. |
+| =memory add --rule TEXT [--symbol SYM] [--confidence 0.8]= | Create a semantic rule. Omit =--symbol= for a global rule. |
+| =memory edit --id N [--rule TEXT] [--confidence F]= | Update an existing rule's text or confidence. |
+| =memory delete --id N= | Remove a rule. |
+| =memory toggle --id N= | Toggle a rule's enabled/disabled state. |
+| =memory episodic [--symbol SYM] [--limit N] [--json]= | View LLM-generated trade reflections with direction, prices, PnL %, and reflection text. |
+
+*** mcp — MCP Server
+
+Expose brale-core analysis capabilities to AI Agents via the Model Context Protocol.
+
+**** mcp serve — Start MCP Server
+
+#+begin_src bash
+# stdio mode (for Claude Code / Claude Desktop)
+bralectl mcp serve --mode stdio --system PATH --index PATH
+
+# SSE mode (for remote / containerized access)
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765 --system PATH --index PATH
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--mode= | =stdio= | Transport mode: =stdio= or =sse= |
+| =--addr= | =127.0.0.1:8765= | SSE listen address |
+| =--system= | =configs/system.toml= | System config path |
+| =--index= | =configs/symbols-index.toml= | Symbol index path |
+| =--audit-log= | auto-generated | MCP audit log file path |
+
+**** mcp install — Auto-configure MCP Client
+
+#+begin_src bash
+bralectl mcp install --target claude-code
+bralectl mcp install --target claude-desktop
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--target= | =claude-code= | Install target: =claude-code= or =claude-desktop= |
+| =--config= | (auto-detected) | Explicit MCP config file path |
+| =--command= | (auto-detected) | Path to the =bralectl= binary |
+| =--name= | =brale-core= | MCP server name |
+| =--system= | =configs/system.toml= | System config path |
+| =--index= | =configs/symbols-index.toml= | Symbol index path |
+| =--audit-log= | (empty) | MCP audit log file path |
+
+** Usage Examples
+
+*** Daily Operations
+
+#+begin_src bash
+bralectl schedule status                    # check scheduler state
+bralectl position list --json               # open positions (JSON)
+bralectl decision latest --symbol BTCUSDT   # latest decision
+bralectl config show                        # runtime config summary
+#+end_src
+
+*** Backtesting and Validation
+
+#+begin_src bash
+# Gate replay — replay stored decisions through current rules
+bralectl backtest rules --symbol BTCUSDT \
+  --from 2025-01-01 --to 2025-06-01 --format html --output report.html
+
+# Indicator engine cross-check
+bralectl indicator diff --symbol BTCUSDT
+
+# Offline config validation
+bralectl config validate
+#+end_src
+
+*** Memory Management
+
+#+begin_src bash
+bralectl memory add --symbol BTCUSDT --rule "Avoid longs when RSI > 80" --confidence 0.9
+bralectl memory list --source reflector      # view auto-generated rules
+bralectl memory toggle --id 3                # disable a rule
+bralectl memory episodic --symbol BTCUSDT    # view trade reflections
+#+end_src
+
+*** MCP Integration
+
+#+begin_src bash
+bralectl mcp install --target claude-code    # one-click setup
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # remote SSE mode
+#+end_src
+
+*** LLM Diagnostics and Symbol Management
+
+#+begin_src bash
+bralectl llm probe                           # probe all stages
+bralectl llm probe --stage indicator         # probe indicator stage only
+bralectl add-symbol ETHUSDT --dry-run        # preview new symbol config
+bralectl add-symbol SOLUSDT --template-symbol BTCUSDT  # use BTC as template
+#+end_src

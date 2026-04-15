@@ -1,116 +1,164 @@
 #+begin_quote
--*⚠ Warning*
--
--This project is currently in beta and may still be buggy here and there.
+*⚠ Beta* — 项目正处于活跃开发阶段 / This project is under active development.
 #+end_quote
 
-* Brale (Break a leg)
+* Brale — Break a Leg
 
-交易本身就是一场表演。Break a leg — 祝你好运。
+交易如同一场演出。/Break a leg/ — 祝你好运。
 
-- AI 驱动的多 Agent 量化策略引擎
-- AI-driven multi-agent quantitative strategy engine
-- [[https://brale.club][brale.club]]
+AI 驱动的多智能体量化交易引擎。
+[[https://brale.club][brale.club]]
 
-* 语言 / Language
+*语言 / Language:* [[#中文版][简体中文]] | [[#english-version][English]]
 
-- [[#中文版][简体中文]] / [[#english-version][English]]
+-----
 
 * 中文版
+:PROPERTIES:
+:CUSTOM_ID: 中文版
+:END:
 
-** Brale 是什么
+** 什么是 Brale
 
-Brale 是一个 AI 驱动的量化交易引擎。它把一轮交易决策拆成 Observe → Decide → Plan → Execute → Monitor → Reconcile 六个阶段，由多个 LLM Agent 分别负责市场分析，Go 代码负责风控约束和执行调度，Freqtrade 负责最终下单。
+Brale 是一个量化交易引擎，通过多个大语言模型智能体（LLM Agent）分析市场行情，并结合确定性的 Go 规则引擎来强制执行风控约束。每个决策周期经过六个阶段：
 
-| 阶段 | 做什么 |
-|------+--------|
-| Observe | 采集 K 线、技术指标、市场结构、衍生品与情绪数据 |
-| Decide | 多路 Agent 独立分析，规则引擎做共识判定 |
-| Plan | 生成风险计划：入场价、止损、止盈、仓位 |
-| Execute | Freqtrade 执行下单 |
-| Monitor | 实时监控仓位风险 |
-| Reconcile | webhook / 轮询做状态对账 |
+| 阶段 | 职责 |
+|------+------|
+| *观测（Observe）* | 采集 K 线、指标、市场结构、衍生品与情绪数据 |
+| *决策（Decide）* | 三个独立智能体并行分析；共识规则筛选信号 |
+| *规划（Plan）* | 生成风控计划 — 入场价、止损、止盈、仓位大小 |
+| *执行（Execute）* | 通过 Freqtrade 下单 |
+| *监控（Monitor）* | 实时持仓风险追踪与止损调整 |
+| *对账（Reconcile）* | 通过 Webhook / 轮询同步 Brale 与交易所状态 |
 
-** 核心特点
+** 设计理念
 
-- *LLM 出主意，代码做裁判* — 模型给出止盈止损方案后，Go 代码强制校验价格序列、杠杆上限、清算安全距离。模型可以犯错，代码负责兜底。
-- *三路 Agent 独立决策* — 指标分析（indicator）、市场结构（structure）、衍生品力学（mechanics）各自独立运行，通过共识阈值避免单一模型误判。
-- *Provider 代码锚点交叉验证* — Provider 除了读取 Agent 文本摘要，还会收到代码直接提取的结构化锚点（多周期指标一致性、结构突破位、机制冲突信号），用来交叉验证 Agent 结论，降低 LLM 幻觉风险。
-- *全自动调度* — 定时决策、价格监控、状态对账均由内置调度器驱动，无需外部 cron。
-- *执行层可替换* — 当前对接 Freqtrade，接口解耦，可替换为其他交易后端。
-- *通知开箱即用* — 内置 Telegram 和飞书 Bot，支持决策推送和命令交互。
+- *LLM 提议，代码决断* — 模型建议止盈 / 止损位；Go 代码负责校验价格合法性、杠杆上限和爆仓安全。模型可能产生幻觉，代码会将其拦截。
+- *三条独立智能体车道（Agent Lane）* — 指标（Indicator）、结构（Structure）和力学（Mechanics）智能体各自独立运行。共识阈值防止单一模型的误判。
+- *Provider 锚定因子（Grounding Anchors）* — 每个 Provider 不仅接收其 Agent 的摘要，还会收到代码提取的结构化锚定数据（跨时间框架对齐、结构突破、力学冲突），用于交叉验证，降低幻觉风险。
+- *经验驱动的记忆系统* — 三层记忆系统（工作记忆 Working、情景记忆 Episodic、语义记忆 Semantic）将近期上下文、历史交易复盘和长期规则注入 LLM 提示词。
+- *影子指标引擎（Shadow Indicator Engine）* — 内置参考计算引擎与 Talib 交叉校验，确保指标数据可信。
+- *Gate Replay 回测* — 将历史决策通过当前规则集重放，零 LLM 调用开销，用于快速验证规则调优效果。
+- *全自动调度* — 决策周期、监控和对账均由内置定时器驱动，无需外部 cron。
+- *可插拔执行层* — 当前对接 Freqtrade；接口已解耦，可替换其他执行后端。
 
-** 快速启动
+** 快速开始
 
-*前置条件：* Docker、Docker Compose。本地开发额外需要 Go 1.25+。
+*前置条件：* Docker 与 Docker Compose。本地开发需要 Go 1.25+。
 
-*** 一键脚本
+*** 一键部署
 
 #+begin_src bash
 curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
 #+end_src
 
-脚本会完成基础拉起并启动引导页。
-
-*** 本地部署
+*** 手动部署
 
 #+begin_src bash
 git clone --depth 1 https://github.com/laukkw/brale-core.git
 cd brale-core
 cp .env.example .env
-make init
+make init          # 启动引导界面，访问 127.0.0.1:9992
+# 或: make start   # 跳过引导，直接启动 Freqtrade + Brale
 #+end_src
-
-不需要引导页的话，直接 =make start= 启动 Freqtrade 和 Brale。
 
 *** 常用命令
 
 | 命令 | 说明 |
 |------+------|
-| =make status= | 查看容器状态 |
-| =make logs= | 查看日志 |
-| =make stop= | 停止服务 |
-| =make rebuild= | 重新构建并启动 Brale |
-| =make down= | 停止并移除容器 |
+| =make status= | 容器健康检查 |
+| =make logs= | 跟踪服务日志 |
+| =make stop= / =make down= | 停止 / 移除容器 |
+| =make rebuild= | 仅重新构建并重启 Brale |
 
-** Docker 服务
+*** Docker 服务
 
-| 服务 | 默认端口 | 说明 |
-|------+----------+------|
-| onboarding | 127.0.0.1:9992 | 初始化引导页 |
-| freqtrade | 127.0.0.1:8080 | 交易执行系统 |
-| brale | 127.0.0.1:9991 | 运行时 API / webhook |
+| 服务 | 端口 | 说明 |
+|------+------+------|
+| onboarding | =127.0.0.1:9992= | 配置引导界面 |
+| freqtrade | =127.0.0.1:8080= | 交易执行 |
+| brale | =127.0.0.1:9991= | 运行时 API / Webhook |
+| mcp-sse | =127.0.0.1:8765= | MCP SSE 端点（通过 =--profile mcp= 启用） |
 
-** 详细文档
+** 命令行工具 — bralectl
 
-- [[file:docs/configuration.org][配置体系]] — 四层 TOML 配置详解、指标参数边界、添加新币种
-- [[file:docs/trading-logic.org][交易逻辑]] — 入场方式、Provider 锚点、trace 持久化、仓位计算
-- [[file:docs/runtime-api.org][运行时 API]] — API 端点、webhook、通知、数据存储
+=bralectl= 提供运行时管理与离线分析两大类功能，共 12 个命令组。
 
-** 扩展方向
+| 命令组 | 说明 |
+|--------+------|
+| =observe= | 触发观测、查看报告 |
+| =decision= | 查询最新及历史决策 |
+| =position= | 查看持仓与已平仓记录 |
+| =schedule= | 启用 / 禁用 / 查看调度器状态 |
+| =config= | 查看 / 校验配置 |
+| =backtest= | Gate Replay — 用当前规则重放历史决策（零 LLM 开销） |
+| =indicator= | 交叉对比 Talib 与参考指标引擎 |
+| =memory= | 管理语义规则、查看交易复盘 |
+| =mcp= | 启动 MCP 服务器或安装到 AI 工具 |
+| =llm= | 测试 LLM 端点连通性 |
 
-| 想做什么 | 从哪里开始 |
-|----------+------------|
-| 添加新币种 | =make add-symbol SYMBOL=XXX= 或参考 [[file:docs/configuration.org][配置文档]] |
-| 调整风控参数 | =configs/strategies/*.toml= |
-| 调整 Agent 行为 | =configs/symbols/*.toml= + LLM 环境变量 |
-| 接入其他交易所 | 参考 =internal/execution= 的抽象接口 |
-| 扩展监控/运维 | 复用 Runtime API 和 webhook 入口 |
+详见 [[file:docs/cli-reference.org][CLI 参考手册]]。
 
-** 开源协议
+** MCP 集成
 
-GNU Affero General Public License v3.0 only (AGPL-3.0-only)，详见 [[file:LICENSE][LICENSE]]。
+brale-core 通过 [[https://modelcontextprotocol.io][模型上下文协议（Model Context Protocol）]] 暴露 8 个只读分析工具：
+
+#+begin_src bash
+bralectl mcp install --target claude-code     # 自动配置 Claude Code
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # 远程 SSE 模式
+#+end_src
+
+兼容 Claude Desktop、Cursor 及任何支持 MCP 的智能体。
+提供 4 个资源 URI 和 2 个提示词模板。
+详见 [[file:docs/mcp-integration.org][MCP 集成指南]]。
+
+** 配置体系
+
+四层 TOML 配置层级：
+
+| 层级 | 路径 | 范围 |
+|------+------+------|
+| 系统 | =configs/system.toml= | 日志、数据库、LLM 端点、调度、通知 |
+| 品种索引 | =configs/symbols-index.toml= | 品种名称到配置 / 策略文件的映射 |
+| 品种 | =configs/symbols/*.toml= | 单品种：周期、智能体、指标、记忆、共识 |
+| 策略 | =configs/strategies/*.toml= | 单品种：风控参数、Gate/Sieve 规则、止盈止损策略 |
+
+详见 [[file:docs/configuration.org][配置指南]]。
+
+** 文档
+
+| 文档 | 内容 |
+|------+------|
+| [[file:docs/configuration.org][配置]] | TOML 配置层级、指标参数、添加品种 |
+| [[file:docs/trading-logic.org][交易逻辑]] | 入场模式、Provider 锚定因子、Trace 持久化、仓位管理 |
+| [[file:docs/runtime-api.org][运行时 API]] | REST 端点、Webhook、通知、存储 |
+| [[file:docs/cli-reference.org][CLI 参考]] | 完整的 =bralectl= 命令参考 |
+| [[file:docs/mcp-integration.org][MCP 集成]] | 安装、工具、资源、提示词、Docker 部署 |
+
+** 扩展指引
+
+| 目标 | 从哪里开始 |
+|------+------------|
+| 添加交易品种 | =bralectl add-symbol --symbol XXX= 或 [[file:docs/configuration.org][配置文档]] |
+| 调整风控 | =configs/strategies/*.toml= |
+| 调整智能体 | =configs/symbols/*.toml= + LLM 环境变量 |
+| 对接其他交易所 | =internal/execution= 接口 |
+| 自定义监控 | 运行时 API（=:9991=）与 Webhook 端点 |
 
 ** LLM Token 用量参考
 
-以下数据基于实测，供成本估算参考。单次决策周期指所有 Agent + Provider + 风控 LLM 调用的合计：
+单次决策周期 = 所有 Agent + Provider + 风控 LLM 调用的 Token 总和：
 
-| 配置 | 单次输入 | 单次输出 | 日均 Token |
-|------+----------+----------+------------|
-| 单币种 × 3 周期 × 1h 间隔 | 11K–12K | 1.1K–1.2K | ≈ 30 万 |
-| 单币种 × 3 周期 × 15min 间隔 | 11K–12K | 1.1K–1.2K | ≈ 110–120 万 |
+| 配置 | 输入 / 周期 | 输出 / 周期 | 日估算 |
+|------+-------------+-------------+--------|
+| 1 品种 × 3 时间框架 × 1 小时周期 | 11 K–12 K | 1.1 K–1.2 K | ≈ 300 K |
+| 1 品种 × 3 时间框架 × 15 分钟周期 | 11 K–12 K | 1.1 K–1.2 K | ≈ 1.1 M–1.2 M |
 
-多币种按线性倍数估算。实际用量受 Agent 启用数量、持仓状态（flat vs in-position）和 LLM 风控模式影响。
+多品种时按比例线性增长。启用记忆系统后，每周期额外增加约 500–1 K Token（工作记忆 / 情景记忆 / 语义记忆上下文注入）。
+
+** 许可证
+
+GNU Affero 通用公共许可证 v3.0（AGPL-3.0-only）。详见 [[file:LICENSE][LICENSE]]。
 
 ** 支持
 
@@ -123,107 +171,172 @@ TRON: TTUzmkqSSjuXrwUkFFmaoNbnQC4gSCNnvh
 
 ** 免责声明
 
-- 本项目仅用于技术研究与流程验证，不构成投资建议。
-- 数字资产交易具有高波动性，可能导致部分或全部资金损失。
-- 使用者应自行评估策略、参数与风控，并承担全部后果。
+- 本项目仅用于技术研究与流程验证，不构成任何投资建议。
+- 数字资产交易波动剧烈，可能导致部分或全部资金损失。
+- 用户须自行评估策略、参数及风控措施，并承担全部责任。
 - 历史表现、回测结果或示例配置不代表未来收益。
-- 生产环境启用前，请先在隔离环境完成充分测试。
+- 投入生产前，请务必在隔离环境中完成充分测试。
+
+-----
 
 * English Version
+:PROPERTIES:
+:CUSTOM_ID: english-version
+:END:
 
 ** What Is Brale
 
-Brale is an AI-driven quantitative trading engine. It breaks a trading decision into six stages — Observe → Decide → Plan → Execute → Monitor → Reconcile — where multiple LLM Agents handle market analysis, Go code enforces risk constraints and scheduling, and Freqtrade places the actual orders.
+Brale is a quantitative trading engine that uses multiple LLM Agents to analyze markets and
+a deterministic Go rule engine to enforce risk constraints. Each decision cycle flows through
+six stages:
 
-| Stage | What It Does |
-|-------+--------------|
-| Observe | Collect candlesticks, indicators, market structure, derivatives and sentiment data |
-| Decide | Independent Agents analyze in parallel; rule engine reaches consensus |
-| Plan | Generate a risk plan: entry, stop-loss, take-profit, position size |
-| Execute | Freqtrade places the order |
-| Monitor | Real-time position risk monitoring |
-| Reconcile | State sync via webhooks and polling |
+| Stage | Role |
+|-------+------|
+| *Observe* | Collect candlesticks, indicators, market structure, derivatives and sentiment |
+| *Decide* | Three independent Agents analyze in parallel; consensus rules filter signals |
+| *Plan* | Generate risk plan — entry, stop-loss, take-profit, position size |
+| *Execute* | Place orders via Freqtrade |
+| *Monitor* | Real-time position risk tracking and stop adjustment |
+| *Reconcile* | Sync state between Brale and the exchange via webhooks/polling |
 
-** Core Features
+** Design Principles
 
-- *LLM proposes, code disposes* — after the model suggests TP/SL levels, Go code enforces price sequence validity, leverage caps, and liquidation safety margins. The model can be wrong; the code catches it.
-- *Three independent Agent lanes* — indicator analysis, market structure, and derivatives mechanics each run separately. Consensus thresholds prevent single-model misjudgment.
-- *Provider grounding via code anchors* — each Provider receives its Agent summary plus code-extracted structured anchors (multi-timeframe indicator alignment, structure break points, mechanics conflict signals) for cross-verification, reducing LLM hallucination risk.
-- *Fully automated scheduling* — decision cycles, price monitoring, and state reconciliation are driven by a built-in scheduler. No external cron needed.
-- *Swappable execution layer* — currently wired to Freqtrade; the interface is decoupled and can be replaced with another trading backend.
-- *Notifications out of the box* — built-in Telegram and Feishu bots with decision push and command interaction.
+- *LLM proposes, code disposes* — models suggest TP/SL levels; Go code enforces price validity,
+  leverage caps, and liquidation safety. The model may hallucinate; the code catches it.
+- *Three independent Agent lanes* — indicator, structure, and mechanics Agents run separately.
+  Consensus thresholds prevent single-model misjudgment.
+- *Provider grounding anchors* — each Provider receives its Agent summary *plus* code-extracted
+  structured anchors (cross-timeframe alignment, structure breaks, mechanics conflicts) for
+  cross-verification, reducing hallucination risk.
+- *Experience-driven memory* — three-layer memory system (working, episodic, semantic) feeds
+  recent context, historical trade reflections, and long-term rules into LLM prompts.
+- *Shadow indicator engine* — built-in reference computation engine cross-validates against Talib,
+  ensuring indicator data integrity.
+- *Gate Replay backtesting* — replay historical decisions through the current rule set with zero
+  LLM calls, enabling rapid rule-tuning validation.
+- *Fully automated scheduling* — decision cycles, monitoring, and reconciliation run on built-in
+  timers. No external cron required.
+- *Swappable execution* — currently wired to Freqtrade; the interface is decoupled.
 
 ** Quick Start
 
-*Prerequisites:* Docker, Docker Compose. Local development also requires Go 1.25+.
+*Prerequisites:* Docker and Docker Compose. Local development requires Go 1.25+.
 
-*** One-Click Script
+*** One-Click
 
 #+begin_src bash
 curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
 #+end_src
 
-This bootstraps the project and starts the onboarding UI.
-
-*** Local Deployment
+*** Manual
 
 #+begin_src bash
 git clone --depth 1 https://github.com/laukkw/brale-core.git
 cd brale-core
 cp .env.example .env
-make init
+make init          # launches the onboarding UI at 127.0.0.1:9992
+# or: make start   # skip onboarding, start Freqtrade + Brale directly
 #+end_src
-
-If you don't need the onboarding UI, just run =make start= to launch Freqtrade and Brale directly.
 
 *** Common Commands
 
 | Command | Description |
 |---------+-------------|
-| =make status= | Check container status |
-| =make logs= | View logs |
-| =make stop= | Stop services |
-| =make rebuild= | Rebuild and restart Brale |
-| =make down= | Stop and remove containers |
+| =make status= | Container health check |
+| =make logs= | Tail service logs |
+| =make stop= / =make down= | Stop / remove containers |
+| =make rebuild= | Rebuild and restart Brale only |
 
-** Docker Services
+*** Docker Services
 
-| Service | Default Port | Description |
-|---------+--------------+-------------|
-| onboarding | 127.0.0.1:9992 | Setup and onboarding UI |
-| freqtrade | 127.0.0.1:8080 | Trading execution system |
-| brale | 127.0.0.1:9991 | Runtime API / webhook |
+| Service | Port | Role |
+|---------+------+------|
+| onboarding | =127.0.0.1:9992= | Setup UI |
+| freqtrade | =127.0.0.1:8080= | Trade execution |
+| brale | =127.0.0.1:9991= | Runtime API / webhook |
+| mcp-sse | =127.0.0.1:8765= | MCP SSE endpoint (opt-in via =--profile mcp=) |
+
+** CLI Tool — bralectl
+
+=bralectl= provides both live runtime management and offline analysis across 12 command groups.
+
+| Group | Description |
+|-------+-------------|
+| =observe= | Trigger observations, view reports |
+| =decision= | Query latest and historical decisions |
+| =position= | View open and closed positions |
+| =schedule= | Enable / disable / status of the scheduler |
+| =config= | View / validate configuration |
+| =backtest= | Gate Replay — replay decisions through current rules (zero LLM cost) |
+| =indicator= | Cross-check Talib vs reference indicator engine |
+| =memory= | Manage semantic rules and view trade reflections |
+| =mcp= | Start MCP server or install into AI tools |
+| =llm= | Test LLM endpoint connectivity |
+
+See [[file:docs/cli-reference.org][CLI Reference]] for complete usage.
+
+** MCP Integration
+
+brale-core exposes 8 read-only analysis tools via the
+[[https://modelcontextprotocol.io][Model Context Protocol]]:
+
+#+begin_src bash
+bralectl mcp install --target claude-code     # auto-configure Claude Code
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765  # remote SSE mode
+#+end_src
+
+Compatible with Claude Desktop, Cursor, and any MCP-capable Agent.
+Provides 4 resource URIs and 2 prompt templates.
+See [[file:docs/mcp-integration.org][MCP Integration Guide]].
+
+** Configuration
+
+Four-layer TOML hierarchy:
+
+| Layer | Path | Scope |
+|-------+------+-------|
+| System | =configs/system.toml= | Logging, DB, LLM endpoints, scheduling, notifications |
+| Symbol Index | =configs/symbols-index.toml= | Maps symbols to config/strategy files |
+| Symbol | =configs/symbols/*.toml= | Per-symbol: intervals, agents, indicators, memory, consensus |
+| Strategy | =configs/strategies/*.toml= | Per-symbol: risk params, gate/sieve rules, TP/SL policy |
+
+See [[file:docs/configuration.org][Configuration Guide]] for details.
 
 ** Documentation
 
-- [[file:docs/configuration.org][Configuration]] — four-layer TOML config system, indicator parameter boundaries, adding new symbols
-- [[file:docs/trading-logic.org][Trading Logic]] — entry modes, Provider anchors, trace persistence, position sizing
-- [[file:docs/runtime-api.org][Runtime API]] — API endpoints, webhooks, notifications, data storage
+| Document | Content |
+|----------+---------|
+| [[file:docs/configuration.org][Configuration]] | TOML config layers, indicator parameters, adding symbols |
+| [[file:docs/trading-logic.org][Trading Logic]] | Entry modes, Provider anchors, trace persistence, position sizing |
+| [[file:docs/runtime-api.org][Runtime API]] | REST endpoints, webhooks, notifications, storage |
+| [[file:docs/cli-reference.org][CLI Reference]] | Complete =bralectl= command reference |
+| [[file:docs/mcp-integration.org][MCP Integration]] | Setup, tools, resources, prompts, Docker deployment |
 
 ** Extension Points
 
 | Goal | Where to Start |
 |------+----------------|
-| Add a new symbol | =make add-symbol SYMBOL=XXX= or see [[file:docs/configuration.org][Configuration docs]] |
-| Tune risk parameters | =configs/strategies/*.toml= |
-| Adjust Agent behavior | =configs/symbols/*.toml= + LLM env vars |
-| Integrate another exchange | See the abstractions in =internal/execution= |
-| Extend monitoring/ops | Reuse the Runtime API and webhook endpoints |
+| Add a symbol | =bralectl add-symbol --symbol XXX= or [[file:docs/configuration.org][config docs]] |
+| Tune risk | =configs/strategies/*.toml= |
+| Adjust Agents | =configs/symbols/*.toml= + LLM env vars |
+| Another exchange | =internal/execution= interface |
+| Custom monitoring | Runtime API (=:9991=) and webhook endpoints |
+
+** LLM Token Usage
+
+Single decision cycle = all Agent + Provider + risk LLM calls combined:
+
+| Configuration | Input / cycle | Output / cycle | Daily estimate |
+|---------------+---------------+----------------+----------------|
+| 1 symbol × 3 tf × 1 h interval | 11 K–12 K | 1.1 K–1.2 K | ≈ 300 K |
+| 1 symbol × 3 tf × 15 min interval | 11 K–12 K | 1.1 K–1.2 K | ≈ 1.1 M–1.2 M |
+
+Scale linearly for multiple symbols. With memory enabled, add ~500–1 K tokens/cycle for
+working/episodic/semantic context injection.
 
 ** License
 
 GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [[file:LICENSE][LICENSE]].
-
-** LLM Token Usage Reference
-
-Based on production measurements. A single decision cycle includes all Agent + Provider + risk LLM calls combined:
-
-| Configuration | Input / cycle | Output / cycle | Daily tokens |
-|---------------+---------------+----------------+--------------|
-| 1 symbol × 3 timeframes × 1h interval | 11K–12K | 1.1K–1.2K | ≈ 300K |
-| 1 symbol × 3 timeframes × 15min interval | 11K–12K | 1.1K–1.2K | ≈ 1.1M–1.2M |
-
-Scale linearly for multiple symbols. Actual usage varies with enabled Agents, position state (flat vs in-position), and LLM risk mode.
 
 ** Support
 
@@ -236,8 +349,9 @@ TRON: TTUzmkqSSjuXrwUkFFmaoNbnQC4gSCNnvh
 
 ** Disclaimer
 
-- This project is for technical research and workflow validation only; it does not constitute investment advice.
+- This project is for technical research and workflow validation only; it does not constitute
+  investment advice.
 - Digital asset trading is highly volatile and may result in partial or total loss of funds.
-- Users are solely responsible for evaluating strategies, parameters, and risk controls, and for bearing all consequences.
+- Users bear full responsibility for evaluating strategies, parameters, and risk controls.
 - Historical performance, backtest results, or sample configurations do not guarantee future returns.
-- Please complete thorough testing in an isolated environment before enabling in production.
+- Complete thorough testing in an isolated environment before enabling in production.

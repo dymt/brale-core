@@ -1,0 +1,283 @@
+#+TITLE: MCP Integration Guide / MCP 集成指南
+#+AUTHOR: brale-core
+
+- [[#中文版][中文版]]
+- [[#english][English]]
+
+-----
+
+* 中文版
+:PROPERTIES:
+:CUSTOM_ID: 中文版
+:END:
+
+** 概述
+
+brale-core 实现了 [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] —— 由 Anthropic 提出的 AI Agent 工具交互开放标准。通过 MCP，外部 AI Agent（Claude Desktop、Cursor、自定义流水线等）可以只读访问实时行情数据、决策历史、指标快照和运行配置，*不会暴露任何写入或交易执行能力*。
+
+所有 MCP 操作均记录到本地审计日志 =data/brale/mcp-audit.jsonl=。
+
+** 快速开始
+
+*** stdio 模式（推荐本地 AI 工具使用）
+
+#+begin_src bash
+bralectl mcp serve --mode stdio \
+  --system ./configs/system.toml \
+  --index ./configs/symbols-index.toml
+#+end_src
+
+适用于 Claude Code 和 Claude Desktop 等直接启动子进程的客户端。
+
+*** SSE 模式（适用于远程或容器化访问）
+
+#+begin_src bash
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765 \
+  --system ./configs/system.toml \
+  --index ./configs/symbols-index.toml
+#+end_src
+
+** 安装配置
+
+*** 自动安装
+
+#+begin_src bash
+bralectl mcp install --target claude-code     # 写入 .claude/mcp.json
+bralectl mcp install --target claude-desktop  # 写入 claude_desktop_config.json
+#+end_src
+
+*** 手动配置
+
+**** Claude Desktop (=~/.claude/claude_desktop_config.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** Cursor (=.cursor/mcp.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** SSE 远程客户端
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "url": "http://your-server:8765/sse"
+    }
+  }
+}
+#+end_src
+
+** 可用工具（Tools）
+
+所有工具均为 *只读* 操作，不会触发交易。
+
+| 工具名 | 说明 |
+|--------+------|
+| =analyze_market= | 返回指定交易对的市场总览、最新决策和最近一次观察结果 |
+| =get_latest_decision= | 获取指定交易对最近一次决策结果 |
+| =get_positions= | 获取当前持仓列表 |
+| =get_decision_history= | 获取指定交易对的历史决策记录（可选条数限制与 snapshot_id 过滤） |
+| =get_account_summary= | 获取账户余额与总体盈亏摘要 |
+| =get_kline= | 获取指定交易对的 K 线（Candlestick）数据 |
+| =compute_indicators= | 基于本地 symbol 配置与运行时 K 线计算指标快照 |
+| =get_config= | 读取运行配置（API Key 等敏感信息已脱敏） |
+
+** 可用资源（Resources）
+
+| URI | 说明 |
+|-----+------|
+| =brale://config/system= | 脱敏后的系统级配置 |
+| =brale://config/symbols= | 交易对索引与配置路径 |
+| =brale://decision/{symbol}/latest= | 指定交易对的最新决策结果（URI 模板） |
+| =brale://kline/{symbol}/{interval}= | 指定交易对与周期的 K 线数据（URI 模板，默认 120 根） |
+
+** 提示词模板（Prompts）
+
+| 模板名 | 说明 |
+|--------+------|
+| =market_analysis= | 标准化市场分析框架，引导 Agent 读取资源并调用只读工具完成技术分析 |
+| =trade_review= | 标准化交易/决策复盘模板，引导 Agent 对历史决策进行回顾与修正 |
+
+两个模板均接受 =symbol=（必填）和 =interval=（可选，默认 =1h=）参数。
+
+** Docker 部署（SSE 模式）
+
+=docker-compose.yml= 中包含 =mcp-sse= 服务，位于 =mcp= profile 下：
+
+#+begin_src bash
+docker compose --profile mcp up -d
+#+end_src
+
+SSE 端点默认监听 =127.0.0.1:8765=。
+
+** 安全设计
+
+- *只读*：不暴露任何写入或交易执行工具。
+- *脱敏*：=get_config= 输出自动屏蔽 API Key、Secret 和 Token 等敏感字段。
+- *审计*：每次工具/资源/提示词调用均记录到 =data/brale/mcp-audit.jsonl=（包含时间戳、工具名、参数与耗时）。
+
+-----
+
+* English
+:PROPERTIES:
+:CUSTOM_ID: english
+:END:
+
+** Overview
+
+brale-core implements the [[https://modelcontextprotocol.io][Model Context Protocol (MCP)]] — an open standard for AI Agent tool interaction proposed by Anthropic. Through MCP, external AI Agents (Claude Desktop, Cursor, custom pipelines) gain read-only access to live market data, decision history, indicator snapshots, and configuration — *without exposing any write or trade-execution capability*.
+
+All MCP operations are audited to a local JSONL log (=data/brale/mcp-audit.jsonl=).
+
+** Quick Start
+
+*** stdio Mode (recommended for local AI tools)
+
+#+begin_src bash
+bralectl mcp serve --mode stdio \
+  --system ./configs/system.toml \
+  --index ./configs/symbols-index.toml
+#+end_src
+
+Best for Claude Code and Claude Desktop, which launch the process directly.
+
+*** SSE Mode (for remote or containerized access)
+
+#+begin_src bash
+bralectl mcp serve --mode sse --addr 0.0.0.0:8765 \
+  --system ./configs/system.toml \
+  --index ./configs/symbols-index.toml
+#+end_src
+
+** Installation
+
+*** Auto-Install
+
+#+begin_src bash
+bralectl mcp install --target claude-code     # writes .claude/mcp.json
+bralectl mcp install --target claude-desktop  # writes claude_desktop_config.json
+#+end_src
+
+*** Manual Configuration
+
+**** Claude Desktop (=~/.claude/claude_desktop_config.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** Cursor (=.cursor/mcp.json=)
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "command": "/path/to/bralectl",
+      "args": [
+        "mcp", "serve", "--mode", "stdio",
+        "--system", "/path/to/configs/system.toml",
+        "--index", "/path/to/configs/symbols-index.toml"
+      ]
+    }
+  }
+}
+#+end_src
+
+**** SSE Remote Client
+
+#+begin_src json
+{
+  "mcpServers": {
+    "brale-core": {
+      "url": "http://your-server:8765/sse"
+    }
+  }
+}
+#+end_src
+
+** Available Tools
+
+All tools are *read-only* and will never trigger trades.
+
+| Tool | Description |
+|------+-------------|
+| =analyze_market= | Market overview: latest observation, decision, and positions for a symbol |
+| =get_latest_decision= | Most recent decision result for a symbol |
+| =get_positions= | Current open positions |
+| =get_decision_history= | Historical decision records (optional limit and snapshot_id filter) |
+| =get_account_summary= | Account balance and aggregate P&L |
+| =get_kline= | Candlestick data for a given symbol and interval |
+| =compute_indicators= | Compute indicator snapshot using the configured engine and runtime klines |
+| =get_config= | Runtime configuration (API keys and secrets are redacted) |
+
+** Available Resources
+
+| URI | Description |
+|-----+-------------|
+| =brale://config/system= | Sanitized system-level configuration |
+| =brale://config/symbols= | Symbol index and config paths |
+| =brale://decision/{symbol}/latest= | Latest decision for a symbol (URI template) |
+| =brale://kline/{symbol}/{interval}= | Kline snapshot (URI template; defaults to 120 bars) |
+
+** Available Prompts
+
+| Prompt | Description |
+|--------+-------------|
+| =market_analysis= | Structured market analysis framework; guides the Agent through resources and read-only tools |
+| =trade_review= | Post-trade review template; guides the Agent through decision retrospective and correction |
+
+Both prompts accept =symbol= (required) and =interval= (optional, defaults to =1h=).
+
+** Docker Deployment (SSE)
+
+The =docker-compose.yml= includes an =mcp-sse= service behind the =mcp= profile:
+
+#+begin_src bash
+docker compose --profile mcp up -d
+#+end_src
+
+The SSE endpoint defaults to =127.0.0.1:8765=.
+
+** Security
+
+- *Read-only*: no write or trade-execution tools are exposed.
+- *Redaction*: API keys, secrets, and tokens are automatically masked in =get_config= output.
+- *Audit*: every tool, resource, and prompt invocation is logged to =data/brale/mcp-audit.jsonl= with timestamp, name, parameters, and duration.
