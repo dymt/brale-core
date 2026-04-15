@@ -268,6 +268,135 @@ async function main() {
 
   console.log('ok shutdown + error card tests passed');
 
+  // ---------- Startup card test ----------
+  const startupInput = {
+    card_type: 'startup',
+    data: {
+      symbols: ['BTCUSDT', 'ETHUSDT'],
+      intervals: ['15m', '1h'],
+      schedule_mode: 'bar',
+      bar_interval: '15m',
+      balance: 1250.50,
+      currency: 'USDT',
+      symbol_statuses: [
+        { symbol: 'BTCUSDT', intervals: ['15m', '1h'], next_decision: '2025-07-01 12:00', mode: 'live' },
+        { symbol: 'ETHUSDT', intervals: ['15m', '1h'], next_decision: '2025-07-01 12:00', mode: 'live' },
+      ],
+    },
+  };
+  const startupModel = buildModel(startupInput);
+  assert.equal(startupModel.symbol, 'BRALE');
+  assert.equal(startupModel.title, 'Brale 系统启动');
+  assert.equal(startupModel.sourceCard.sectionTitle, '启动确认');
+  assert.equal(startupModel.sourceCard.subtitlePrefix, '状态: ');
+  assert.equal(startupModel.metricsLabel, '系统概览');
+  assert.equal(startupModel.analysisLabel, '币种详情');
+  assert.match(startupModel.sourceCard.verdictText, /Brale 已启动/);
+  assert.equal(startupModel.progressCards.length, 4);
+  assert.equal(startupModel.analysisItems.length, 2);
+  await renderScenario({ tmpDir, name: 'startup', input: startupInput });
+  console.log('ok startup card test passed');
+
+  // ---------- Position open card test ----------
+  const posOpenInput = {
+    card_type: 'position_open',
+    symbol: 'ETHUSDT',
+    data: {
+      direction: 'long',
+      entry_price: 3456.78,
+      stop_loss: 3400.00,
+      take_profits: [3520.00, 3600.00],
+      leverage: 5,
+      risk_pct: 2.0,
+      amount: 0.5,
+    },
+  };
+  const posOpenModel = buildModel(posOpenInput);
+  assert.equal(posOpenModel.symbol, 'ETH');
+  assert.match(posOpenModel.title, /开仓通知/);
+  assert.equal(posOpenModel.sourceCard.sectionTitle, '开仓确认');
+  assert.equal(posOpenModel.sourceCard.subtitlePrefix, '操作类型: ');
+  assert.equal(posOpenModel.metricsLabel, '开仓概览');
+  assert.equal(posOpenModel.analysisLabel, '止盈价位');
+  assert.equal(posOpenModel.analysisItems.length, 2);
+  await renderScenario({ tmpDir, name: 'position-open', input: posOpenInput });
+  console.log('ok position_open card test passed');
+
+  // ---------- Position close card test ----------
+  const posCloseInput = {
+    card_type: 'position_close',
+    symbol: 'BTCUSDT',
+    data: {
+      direction: 'short',
+      entry_price: 68000,
+      exit_price: 67200,
+      profit: 800,
+      profit_ratio: 0.0118,
+      exit_reason: 'take_profit',
+      amount: 0.1,
+    },
+  };
+  const posCloseModel = buildModel(posCloseInput);
+  assert.match(posCloseModel.title, /平仓/);
+  assert.equal(posCloseModel.sourceCard.sectionTitle, '平仓结算');
+  assert.equal(posCloseModel.sourceCard.subtitlePrefix, '结算方式: ');
+  assert.equal(posCloseModel.metricsLabel, '交易概览');
+  assert.equal(posCloseModel.analysisLabel, '');
+  assert.equal(posCloseModel.analysisItems.length, 0);
+  await renderScenario({ tmpDir, name: 'position-close', input: posCloseInput });
+  console.log('ok position_close card test passed');
+
+  // ---------- Risk update card test ----------
+  const riskUpdateInput = {
+    card_type: 'risk_update',
+    symbol: 'BTCUSDT',
+    data: {
+      direction: 'long',
+      entry_price: 67000,
+      mark_price: 67800,
+      stop_loss: 66500,
+      new_stop_loss: 67200,
+      take_profits: [68500, 69000],
+      leverage: 10,
+      source: 'monitor',
+      gate_satisfied: true,
+    },
+  };
+  const riskUpdateModel = buildModel(riskUpdateInput);
+  assert.match(riskUpdateModel.title, /风控更新/);
+  assert.equal(riskUpdateModel.sourceCard.sectionTitle, '风控计划变更');
+  assert.equal(riskUpdateModel.sourceCard.subtitlePrefix, '更新来源: ');
+  assert.equal(riskUpdateModel.metricsLabel, '风控指标');
+  assert.equal(riskUpdateModel.analysisLabel, '止盈价位');
+  assert.ok(riskUpdateModel.analysisItems.length > 0);
+  await renderScenario({ tmpDir, name: 'risk-update', input: riskUpdateInput });
+  console.log('ok risk_update card test passed');
+
+  // ---------- Partial close card test ----------
+  const partialCloseInput = {
+    card_type: 'partial_close',
+    symbol: 'BTCUSDT',
+    data: {
+      direction: 'long',
+      open_rate: 67000,
+      close_rate: 68200,
+      amount: 0.05,
+      realized_profit: 60,
+      realized_profit_ratio: 0.0179,
+      exit_reason: 'take_profit_1',
+      exit_type: 'partial',
+    },
+  };
+  const partialCloseModel = buildModel(partialCloseInput);
+  assert.match(partialCloseModel.title, /部分平仓/);
+  assert.equal(partialCloseModel.sourceCard.sectionTitle, '部分平仓确认');
+  assert.equal(partialCloseModel.sourceCard.subtitlePrefix, '操作类型: ');
+  assert.equal(partialCloseModel.metricsLabel, '平仓概览');
+  assert.equal(partialCloseModel.analysisLabel, '');
+  assert.equal(partialCloseModel.analysisItems.length, 0);
+  await renderScenario({ tmpDir, name: 'partial-close', input: partialCloseInput });
+  console.log('ok partial_close card test passed');
+
   // ---------- Translation regression tests ----------
   // These verify that mapSentence never produces half-translated event keys.
   const { mapSentence: mapSentenceFn } = await import('./render.mjs');
@@ -307,7 +436,20 @@ async function main() {
         assert.ok(!got.includes(bad), `mapSentence(${JSON.stringify(tc.in)}) produced half-translated output: ${JSON.stringify(got)} (must not contain ${JSON.stringify(bad)}) — ${tc.desc}`);
       }
     }
-    console.log(`ok translation-regression: ${translationTests.length} cases passed`);
+
+    // TD Sequential dynamic event translation
+    const tdBuy9 = mapSentenceFn('td_buy_setup_9');
+    assert.equal(tdBuy9, 'TD买入序列9', `td_buy_setup_9 should translate to TD买入序列9, got: ${tdBuy9}`);
+    const tdSell13 = mapSentenceFn('td_sell_setup_13');
+    assert.equal(tdSell13, 'TD卖出序列13', `td_sell_setup_13 should translate to TD卖出序列13, got: ${tdSell13}`);
+
+    // moderate and steep value translation
+    const moderateResult = mapSentenceFn('slope is moderate');
+    assert.ok(moderateResult.includes('温和'), `moderate should translate to 温和, got: ${moderateResult}`);
+    const steepResult = mapSentenceFn('slope is steep');
+    assert.ok(steepResult.includes('陡峭'), `steep should translate to 陡峭, got: ${steepResult}`);
+
+    console.log(`ok translation-regression: ${translationTests.length + 4} cases passed`);
   } else {
     console.log('warn: mapSentence not exported, skipping translation regression tests');
   }
