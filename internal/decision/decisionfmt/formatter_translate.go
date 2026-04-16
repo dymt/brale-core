@@ -590,8 +590,12 @@ func TranslateValue(raw string) string {
 	if label, ok := sieveReasonLabels[upper]; ok {
 		return label
 	}
-	// Check direction labels (lowercase)
+	// Check gate step labels (lowercase)
 	lower := strings.ToLower(trimmed)
+	if label := translateGateStep(lower); label != "" && label != lower {
+		return label
+	}
+	// Check direction labels (lowercase)
 	if label, ok := directionLabels[lower]; ok {
 		return label
 	}

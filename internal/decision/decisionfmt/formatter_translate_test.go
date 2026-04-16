@@ -456,6 +456,10 @@ func TestTranslateValue(t *testing.T) {
 		{"sieve reason crowded_long", "crowded_long", "多头拥挤"},
 		{"unknown passthrough", "unknown_xyz", "unknown_xyz"},
 		{"empty", "", ""},
+		{"gate step structure", "structure", "结构完整性"},
+		{"gate step direction", "direction", "方向"},
+		{"gate step quality", "quality", "建仓质量"},
+		{"gate step gate_allow", "gate_allow", "Gate 放行"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
