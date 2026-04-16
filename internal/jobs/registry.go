@@ -48,7 +48,7 @@ func BuildPeriodicJobs(schedules []PeriodicSchedule) []*river.PeriodicJob {
 
 		if schedule.ObserveInterval > 0 {
 			jobs = append(jobs, river.NewPeriodicJob(
-				river.PeriodicInterval(schedule.ObserveInterval),
+				AlignedBarCloseSchedule(schedule.ObserveInterval),
 				func() (river.JobArgs, *river.InsertOpts) {
 					return ObserveArgs{Symbol: sym}, nil
 				},
@@ -58,7 +58,7 @@ func BuildPeriodicJobs(schedules []PeriodicSchedule) []*river.PeriodicJob {
 
 		if schedule.DecideInterval > 0 {
 			jobs = append(jobs, river.NewPeriodicJob(
-				river.PeriodicInterval(schedule.DecideInterval),
+				AlignedBarCloseSchedule(schedule.DecideInterval),
 				func() (river.JobArgs, *river.InsertOpts) {
 					return DecideArgs{Symbol: sym}, nil
 				},
