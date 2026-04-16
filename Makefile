@@ -20,6 +20,8 @@ HOST_REPO_ROOT ?= $(CURDIR)
 ONBOARDING_ADDR ?= 127.0.0.1:9992
 ONBOARDING_URL ?= http://$(ONBOARDING_ADDR)
 BRALECTL_BIN ?= $(BRALE_DATA_ROOT)/bin/bralectl
+OUTPUT_ROOT ?= $(CURDIR)/_output
+BRALECTL_OUTPUT_BIN ?= $(OUTPUT_ROOT)/bralectl
 BRALECTL_DOCKER_IMAGE ?= brale-core-go-builder
 TEMPLATE_SYMBOL ?=
 
@@ -55,10 +57,11 @@ fi;
 COMPOSE = $(STACK_EXPORTS) $(STACK_PROXY_SOURCE) docker compose -f "$(COMPOSE_FILE)"
 ONBOARDING_PREPARE = $(COMPOSE) run --rm --no-deps onboarding prepare-stack
 
-.PHONY: help env-init setup init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs bralectl-build bralectl-builder-image add-symbol llm-probe migrate-up migrate-down
+.PHONY: help env-init setup init init-stop init-status init-logs check prepare start apply-config onboarding-start onboarding-pull onboarding-refresh-brale start-freqtrade wait-freqtrade start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs build bralectl-build bralectl-builder-image add-symbol llm-probe migrate-up migrate-down
 
 help: ## Show the main make targets and optional component switches
 	@printf '%-22s %s\n' "env-init" "Create .env from .env.example if missing"; \
+	printf '%-22s %s\n' "build" "Build bralectl into _output/bralectl"; \
 	printf '%-22s %s\n' "setup" "Run bralectl setup (env init + optional MCP client config)"; \
 	printf '%-22s %s\n' "init" "Start the onboarding UI only"; \
 	printf '%-22s %s\n' "start" "Start freqtrade + brale; add ENABLE_MCP=1 and/or ENABLE_ONBOARDING=1"; \
@@ -203,7 +206,7 @@ prepare:
 		echo "[WARN] copy or migrate existing DB files before restarting if you need current database contents"; \
 	fi
 	@if [ "$$(id -u)" = "0" ] && [ -n "$(HOST_UID)" ] && [ -n "$(HOST_GID)" ]; then \
-		chown -R "$(HOST_UID):$(HOST_GID)" "$(BRALE_DATA_ROOT)" "$(FREQTRADE_RUNTIME_ROOT)" "$(dir $(STACK_PROXY_ENV_FILE))"; \
+		chown -R "$(HOST_UID):$(HOST_GID)" "$(BRALE_DATA_ROOT)" "$(PGDATA_ROOT)" "$(FREQTRADE_RUNTIME_ROOT)" "$(dir $(STACK_PROXY_ENV_FILE))"; \
 	fi
 
 start: check prepare ## Start the core stack; use ENABLE_MCP=1 and/or ENABLE_ONBOARDING=1 for optional services
@@ -289,6 +292,14 @@ status: ## Show compose service status
 
 logs: ## Tail the core stack logs
 	@$(COMPOSE) logs -f --tail=200 freqtrade brale
+
+build: ## Build bralectl into _output/bralectl
+	@if ! command -v go >/dev/null 2>&1; then \
+		echo "[ERR] go command not found"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(dir $(BRALECTL_OUTPUT_BIN))"
+	go build -o "$(BRALECTL_OUTPUT_BIN)" ./cmd/bralectl
 
 bralectl-build: ## Build the local bralectl binary
 	@if ! command -v go >/dev/null 2>&1; then \

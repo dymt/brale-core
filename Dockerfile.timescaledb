@@ -1,0 +1,16 @@
+FROM timescale/timescaledb:latest-pg16
+
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+
+USER root
+
+RUN set -eux; \
+    current_uid="$(id -u postgres)"; \
+    current_gid="$(id -g postgres)"; \
+    if [ "${HOST_UID}" != "${current_uid}" ] || [ "${HOST_GID}" != "${current_gid}" ]; then \
+        sed -i "s/^postgres:x:${current_gid}:/postgres:x:${HOST_GID}:/" /etc/group; \
+        sed -i "s/^postgres:x:${current_uid}:${current_gid}:/postgres:x:${HOST_UID}:${HOST_GID}:/" /etc/passwd; \
+        mkdir -p /var/lib/postgresql /var/run/postgresql; \
+        chown -R "${HOST_UID}:${HOST_GID}" /var/lib/postgresql /var/run/postgresql; \
+    fi

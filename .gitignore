@@ -11,7 +11,6 @@ configs/config.yaml
 configs/user_data/freqtrade-config.json
 
 docs/ppt/
-项目运行逻辑全说明.md
 docs/position-flow-report.md
 docs/project_introduction_technical.md
 *_test
@@ -28,7 +27,7 @@ webui/og-card-demo/node_modules/*
 webui/landing-page/
 webui/promo-video/
 skills/*
-
+_output/
 .agents/
 .agent/
 .claude/
@@ -61,7 +60,6 @@ dist/
 /.sisyphus/
 /data/brale/
 /data/freqtrade/
-/手写的部署文档.org
 .codex
 CLAUDE.md
 env_old
@@ -79,8 +77,6 @@ configs/strategies/STOUSDT.toml
 internal/onboarding/templates/freqtrade-config.base.json
 onboarding
 webui/brale-icon-only.png
-规则说明.txt
 /indicator.md
-/调研.md
 /.augment/
 /bralectl

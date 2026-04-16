@@ -49,7 +49,12 @@ services:
       start_period: 10s
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    build:
+      context: .
+      dockerfile: Dockerfile.timescaledb
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-brale}
@@ -183,6 +188,8 @@ services:
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     entrypoint: ["bralectl"]
     command:
+      - "--endpoint"
+      - "http://brale:9991"
       - "mcp"
       - "serve"
       - "--mode"
@@ -193,6 +200,8 @@ services:
       - "/app/configs/system.toml"
       - "--index"
       - "/app/configs/symbols-index.toml"
+      - "--audit-log"
+      - "/app/data/mcp-audit.jsonl"
     depends_on:
       brale:
         condition: service_healthy
