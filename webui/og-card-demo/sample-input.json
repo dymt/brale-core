@@ -2,27 +2,27 @@
   "symbol": "ETHUSDT",
   "raw_blocks": {
     "gate": {
-      "decision_action": "VETO",
+      "decision_action": "否决",
       "decision_text": "否决",
-      "direction": "none",
+      "direction": "无方向",
       "grade": 0,
       "reason": "三路共识未通过",
-      "reason_code": "CONSENSUS_NOT_PASSED",
+      "reason_code": "三路共识未通过",
       "tradeable": false,
-      "stop_step": "mech_risk",
+      "stop_step": "清算风险检查",
       "rule_name": "MECH_RISK",
-      "action_before": "ALLOW",
-      "sieve_action": "VETO",
-      "sieve_reason": "crowded_long",
+      "action_before": "允许",
+      "sieve_action": "否决",
+      "sieve_reason": "多头拥挤",
       "trace": [
         {
-          "step": "direction",
+          "step": "方向",
           "ok": true
         },
         {
-          "step": "mech_risk",
+          "step": "清算风险检查",
           "ok": false,
-          "reason": "MECH_RISK"
+          "reason": "清算风险过高"
         }
       ],
       "direction_consensus": {
@@ -37,25 +37,25 @@
     },
     "agent": {
       "indicator": {
-        "expansion": "contracting",
-        "alignment": "mixed",
-        "noise": "low",
-        "momentum_detail": "ema_fast delta_pct 0.1931 positive, ema_mid delta_pct 0.0302 positive, ema_slow delta_pct -1.5941 negative",
+        "expansion": "收敛",
+        "alignment": "混合/分歧",
+        "noise": "低",
+        "momentum_detail": "快线EMA 变化率 0.1931 正向, 中线EMA 变化率 0.0302 正向, 慢线EMA 变化率 -1.5941 负向",
         "conflict_detail": "未观察到明显冲突",
         "movement_score": 0.12,
         "movement_confidence": 0.33
       },
       "mechanics": {
-        "leverage_state": "stable",
-        "crowding": "long_crowded",
-        "risk_level": "medium",
-        "open_interest_context": "OI increased slightly in 15m and 1h, but declined over 4h; funding rate negative",
-        "anomaly_detail": "fear_greed=8 versus long crowding",
+        "leverage_state": "稳定",
+        "crowding": "多头拥挤",
+        "risk_level": "中",
+        "open_interest_context": "持仓量在15分钟内且在1小时内小幅上升, 但4小时以上回落; 资金费率为负",
+        "anomaly_detail": "恐贪指数=8 对比 多头拥挤",
         "movement_score": 0.25,
         "movement_confidence": 0.44
       },
       "structure": {
-        "regime": "mixed",
+        "regime": "混合/分歧",
         "last_break": "",
         "quality": "",
         "pattern": "",

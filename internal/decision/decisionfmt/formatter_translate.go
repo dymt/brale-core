@@ -199,9 +199,9 @@ var translatedTerms = map[string]string{
 	"aroon_strong_bullish":      "阿隆指标强势看多",
 	"aroon_strong_bearish":      "阿隆指标强势看空",
 	// OI-价格关系 (mechanics_state.go classifyOIPriceRelation)
-	"price_up_oi_up":   "价格上涨/OI上升",
-	"price_up_oi_down": "价格上涨/OI下降",
-	"price_down_oi_up": "价格下跌/OI上升",
+	"price_up_oi_up":     "价格上涨/OI上升",
+	"price_up_oi_down":   "价格上涨/OI下降",
+	"price_down_oi_up":   "价格下跌/OI上升",
 	"price_down_oi_down": "价格下跌/OI下降",
 	// 情绪状态 (mechanics_state.go classifySentiment)
 	"fear":          "恐惧",
@@ -282,24 +282,24 @@ var llmKeyLabels = map[string]string{
 	"multi_tf":          "多周期数据",
 	"decision_interval": "决策间隔",
 	// 指标细分字段
-	"rsi_zone":             "RSI区间",
-	"rsi_slope_state":      "RSI斜率",
-	"stc_state":            "STC状态",
-	"obv_slope_state":      "OBV斜率",
-	"stoch_rsi_zone":       "随机RSI区间",
-	"atr_expand_state":     "ATR扩张状态",
-	"atr_change_pct":       "ATR变化率",
-	"bb_zone":              "布林带区间",
-	"bb_width_state":       "布林带宽度",
-	"chop_regime":          "震荡指数状态",
-	"ema_stack":            "EMA排列",
+	"rsi_zone":              "RSI区间",
+	"rsi_slope_state":       "RSI斜率",
+	"stc_state":             "STC状态",
+	"obv_slope_state":       "OBV斜率",
+	"stoch_rsi_zone":        "随机RSI区间",
+	"atr_expand_state":      "ATR扩张状态",
+	"atr_change_pct":        "ATR变化率",
+	"bb_zone":               "布林带区间",
+	"bb_width_state":        "布林带宽度",
+	"chop_regime":           "震荡指数状态",
+	"ema_stack":             "EMA排列",
 	"ema_distance_fast_atr": "快线EMA距离(ATR)",
 	"ema_distance_mid_atr":  "中线EMA距离(ATR)",
 	"ema_distance_slow_atr": "慢线EMA距离(ATR)",
-	"price_vs_ema_fast":    "价格vs快线EMA",
-	"price_vs_ema_mid":     "价格vs中线EMA",
-	"price_vs_ema_slow":    "价格vs慢线EMA",
-	"freshness_sec":        "数据新鲜度(秒)",
+	"price_vs_ema_fast":     "价格vs快线EMA",
+	"price_vs_ema_mid":      "价格vs中线EMA",
+	"price_vs_ema_slow":     "价格vs慢线EMA",
+	"freshness_sec":         "数据新鲜度(秒)",
 	// 机制状态字段 (mechanics_state.go)
 	"oi_state":           "持仓量状态",
 	"funding_state":      "资金费率状态",
@@ -319,17 +319,22 @@ var llmKeyLabels = map[string]string{
 	"oi_change_pct":      "OI变化率",
 	"price_change_pct":   "价格变化率",
 	// 趋势结构字段 (trend_compress.go)
-	"vol_ratio":                 "成交量比率",
-	"level_price":               "关键价位",
-	"order_block":               "订单块(Order Block)",
-	"fvg":                       "公允价值缺口(FVG)",
-	"slope_state":               "斜率状态",
-	"trend_slope":               "趋势斜率",
-	"break_events":              "结构突破事件",
-	"break_summary":             "突破汇总",
-	"supertrend":                "SuperTrend指标",
-	"tag":                       "情绪标签",
+	"vol_ratio":                  "成交量比率",
+	"level_price":                "关键价位",
+	"order_block":                "订单块(Order Block)",
+	"fvg":                        "公允价值缺口(FVG)",
+	"slope_state":                "斜率状态",
+	"trend_slope":                "趋势斜率",
+	"break_events":               "结构突破事件",
+	"break_summary":              "突破汇总",
+	"supertrend":                 "SuperTrend指标",
+	"tag":                        "情绪标签",
 	"taker_long_short_vol_ratio": "主买/主卖成交量比",
+	// EMA 子字段（用于 momentum_detail 等自由文本）
+	"ema_fast":  "快线EMA",
+	"ema_mid":   "中线EMA",
+	"ema_slow":  "慢线EMA",
+	"delta_pct": "变化率",
 }
 
 var providerRoleLabels = map[string]string{
@@ -337,6 +342,62 @@ var providerRoleLabels = map[string]string{
 	"structure": "结构",
 	"mechanics": "市场机制",
 }
+
+// phraseTranslations maps multi-word English phrases to Chinese.
+// Applied before word-level replacements, longest first.
+var phraseTranslations = [][2]string{
+	{"OI increased", "持仓量上升"},
+	{"OI decreased", "持仓量下降"},
+	{"OI declined", "持仓量回落"},
+	{"OI stable", "持仓量稳定"},
+	{"funding rate negative", "资金费率为负"},
+	{"funding rate positive", "资金费率为正"},
+	{"funding rate", "资金费率"},
+	{"negative funding", "负资金费率"},
+	{"open interest", "持仓量"},
+	{"long crowding", "多头拥挤"},
+	{"short crowding", "空头拥挤"},
+	{"in 15m", "在15分钟内"},
+	{"in 1h", "在1小时内"},
+	{"in 4h", "在4小时内"},
+	{"over 4h", "4小时以上"},
+	{"over 1h", "1小时以上"},
+	{"Strong Long", "强烈看多"},
+	{"Strong Short", "强烈看空"},
+	{"Long Bias", "偏多"},
+	{"Short Bias", "偏空"},
+}
+
+// wordTranslations maps single English words to Chinese using word-boundary matching.
+var wordTranslations = map[string]string{
+	"stable":        "稳定",
+	"medium":        "中",
+	"low":           "低",
+	"high":          "高",
+	"mixed":         "混合",
+	"positive":      "正向",
+	"negative":      "负向",
+	"bullish":       "看多",
+	"bearish":       "看空",
+	"neutral":       "中性",
+	"overbought":    "超买",
+	"oversold":      "超卖",
+	"slightly":      "小幅",
+	"significantly": "大幅",
+	"versus":        "对比",
+	"but":           "但",
+	"and":           "且",
+	"increased":     "上升",
+	"decreased":     "下降",
+	"declined":      "回落",
+	"expanding":     "扩张",
+	"contracting":   "收缩",
+	"moderate":      "温和",
+	"steep":         "陡峭",
+}
+
+// tdSequentialPattern matches td_buy_setup_N / td_sell_setup_N event keys.
+var tdSequentialPattern = regexp.MustCompile(`\btd_(buy|sell)_setup_(\d+)\b`)
 
 func translateDecisionAction(action string) string {
 	upper := strings.ToUpper(strings.TrimSpace(action))
@@ -506,6 +567,168 @@ func containsHan(s string) bool {
 		}
 	}
 	return false
+}
+
+// TranslateValue translates a single enum/token value to Chinese.
+// Unlike translateTerm, it returns Chinese-only output (no English suffix).
+// Falls back to the original value if no translation exists.
+func TranslateValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+	// Check action labels (uppercase)
+	upper := strings.ToUpper(trimmed)
+	if label, ok := decisionActionLabels[upper]; ok && label != "" {
+		return label
+	}
+	// Check gate reason labels
+	if label, ok := gateReasonLabels[upper]; ok {
+		return label
+	}
+	// Check sieve reason labels
+	if label, ok := sieveReasonLabels[upper]; ok {
+		return label
+	}
+	// Check direction labels (lowercase)
+	lower := strings.ToLower(trimmed)
+	if label, ok := directionLabels[lower]; ok {
+		return label
+	}
+	// Check translated terms (lowercase)
+	if label, ok := translatedTerms[lower]; ok {
+		return label
+	}
+	// Check original case in translatedTerms (for "Strong Long" etc.)
+	if label, ok := translatedTerms[trimmed]; ok {
+		return label
+	}
+	return trimmed
+}
+
+// TranslateSentence translates a sentence containing mixed English/Chinese text.
+// It applies translations in safe order: event keys → TD Sequential → phrases → field=value → words.
+// This is the Go equivalent of render.mjs mapSentence().
+func TranslateSentence(text string) string {
+	output := strings.TrimSpace(text)
+	if output == "" {
+		return "—"
+	}
+
+	// Step 1: Replace complete event keys (exact match on token boundary).
+	for _, key := range eventKeyOrder {
+		label := translatedTerms[key]
+		if label == "" {
+			continue
+		}
+		re := regexp.MustCompile(`(?i)(?:^|[^a-zA-Z0-9_])` + regexp.QuoteMeta(key) + `(?:[^a-zA-Z0-9_]|$)`)
+		output = re.ReplaceAllStringFunc(output, func(match string) string {
+			prefix := ""
+			suffix := ""
+			for _, r := range match {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+					break
+				}
+				prefix += string(r)
+			}
+			for i := len(match) - 1; i >= 0; i-- {
+				r := rune(match[i])
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+					break
+				}
+				suffix = string(r) + suffix
+			}
+			return prefix + label + suffix
+		})
+	}
+
+	// Step 1.5: TD Sequential dynamic event keys.
+	output = tdSequentialPattern.ReplaceAllStringFunc(output, func(match string) string {
+		parts := tdSequentialPattern.FindStringSubmatch(match)
+		if len(parts) < 3 {
+			return match
+		}
+		side := "买入"
+		if parts[1] == "sell" {
+			side = "卖出"
+		}
+		return "TD" + side + "序列" + parts[2]
+	})
+
+	// Step 2: Replace multi-word phrases (longest first, already ordered).
+	for _, pair := range phraseTranslations {
+		output = strings.ReplaceAll(output, pair[0], pair[1])
+	}
+
+	// Step 3: Replace field=value and standalone field-name references.
+	output = TranslateLLMFieldRefs(output)
+
+	// Step 4: Replace standalone English words with word-boundary safety.
+	for word, label := range wordTranslations {
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`)
+		output = re.ReplaceAllString(output, label)
+	}
+
+	return output
+}
+
+// eventKeyOrder lists compound event keys that must be translated as atomic units.
+// These must be checked before any word-level translation to prevent partial replacement.
+var eventKeyOrder = []string{
+	"price_cross_ema_fast_up",
+	"price_cross_ema_fast_down",
+	"price_cross_ema_mid_up",
+	"price_cross_ema_mid_down",
+	"ema_stack_bull_flip",
+	"ema_stack_bear_flip",
+	"aroon_strong_bullish",
+	"aroon_strong_bearish",
+	// Compound mechanics conflicts (must match before individual words)
+	"crowding_long_but_liq_stress_high",
+	"crowding_short_but_liq_stress_high",
+	"funding_long_but_oi_falling",
+	"funding_short_but_oi_rising",
+	// Compound OI-price relations
+	"price_up_oi_up",
+	"price_up_oi_down",
+	"price_down_oi_up",
+	"price_down_oi_down",
+}
+
+// TranslateExecutionBlockedReason translates execution blocked reason codes to Chinese.
+func TranslateExecutionBlockedReason(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "monitor_gate":
+		return "收紧监控门槛未满足"
+	case "atr_missing":
+		return "ATR 数据缺失"
+	case "atr_gate":
+		return "ATR 门槛未满足"
+	case "atr_value_missing":
+		return "ATR 数值缺失"
+	case "score_threshold":
+		return "评分未达标"
+	case "score_parse":
+		return "评分解析失败"
+	case "risk_plan_missing":
+		return "风控计划缺失"
+	case "risk_plan_disabled":
+		return "风控更新未启用"
+	case "price_unavailable":
+		return "价格不可用"
+	case "price_source_missing":
+		return "价格源缺失"
+	case "binding_missing":
+		return "策略绑定缺失"
+	case "no_tighten_needed":
+		return "执行阶段未发现更优止损"
+	case "not_evaluated":
+		return "未完成评估"
+	case "tighten_debounce":
+		return "收紧更新冷却中"
+	default:
+		return strings.TrimSpace(reason)
+	}
 }
 
 // TranslateLLMFieldRefs replaces English field paths (e.g. cross_tf_summary.alignment=mixed)

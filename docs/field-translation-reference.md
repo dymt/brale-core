@@ -481,4 +481,4 @@ Sieve 在 Gate 允许后进一步细化决策：
 
 ---
 
-> 本文档由 Brale-Core 自动生成逻辑维护。如有字段变更，请同步更新 `internal/decision/decisionfmt/formatter_translate.go` 和 `webui/og-card-demo/render.mjs`。
+> 本文档由 Brale-Core 自动生成逻辑维护。所有业务术语翻译以 `internal/decision/decisionfmt/formatter_translate.go` 为唯一真源。`webui/og-card-demo/render.mjs` 已剥离翻译职责，仅负责排版渲染。如有字段变更，只需更新 Go 翻译文件。

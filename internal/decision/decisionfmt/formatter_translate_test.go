@@ -438,3 +438,89 @@ func TestTranslateLLMFieldRefsWithEvents(t *testing.T) {
 		})
 	}
 }
+
+func TestTranslateValue(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"action ALLOW", "ALLOW", "允许"},
+		{"action VETO", "VETO", "否决"},
+		{"action WAIT", "WAIT", "观望"},
+		{"direction long", "long", "多头"},
+		{"direction short", "short", "空头"},
+		{"enum mixed", "mixed", "信号混杂/分歧"},
+		{"enum contracting", "contracting", "波动/动能收敛"},
+		{"gate reason", "CONSENSUS_NOT_PASSED", "三路共识未通过"},
+		{"sieve reason crowded_long", "crowded_long", "多头拥挤"},
+		{"unknown passthrough", "unknown_xyz", "unknown_xyz"},
+		{"empty", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TranslateValue(tc.in)
+			if got != tc.want {
+				t.Errorf("TranslateValue(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTranslateSentence(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"empty becomes dash",
+			"",
+			"—",
+		},
+		{
+			"already Chinese passthrough",
+			"未观察到明显冲突",
+			"未观察到明显冲突",
+		},
+		{
+			"OI phrase translation",
+			"OI increased slightly in 15m",
+			"持仓量上升 小幅 在15分钟内",
+		},
+		{
+			"funding rate phrase",
+			"funding rate negative",
+			"资金费率为负",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TranslateSentence(tc.in)
+			if got != tc.want {
+				t.Errorf("TranslateSentence(%q)\n  got  = %q\n  want = %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTranslateExecutionBlockedReason(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"monitor_gate", "收紧监控门槛未满足"},
+		{"atr_missing", "ATR 数据缺失"},
+		{"score_threshold", "评分未达标"},
+		{"unknown_reason", "unknown_reason"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			got := TranslateExecutionBlockedReason(tc.in)
+			if got != tc.want {
+				t.Errorf("TranslateExecutionBlockedReason(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

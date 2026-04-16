@@ -8,28 +8,28 @@ import { buildModel, CARD_WIDTH, DEFAULT_RENDER_HEIGHT, EXPORT_SCALE, OUTPUT_WID
 function baseAgentBlocks() {
   return {
     indicator: {
-      expansion: 'range',
-      alignment: 'mixed',
-      noise: 'low',
+      expansion: '区间震荡',
+      alignment: '信号混杂/分歧',
+      noise: '低',
       momentum_detail: '动能不足。',
       conflict_detail: '暂无明显冲突。',
       movement_score: 0.72,
       movement_confidence: 0.78,
     },
     mechanics: {
-      leverage_state: 'stable',
-      crowding: 'balanced',
-      risk_level: 'low',
+      leverage_state: '稳定',
+      crowding: '多空均衡',
+      risk_level: '低',
       open_interest_context: 'OI 平稳。',
       anomaly_detail: '无明显异常。',
       movement_score: 0.7,
       movement_confidence: 0.75,
     },
     structure: {
-      regime: 'range',
-      last_break: 'unknown',
-      quality: 'clean',
-      pattern: 'unknown',
+      regime: '区间震荡',
+      last_break: '无法判断',
+      quality: '结构清晰',
+      pattern: '无法判断',
       volume_action: '量能平稳。',
       candle_reaction: 'K 线反应温和。',
       movement_score: 0.74,
@@ -43,9 +43,9 @@ function createInput(gateOverrides = {}, agentOverrides = {}) {
     symbol: 'BTCUSDT',
     raw_blocks: {
       gate: {
-        decision_action: 'WAIT',
+        decision_action: '观望',
         tradeable: false,
-        stop_step: 'direction',
+        stop_step: '方向',
         rule_name: 'DIRECTION_MISSING',
         direction_consensus: {
           score: 0.1,
@@ -57,9 +57,9 @@ function createInput(gateOverrides = {}, agentOverrides = {}) {
         },
         trace: [
           {
-            step: 'direction',
+            step: '方向',
             ok: false,
-            reason: 'DIRECTION_MISSING',
+            reason: '方向缺失',
           },
         ],
         ...gateOverrides,
@@ -96,7 +96,7 @@ async function main() {
   const shortModel = buildModel(shortInput);
   assert.equal(shortModel.sourceCard.sourceLabel, 'Gate 主流程');
   assert.equal(shortModel.sourceCard.lines[0].kind, 'danger');
-  assert.match(shortModel.sourceCard.lines[0].text, /停止步骤：清算风险检查|停止步骤：方向/);
+  assert.match(shortModel.sourceCard.lines[0].text, /停止步骤：方向/);
 
   const { result } = await renderScenario({ tmpDir, name: 'short', input: shortInput });
 
@@ -106,13 +106,13 @@ async function main() {
   );
 
   const openSuccessInput = createInput({
-    decision_action: 'OPEN_LONG',
+    decision_action: '开多',
     tradeable: true,
     stop_step: '',
     rule_name: '',
     trace: [
-      { step: 'direction', ok: true },
-      { step: 'clear_risk', ok: true },
+      { step: '方向', ok: true },
+      { step: '清算风险通过', ok: true },
     ],
     direction_consensus: {
       score: 0.76,
@@ -130,16 +130,16 @@ async function main() {
   await renderScenario({ tmpDir, name: 'open-success', input: openSuccessInput });
 
   const tightenedRiskInput = createInput({
-    decision_action: 'WAIT',
+    decision_action: '观望',
     tradeable: false,
     stop_step: '',
     rule_name: 'MECH_RISK',
-    action_before: 'OPEN_LONG',
-    sieve_action: 'WAIT',
-    sieve_reason: 'MECH_RISK',
+    action_before: '开多',
+    sieve_action: '观望',
+    sieve_reason: '清算风险过高',
     trace: [
-      { step: 'direction', ok: true },
-      { step: 'clear_risk', ok: true },
+      { step: '方向', ok: true },
+      { step: '清算风险通过', ok: true },
     ],
     direction_consensus: {
       score: 0.71,
@@ -152,8 +152,8 @@ async function main() {
   }, {
     mechanics: {
       ...baseAgentBlocks().mechanics,
-      crowding: 'crowded',
-      risk_level: 'high',
+      crowding: '拥挤',
+      risk_level: '高',
       anomaly_detail: '拥挤度抬升，风控转为保守。',
     },
   });
@@ -161,22 +161,22 @@ async function main() {
   assert.equal(tightenedRiskModel.sourceCard.sourceLabel, '风控覆写');
   assert.equal(tightenedRiskModel.sourceCard.verdictText, '不可交易');
   assert.equal(tightenedRiskModel.sourceCard.lines[0].text, '停止步骤：Gate 未中断');
-  assert.match(tightenedRiskModel.sourceCard.lines[2].text, /风控筛选：(开多|OPEN_LONG) → (观望|等待|WAIT)/);
+  assert.match(tightenedRiskModel.sourceCard.lines[2].text, /风控筛选：开多 → 观望/);
   await renderScenario({ tmpDir, name: 'tightened-risk', input: tightenedRiskInput });
 
   const tightenSkippedInput = createInput({
-    decision_action: 'TIGHTEN',
+    decision_action: '收紧',
     decision_text: '继续持仓（收紧未执行：评分未达标）',
-    direction: 'long',
+    direction: '多头',
     execution: {
       action: 'tighten',
       evaluated: true,
       executed: false,
-      blocked_by: ['score_threshold'],
+      blocked_by: ['评分未达标'],
     },
     trace: [
-      { step: 'indicator', tag: 'tighten', reason: '动能转弱' },
-      { step: 'structure', tag: 'keep', reason: '结构仍完整' },
+      { step: '指标', tag: 'tighten', reason: '动能转弱' },
+      { step: '结构', tag: 'keep', reason: '结构仍完整' },
     ],
   });
   const tightenSkippedModel = buildModel(tightenSkippedInput);
@@ -184,9 +184,9 @@ async function main() {
   assert.equal(tightenSkippedModel.sourceCard.lines[2].text, '当前仓位：多头');
 
   const tightenExecutedInput = createInput({
-    decision_action: 'TIGHTEN',
+    decision_action: '收紧',
     decision_text: '执行收紧风控',
-    direction: 'short',
+    direction: '空头',
     execution: {
       action: 'tighten',
       evaluated: true,
@@ -195,8 +195,8 @@ async function main() {
       take_profits: [2399.1, 2377.3],
     },
     trace: [
-      { step: 'indicator', tag: 'tighten', reason: '动能走弱' },
-      { step: 'mechanics', tag: 'tighten', reason: '拥挤回升' },
+      { step: '指标', tag: 'tighten', reason: '动能走弱' },
+      { step: '市场机制', tag: 'tighten', reason: '拥挤回升' },
     ],
   });
   const tightenExecutedModel = buildModel(tightenExecutedInput);
@@ -302,7 +302,7 @@ async function main() {
     card_type: 'position_open',
     symbol: 'ETHUSDT',
     data: {
-      direction: 'long',
+      direction: '多头',
       entry_price: 3456.78,
       stop_loss: 3400.00,
       take_profits: [3520.00, 3600.00],
@@ -327,12 +327,12 @@ async function main() {
     card_type: 'position_close',
     symbol: 'BTCUSDT',
     data: {
-      direction: 'short',
+      direction: '空头',
       entry_price: 68000,
       exit_price: 67200,
       profit: 800,
       profit_ratio: 0.0118,
-      exit_reason: 'take_profit',
+      exit_reason: '止盈',
       amount: 0.1,
     },
   };
@@ -351,7 +351,7 @@ async function main() {
     card_type: 'risk_update',
     symbol: 'BTCUSDT',
     data: {
-      direction: 'long',
+      direction: '多头',
       entry_price: 67000,
       mark_price: 67800,
       stop_loss: 66500,
@@ -377,14 +377,14 @@ async function main() {
     card_type: 'partial_close',
     symbol: 'BTCUSDT',
     data: {
-      direction: 'long',
+      direction: '多头',
       open_rate: 67000,
       close_rate: 68200,
       amount: 0.05,
       realized_profit: 60,
       realized_profit_ratio: 0.0179,
-      exit_reason: 'take_profit_1',
-      exit_type: 'partial',
+      exit_reason: '止盈1',
+      exit_type: '部分平仓',
     },
   };
   const partialCloseModel = buildModel(partialCloseInput);
@@ -398,58 +398,24 @@ async function main() {
   console.log('ok partial_close card test passed');
 
   // ---------- Translation regression tests ----------
-  // These verify that mapSentence never produces half-translated event keys.
+  // Since Go now pre-translates all business terms, mapSentence is a pass-through.
+  // These tests verify the pass-through behavior works correctly.
   const { mapSentence: mapSentenceFn } = await import('./render.mjs');
 
-  const translationTests = [
-    {
-      in: 'events=price_cross_ema_mid_down',
-      bad: ['price_cross_中线EMA_down', 'price_cross_中线EMA'],
-      desc: 'event key ema_mid must not be partially translated',
-    },
-    {
-      in: 'events=price_cross_ema_fast_down',
-      bad: ['price_cross_快线EMA_down', 'price_cross_快线EMA'],
-      desc: 'event key ema_fast must not be partially translated',
-    },
-    {
-      in: 'aroon_strong_bearish signal detected',
-      bad: ['aroon_strong_看空'],
-      desc: 'aroon event key must not be split by bearish→看空',
-    },
-    {
-      in: 'aroon_strong_bullish signal detected',
-      bad: ['aroon_strong_看多'],
-      desc: 'aroon event key must not be split by bullish→看多',
-    },
-    {
-      in: 'price_cross_ema_mid_down triggers entry',
-      bad: ['price_cross_中线EMA_down'],
-      desc: 'inline event key must remain whole',
-    },
-  ];
-
   if (typeof mapSentenceFn === 'function') {
-    for (const tc of translationTests) {
-      const got = mapSentenceFn(tc.in);
-      for (const bad of tc.bad) {
-        assert.ok(!got.includes(bad), `mapSentence(${JSON.stringify(tc.in)}) produced half-translated output: ${JSON.stringify(got)} (must not contain ${JSON.stringify(bad)}) — ${tc.desc}`);
-      }
-    }
+    // Pass-through should preserve Chinese text
+    const chinese = mapSentenceFn('价格上穿快线EMA');
+    assert.equal(chinese, '价格上穿快线EMA', 'mapSentence should pass through Chinese text');
 
-    // TD Sequential dynamic event translation
-    const tdBuy9 = mapSentenceFn('td_buy_setup_9');
-    assert.equal(tdBuy9, 'TD买入序列9', `td_buy_setup_9 should translate to TD买入序列9, got: ${tdBuy9}`);
-    const tdSell13 = mapSentenceFn('td_sell_setup_13');
-    assert.equal(tdSell13, 'TD卖出序列13', `td_sell_setup_13 should translate to TD卖出序列13, got: ${tdSell13}`);
+    // Pass-through should handle empty
+    const empty = mapSentenceFn('');
+    assert.equal(empty, '—', 'mapSentence should return dash for empty');
 
-    // moderate and steep value translation
-    const moderateResult = mapSentenceFn('slope is moderate');
-    assert.ok(moderateResult.includes('温和'), `moderate should translate to 温和, got: ${moderateResult}`);
-    const steepResult = mapSentenceFn('slope is steep');
-    assert.ok(steepResult.includes('陡峭'), `steep should translate to 陡峭, got: ${steepResult}`);
+    // Pass-through should preserve any remaining English (Go handles translation)
+    const english = mapSentenceFn('some untranslated text');
+    assert.equal(english, 'some untranslated text', 'mapSentence should pass through untranslated text');
 
-    console.log(`ok translation-regression: ${translationTests.length + 4} cases passed`);
+    console.log('ok translation-regression: pass-through tests passed');
   } else {
     console.log('warn: mapSentence not exported, skipping translation regression tests');
   }

@@ -51,16 +51,16 @@ func TestBuildPayloadUsesRawAgentOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPayload failed: %v", err)
 	}
-	if payload.RawBlocks.Gate.DecisionAction != "VETO" {
+	if payload.RawBlocks.Gate.DecisionAction != "否决" {
 		t.Fatalf("unexpected gate action: %s", payload.RawBlocks.Gate.DecisionAction)
 	}
-	if payload.RawBlocks.Agent.Indicator.Alignment != "mixed" {
+	if payload.RawBlocks.Agent.Indicator.Alignment != "信号混杂/分歧" {
 		t.Fatalf("unexpected indicator alignment: %s", payload.RawBlocks.Agent.Indicator.Alignment)
 	}
-	if payload.RawBlocks.Agent.Mechanics.Crowding != "long_crowded" {
+	if payload.RawBlocks.Agent.Mechanics.Crowding != "多头拥挤" {
 		t.Fatalf("unexpected mechanics crowding: %s", payload.RawBlocks.Agent.Mechanics.Crowding)
 	}
-	if payload.RawBlocks.Agent.Structure.Pattern != "head_shoulders" {
+	if payload.RawBlocks.Agent.Structure.Pattern != "头肩形态" {
 		t.Fatalf("unexpected structure pattern: %s", payload.RawBlocks.Agent.Structure.Pattern)
 	}
 	if payload.RawBlocks.Gate.Consensus == nil {
@@ -72,13 +72,13 @@ func TestBuildPayloadUsesRawAgentOutputs(t *testing.T) {
 	if payload.RawBlocks.Gate.Consensus.ConfidenceThreshold == nil || *payload.RawBlocks.Gate.Consensus.ConfidenceThreshold != 0.3 {
 		t.Fatalf("unexpected consensus confidence threshold: %+v", payload.RawBlocks.Gate.Consensus.ConfidenceThreshold)
 	}
-	if payload.RawBlocks.Gate.StopStep != "mech_risk" {
+	if payload.RawBlocks.Gate.StopStep != "清算风险过高" {
 		t.Fatalf("unexpected stop step: %s", payload.RawBlocks.Gate.StopStep)
 	}
 	if payload.RawBlocks.Gate.RuleName != "MECH_RISK" {
 		t.Fatalf("unexpected rule name: %s", payload.RawBlocks.Gate.RuleName)
 	}
-	if payload.RawBlocks.Gate.ActionBefore != "ALLOW" || payload.RawBlocks.Gate.SieveAction != "VETO" {
+	if payload.RawBlocks.Gate.ActionBefore != "允许" || payload.RawBlocks.Gate.SieveAction != "否决" {
 		t.Fatalf("unexpected sieve override: before=%s action=%s", payload.RawBlocks.Gate.ActionBefore, payload.RawBlocks.Gate.SieveAction)
 	}
 	report.Gate.Derived["execution"] = map[string]any{
@@ -102,7 +102,7 @@ func TestBuildPayloadUsesRawAgentOutputs(t *testing.T) {
 	if len(payload.RawBlocks.Gate.Trace) != 2 {
 		t.Fatalf("unexpected gate trace length: %d", len(payload.RawBlocks.Gate.Trace))
 	}
-	if payload.RawBlocks.Gate.Trace[1].Step != "mech_risk" || payload.RawBlocks.Gate.Trace[1].Reason != "MECH_RISK" || payload.RawBlocks.Gate.Trace[1].OK {
+	if payload.RawBlocks.Gate.Trace[1].Step != "清算风险过高" || payload.RawBlocks.Gate.Trace[1].Reason != "清算风险过高" || payload.RawBlocks.Gate.Trace[1].OK {
 		t.Fatalf("unexpected second trace step: %+v", payload.RawBlocks.Gate.Trace[1])
 	}
 }

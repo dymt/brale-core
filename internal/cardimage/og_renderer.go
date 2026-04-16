@@ -43,29 +43,29 @@ type ogRawBlocks struct {
 }
 
 type ogGate struct {
-	DecisionAction string                `json:"decision_action"`
-	DecisionText   string                `json:"decision_text"`
-	Direction      string                `json:"direction"`
-	Grade          int                   `json:"grade"`
-	Reason         string                `json:"reason"`
-	ReasonCode     string                `json:"reason_code"`
-	Tradeable      bool                  `json:"tradeable"`
-	StopStep       string                `json:"stop_step,omitempty"`
-	RuleName       string                `json:"rule_name,omitempty"`
-	ActionBefore   string                `json:"action_before,omitempty"`
-	SieveAction    string                `json:"sieve_action,omitempty"`
-	SieveReason    string                `json:"sieve_reason,omitempty"`
-	Execution      map[string]any        `json:"execution,omitempty"`
-	Consensus      *ogDirectionConsensus `json:"direction_consensus,omitempty"`
-	Trace          []ogGateTraceStep     `json:"trace,omitempty"`
-	SetupQuality   float64               `json:"setup_quality,omitempty"`
-	RiskPenalty    float64               `json:"risk_penalty,omitempty"`
-	EntryEdge      float64               `json:"entry_edge,omitempty"`
-	QualityThreshold float64             `json:"quality_threshold,omitempty"`
-	EdgeThreshold    float64             `json:"edge_threshold,omitempty"`
-	ScriptName     string                `json:"script_name,omitempty"`
-	ScriptBonus    float64               `json:"script_bonus,omitempty"`
-	ReasonCategory string                `json:"reason_category,omitempty"`
+	DecisionAction   string                `json:"decision_action"`
+	DecisionText     string                `json:"decision_text"`
+	Direction        string                `json:"direction"`
+	Grade            int                   `json:"grade"`
+	Reason           string                `json:"reason"`
+	ReasonCode       string                `json:"reason_code"`
+	Tradeable        bool                  `json:"tradeable"`
+	StopStep         string                `json:"stop_step,omitempty"`
+	RuleName         string                `json:"rule_name,omitempty"`
+	ActionBefore     string                `json:"action_before,omitempty"`
+	SieveAction      string                `json:"sieve_action,omitempty"`
+	SieveReason      string                `json:"sieve_reason,omitempty"`
+	Execution        map[string]any        `json:"execution,omitempty"`
+	Consensus        *ogDirectionConsensus `json:"direction_consensus,omitempty"`
+	Trace            []ogGateTraceStep     `json:"trace,omitempty"`
+	SetupQuality     float64               `json:"setup_quality,omitempty"`
+	RiskPenalty      float64               `json:"risk_penalty,omitempty"`
+	EntryEdge        float64               `json:"entry_edge,omitempty"`
+	QualityThreshold float64               `json:"quality_threshold,omitempty"`
+	EdgeThreshold    float64               `json:"edge_threshold,omitempty"`
+	ScriptName       string                `json:"script_name,omitempty"`
+	ScriptBonus      float64               `json:"script_bonus,omitempty"`
+	ReasonCategory   string                `json:"reason_category,omitempty"`
 }
 
 type ogGateTraceStep struct {
@@ -210,6 +210,7 @@ func (r *OGRenderer) RenderCard(ctx context.Context, cardType string, symbol str
 	if _, err := os.Stat(r.script); err != nil {
 		return nil, fmt.Errorf("og render script unavailable: %w", err)
 	}
+	translateCardData(data)
 	payload := map[string]any{
 		"card_type": strings.TrimSpace(cardType),
 		"symbol":    strings.TrimSpace(symbol),
@@ -347,7 +348,92 @@ func buildPayload(input decisionfmt.DecisionInput, report decisionfmt.DecisionRe
 			}
 		}
 	}
+	translatePayload(&payload)
 	return payload, nil
+}
+
+// translatePayload pre-translates all English enum values and free-text fields
+// in the OG payload to Chinese. After this, Node render.mjs only does layout.
+func translatePayload(p *ogPayload) {
+	tr := decisionfmt.TranslateValue
+	ts := decisionfmt.TranslateSentence
+
+	// Gate-level fields
+	g := &p.RawBlocks.Gate
+	g.DecisionAction = tr(g.DecisionAction)
+	g.Direction = tr(g.Direction)
+	g.Reason = ts(g.Reason)
+	g.ReasonCode = tr(g.ReasonCode)
+	g.StopStep = tr(g.StopStep)
+	g.ActionBefore = tr(g.ActionBefore)
+	g.SieveAction = tr(g.SieveAction)
+	g.SieveReason = ts(g.SieveReason)
+	g.ReasonCategory = tr(g.ReasonCategory)
+	if g.Execution != nil {
+		if reason, ok := g.Execution["blocked_reason"]; ok {
+			if rs, ok := reason.(string); ok {
+				g.Execution["blocked_reason"] = decisionfmt.TranslateExecutionBlockedReason(rs)
+			}
+		}
+	}
+
+	// Gate trace steps
+	for i := range g.Trace {
+		g.Trace[i].Step = tr(g.Trace[i].Step)
+		g.Trace[i].Reason = tr(g.Trace[i].Reason)
+	}
+
+	// Indicator agent
+	ind := &p.RawBlocks.Agent.Indicator
+	ind.Expansion = tr(ind.Expansion)
+	ind.Alignment = tr(ind.Alignment)
+	ind.Noise = tr(ind.Noise)
+	ind.MomentumDetail = ts(ind.MomentumDetail)
+	ind.ConflictDetail = ts(ind.ConflictDetail)
+
+	// Mechanics agent
+	mech := &p.RawBlocks.Agent.Mechanics
+	mech.LeverageState = tr(mech.LeverageState)
+	mech.Crowding = tr(mech.Crowding)
+	mech.RiskLevel = tr(mech.RiskLevel)
+	mech.OpenInterestCtx = ts(mech.OpenInterestCtx)
+	mech.AnomalyDetail = ts(mech.AnomalyDetail)
+
+	// Structure agent
+	str := &p.RawBlocks.Agent.Structure
+	str.Regime = tr(str.Regime)
+	str.LastBreak = tr(str.LastBreak)
+	str.Quality = tr(str.Quality)
+	str.Pattern = tr(str.Pattern)
+	str.VolumeAction = ts(str.VolumeAction)
+	str.CandleReaction = ts(str.CandleReaction)
+}
+
+// translateCardData translates known English fields in non-decision card data maps
+// (position_open, position_close, risk_update, partial_close, etc.)
+func translateCardData(data map[string]any) {
+	if data == nil {
+		return
+	}
+	tr := decisionfmt.TranslateValue
+	// Translate known enum fields
+	for _, key := range []string{"direction", "exit_reason", "exit_type", "stop_reason", "tighten_reason", "reason"} {
+		if v, ok := data[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				data[key] = tr(s)
+			}
+		}
+	}
+	// Translate blocked_by list if present
+	if blocked, ok := data["blocked_by"]; ok {
+		if list, ok := blocked.([]any); ok {
+			for i, item := range list {
+				if s, ok := item.(string); ok {
+					list[i] = decisionfmt.TranslateExecutionBlockedReason(s)
+				}
+			}
+		}
+	}
 }
 
 func readDerivedMap(derived map[string]any, key string) map[string]any {

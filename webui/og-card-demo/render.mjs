@@ -23,342 +23,22 @@ const PAPER_TEXTURE_DATA_URI = "data:image/svg+xml,%3Csvg viewBox='0 0 200 200' 
 
 const h = React.createElement;
 
-const valueMap = new Map([
-  ['ALLOW', '通过'],
-  ['allow', '通过'],
-  ['WAIT', '等待'],
-  ['wait', '等待'],
-  ['VETO', '否决'],
-  ['veto', '否决'],
-  ['none', '无方向'],
-  ['CONSENSUS_NOT_PASSED', '三路共识未通过'],
-  ['DIRECTION_UNCLEAR', '方向不明确'],
-  ['DIRECTION_MISSING', '方向缺失'],
-  ['DATA_MISSING', '数据不足'],
-  ['STRUCT_BREAK', '结构失效'],
-  ['STRUCT_HARD_INVALIDATION', '结构硬失效'],
-  ['MECH_RISK', '清算风险过高'],
-  ['LIQUIDATION_CASCADE', '连锁清算风险'],
-  ['INDICATOR_NOISE', '指标噪音'],
-  ['INDICATOR_MIXED', '指标混乱'],
-  ['QUALITY_TOO_LOW', '建仓质量不足'],
-  ['EDGE_TOO_LOW', '执行价值不足'],
-  ['ALLOW', '通过'],
-  ['PASS_STRONG', '强通过'],
-  ['SIEVE_POLICY', '风控覆写'],
-  ['GATE_MISSING', 'Gate 事件缺失'],
-  ['direction', '方向'],
-  ['data', '数据完整性'],
-  ['structure', '结构完整性'],
-  ['liquidation_cascade', '清算风险检查'],
-  ['quality', '建仓质量'],
-  ['edge', '执行价值'],
-  ['mech_risk', '清算风险检查'],
-  ['indicator_noise', '指标噪音'],
-  ['structure_clear', '结构清晰度'],
-  ['tag_consistency', '标签一致性'],
-  ['script_select', '脚本选择'],
-  ['script_allowed', '脚本条件'],
-  ['gate_allow', 'Gate 放行'],
-  ['indicator', '指标'],
-  ['mechanics', '市场机制'],
-  ['trend_up', '上行趋势'],
-  ['trend_down', '下行趋势'],
-  ['contracting', '收敛'],
-  ['expanding', '扩张'],
-  ['aligned', '一致'],
-  ['divergent', '分歧'],
-  ['mixed', '混合/分歧'],
-  ['messy', '结构杂乱'],
-  ['clean', '结构清晰'],
-  ['unclear', '不明确'],
-  ['unknown', '无法判断'],
-  ['low', '低'],
-  ['divergence_reversal', '背离反转风险'],
-  ['pullback_entry', '回踩入场'],
-  ['trend_surge', '趋势加速'],
-  ['momentum_weak', '动能偏弱'],
-  ['neutral', '中性/无明显倾向'],
-  ['fuel_ready', '条件具备'],
-  ['stable', '稳定'],
-  ['increasing', '杠杆升温'],
-  ['overheated', '过热'],
-  ['balanced', '多空均衡'],
-  ['long_crowded', '多头拥挤'],
-  ['crowded_long', '多头拥挤'],
-  ['short_crowded', '空头拥挤'],
-  ['crowded_short', '空头拥挤'],
-  ['liquidation_cascade', '连环清算风险'],
-  ['breakout_confirmed', '突破确认'],
-  ['support_retest', '回踩确认'],
-  ['fakeout_rejection', '假突破回落'],
-  ['structure_broken', '结构失效'],
-  ['bos_up', '向上突破(BOS)'],
-  ['bos_down', '向下突破(BOS)'],
-  ['choch_up', '向上转折(CHoCH)'],
-  ['choch_down', '向下转折(CHoCH)'],
-  ['double_top', '双顶形态'],
-  ['double_bottom', '双底形态'],
-  ['head_shoulders', '头肩形态'],
-  ['inv_head_shoulders', '反头肩形态'],
-  ['triangle_sym', '对称三角形'],
-  ['triangle_asc', '上升三角形'],
-  ['triangle_desc', '下降三角形'],
-  ['wedge_rising', '上升楔形'],
-  ['wedge_falling', '下降楔形'],
-  ['flag', '旗形整理'],
-  ['pennant', '三角旗形'],
-  ['channel_up', '上行通道'],
-  ['channel_down', '下行通道'],
-  ['medium', '中'],
-  ['high', '高'],
-  ['range', '区间震荡'],
-  ['否决', '否决'],
-  // 指标引擎状态值 (indicator_state.go)
-  ['above', '上方'],
-  ['below', '下方'],
-  ['near', '附近'],
-  ['bull', '多头排列'],
-  ['bear', '空头排列'],
-  ['rising', '上升'],
-  ['falling', '下降'],
-  ['flat', '走平'],
-  ['up', '上行'],
-  ['down', '下行'],
-  ['below_lower', '低于下轨'],
-  ['near_lower', '靠近下轨'],
-  ['mid', '中轨区间'],
-  ['near_upper', '靠近上轨'],
-  ['above_upper', '突破上轨'],
-  ['squeeze', '挤压收窄'],
-  ['normal', '正常'],
-  ['wide', '宽幅'],
-  ['trending', '趋势行情'],
-  ['choppy', '震荡行情'],
-  ['transition', '过渡阶段'],
-  ['strong_up', '强势上行'],
-  ['strong_down', '强势下行'],
-  ['crossover', '交叉'],
-  ['conflict', '冲突/分歧'],
-  ['long', '多头方向'],
-  ['short', '空头方向'],
-  // OI-价格关系 (mechanics_state.go)
-  ['price_up_oi_up', '价格上涨/OI上升'],
-  ['price_up_oi_down', '价格上涨/OI下降'],
-  ['price_down_oi_up', '价格下跌/OI上升'],
-  ['price_down_oi_down', '价格下跌/OI下降'],
-  // 情绪状态 (mechanics_state.go)
-  ['fear', '恐惧'],
-  ['greed', '贪婪'],
-  ['extreme_greed', '极度贪婪'],
-  // 资金费率热度 / 清算压力
-  ['hot', '过热'],
-  ['elevated', '偏高'],
-  // 机制冲突
-  ['crowding_long_but_liq_stress_high', '多头拥挤但清算压力高'],
-  ['crowding_short_but_liq_stress_high', '空头拥挤但清算压力高'],
-  ['funding_long_but_oi_falling', '资金费率偏多但OI下降'],
-  ['funding_short_but_oi_rising', '资金费率偏空但OI上升'],
-  // 结构突破事件
-  ['break_up', '向上突破'],
-  ['break_down', '向下突破'],
-  // SuperTrend / 情绪标签
-  ['bullish', '看多'],
-  ['bearish', '看空'],
-  // 斜率幅度
-  ['moderate', '温和'],
-  ['steep', '陡峭'],
-]);
-
 // ---------------------------------------------------------------------------
-// Event key translation: complete event keys must be translated as whole units.
-// NEVER do substring replacement that could turn "aroon_strong_bearish" into
-// "aroon_strong_看空" or "price_cross_ema_mid_down" into "price_cross_中线EMA_down".
+// Translation is now performed by Go (formatter_translate.go) before the
+// payload reaches this script. mapValue / mapSentence are thin pass-throughs
+// that preserve pre-translated Chinese text. See docs/field-translation-reference.md.
 // ---------------------------------------------------------------------------
-const eventKeyMap = new Map([
-  ['price_cross_ema_fast_up', '价格上穿快线EMA'],
-  ['price_cross_ema_fast_down', '价格下穿快线EMA'],
-  ['price_cross_ema_mid_up', '价格上穿中线EMA'],
-  ['price_cross_ema_mid_down', '价格下穿中线EMA'],
-  ['ema_stack_bull_flip', 'EMA转为多头排列'],
-  ['ema_stack_bear_flip', 'EMA转为空头排列'],
-  ['aroon_strong_bullish', '阿隆指标强势看多'],
-  ['aroon_strong_bearish', '阿隆指标强势看空'],
-]);
 
-// Multi-word phrases: matched as complete phrases only, longest first.
-const phraseMap = new Map([
-  ['OI increased', '持仓量上升'],
-  ['OI decreased', '持仓量下降'],
-  ['OI declined', '持仓量回落'],
-  ['OI stable', '持仓量稳定'],
-  ['funding rate negative', '资金费率为负'],
-  ['funding rate positive', '资金费率为正'],
-  ['funding rate', '资金费率'],
-  ['negative funding', '负资金费率'],
-  ['open interest', '持仓量'],
-  ['long crowding', '多头拥挤'],
-  ['short crowding', '空头拥挤'],
-  ['in 15m', '在15分钟内'],
-  ['in 1h', '在1小时内'],
-  ['in 4h', '在4小时内'],
-  ['over 4h', '4小时以上'],
-  ['over 1h', '1小时以上'],
-  // 情绪标签 (sentiment_service.go)
-  ['Strong Long', '强烈看多'],
-  ['Strong Short', '强烈看空'],
-  ['Long Bias', '偏多'],
-  ['Short Bias', '偏空'],
-]);
-
-// Word-level translations: applied with word-boundary matching only.
-// Keys must be single tokens (no spaces). Matched as \bKEY\b.
-const wordMap = new Map([
-  ['stable', '稳定'],
-  ['medium', '中'],
-  ['low', '低'],
-  ['high', '高'],
-  ['mixed', '混合'],
-  ['positive', '正向'],
-  ['negative', '负向'],
-  ['bullish', '看多'],
-  ['bearish', '看空'],
-  ['neutral', '中性'],
-  ['overbought', '超买'],
-  ['oversold', '超卖'],
-  ['slightly', '小幅'],
-  ['significantly', '大幅'],
-  ['versus', '对比'],
-  ['but', '但'],
-  ['and', '且'],
-  ['increased', '上升'],
-  ['decreased', '下降'],
-  ['declined', '回落'],
-  ['expanding', '扩张'],
-  ['contracting', '收缩'],
-  ['moderate', '温和'],
-  ['steep', '陡峭'],
-]);
-
-// Field-name translations: only for exact field=value or standalone field tokens.
-const fieldNameMap = new Map([
-  ['ema_fast', '快线EMA'],
-  ['ema_mid', '中线EMA'],
-  ['ema_slow', '慢线EMA'],
-  ['delta_pct', '变化率'],
-  ['fear_greed', '恐贪指数'],
-  ['cross_tf_summary', '跨周期汇总'],
-  ['decision_tf_bias', '决策周期偏向'],
-  ['lower_tf_agreement', '低周期一致性'],
-  ['higher_tf_agreement', '高周期一致性'],
-  ['movement_score', '方向分数'],
-  ['movement_confidence', '方向置信度'],
-  ['rsi_zone', 'RSI区间'],
-  ['bb_zone', '布林带区间'],
-  ['chop_regime', '震荡指数状态'],
-  ['ema_stack', 'EMA排列'],
-  ['atr_expand_state', 'ATR扩张状态'],
-  ['events', '事件'],
-  ['BB', '布林带'],
-  ['CHOP', '震荡指数'],
-  ['Aroon', '阿隆指标'],
-  ['StochRSI', '随机RSI'],
-  // 机制状态字段 (mechanics_state.go)
-  ['oi_state', '持仓量状态'],
-  ['funding_state', '资金费率状态'],
-  ['crowding_state', '拥挤度状态'],
-  ['liquidation_state', '清算状态'],
-  ['sentiment_state', '市场情绪'],
-  ['mechanics_conflict', '机制冲突'],
-  ['oi_price_relation', 'OI-价格关系'],
-  ['change_state', '变化状态'],
-  ['top_trader_bias', '大户偏向'],
-  ['reversal_risk', '反转风险'],
-  ['stress', '清算压力'],
-  ['heat', '资金费率热度'],
-  ['ls_ratio', '多空比'],
-  ['taker_ratio', '主动买卖比'],
-  ['oi_change_pct', 'OI变化率'],
-  ['price_change_pct', '价格变化率'],
-  // 趋势结构字段 (trend_compress.go)
-  ['vol_ratio', '成交量比率'],
-  ['level_price', '关键价位'],
-  ['order_block', '订单块'],
-  ['fvg', '公允价值缺口'],
-  ['slope_state', '斜率状态'],
-  ['trend_slope', '趋势斜率'],
-  ['break_events', '结构突破事件'],
-  ['break_summary', '突破汇总'],
-  ['supertrend', 'SuperTrend指标'],
-  ['tag', '情绪标签'],
-  ['taker_long_short_vol_ratio', '主买/主卖成交量比'],
-  // 指标状态字段 (indicator_state.go)
-  ['rsi_slope_state', 'RSI斜率状态'],
-  ['obv_slope_state', 'OBV斜率状态'],
-  ['stc_state', 'STC状态'],
-  ['stoch_rsi_zone', '随机RSI区间'],
-  ['bb_width_state', '布林带宽度状态'],
-  ['price_vs_ema_fast', '价格vs快线EMA'],
-  ['price_vs_ema_mid', '价格vs中线EMA'],
-  ['price_vs_ema_slow', '价格vs慢线EMA'],
-  ['ema_distance_fast_atr', '快线EMA距离(ATR)'],
-  ['ema_distance_mid_atr', '中线EMA距离(ATR)'],
-]);
-
+/** Pass-through: Go already translated enum values before calling render. */
 function mapValue(value) {
   const key = String(value ?? '').trim();
-  if (!key) return '';
-  return valueMap.get(key) ?? valueMap.get(key.toLowerCase()) ?? key;
+  return key || '';
 }
 
-// Token-safe sentence translation.
-// Order: (1) event keys, (2) multi-word phrases, (3) field=value refs, (4) word-boundary words.
+/** Pass-through: Go already translated free-text sentences before calling render. */
 function mapSentence(text) {
   let output = String(text ?? '').trim();
-  if (!output) return '—';
-
-  // Step 1: Replace complete event keys (exact match on token boundary).
-  for (const [key, label] of eventKeyMap.entries()) {
-    const re = new RegExp('(?<![a-zA-Z0-9_])' + escapeRegex(key) + '(?![a-zA-Z0-9_])', 'g');
-    output = output.replace(re, label);
-  }
-
-  // Step 1.5: TD Sequential dynamic event keys (td_buy_setup_8..13, td_sell_setup_8..13).
-  output = output.replace(/\btd_(buy|sell)_setup_(\d+)\b/g, (_m, side, n) => {
-    const sideCN = side === 'buy' ? '买入' : '卖出';
-    return `TD${sideCN}序列${n}`;
-  });
-
-  // Step 2: Replace multi-word phrases (order: longest first, already ordered).
-  for (const [phrase, label] of phraseMap.entries()) {
-    output = output.replaceAll(phrase, label);
-  }
-
-  // Step 3: Replace field=value and standalone field-name references.
-  // Match patterns like "field_name=value" or "field_name " at word boundaries.
-  output = output.replace(/(?<![a-zA-Z0-9_])([a-zA-Z][a-zA-Z0-9_]*)(?:=([^\s,;，；]+))?(?![a-zA-Z0-9_])/g,
-    (match, fieldPart, valuePart) => {
-      const fieldLabel = fieldNameMap.get(fieldPart);
-      if (valuePart !== undefined) {
-        // field=value pattern
-        const fld = fieldLabel ?? fieldPart;
-        const val = eventKeyMap.get(valuePart) ?? valueMap.get(valuePart) ?? valueMap.get(valuePart.toLowerCase()) ?? valuePart;
-        return fld + '=' + val;
-      }
-      if (fieldLabel) {
-        return fieldLabel;
-      }
-      return match;
-    }
-  );
-
-  // Step 4: Replace standalone English words with word-boundary safety.
-  for (const [word, label] of wordMap.entries()) {
-    const re = new RegExp('\\b' + escapeRegex(word) + '\\b', 'g');
-    output = output.replace(re, label);
-  }
-
-  return output;
+  return output || '—';
 }
 
 function escapeRegex(str) {
@@ -405,39 +85,9 @@ function trimFloat(value, digits = 4) {
   return n.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
 }
 
+/** Pass-through: Go already translates execution blocked reasons. */
 function translateExecutionBlockedReason(reason) {
-  switch (String(reason ?? '').trim().toLowerCase()) {
-    case 'monitor_gate':
-      return '收紧监控门槛未满足';
-    case 'atr_missing':
-      return 'ATR 数据缺失';
-    case 'atr_gate':
-      return 'ATR 门槛未满足';
-    case 'atr_value_missing':
-      return 'ATR 数值缺失';
-    case 'score_threshold':
-      return '评分未达标';
-    case 'score_parse':
-      return '评分解析失败';
-    case 'risk_plan_missing':
-      return '风控计划缺失';
-    case 'risk_plan_disabled':
-      return '风控更新未启用';
-    case 'price_unavailable':
-      return '价格不可用';
-    case 'price_source_missing':
-      return '价格源缺失';
-    case 'binding_missing':
-      return '策略绑定缺失';
-    case 'no_tighten_needed':
-      return '执行阶段未发现更优止损';
-    case 'not_evaluated':
-      return '未完成评估';
-    case 'tighten_debounce':
-      return '收紧更新冷却中';
-    default:
-      return String(reason ?? '').trim();
-  }
+  return String(reason ?? '').trim();
 }
 
 function formatPositionDirection(direction) {
@@ -780,7 +430,7 @@ function buildDecisionModel(raw) {
   const sieveOutcome = String(sieveAction || finalDecision || '').trim().toUpperCase();
   const sieveChanged = Boolean(sieveTriggered && actionBefore && sieveOutcome && actionBefore.toUpperCase() !== sieveOutcome);
 
-  const sourceLabel = (sieveTriggered && (finalDecision === 'VETO' || sieveChanged))
+  const sourceLabel = (sieveTriggered && (finalDecision === 'VETO' || finalDecision === '否决' || sieveChanged))
     ? '风控覆写'
     : failedTrace
       ? 'Gate 主流程'
@@ -946,7 +596,7 @@ function buildPositionOpenModel(raw) {
   const d = raw?.data ?? {};
   const symbol = normalizeBaseSymbol(raw?.symbol || 'UNKNOWN');
   const direction = String(d.direction || '-').trim();
-  const directionCN = direction === 'long' ? '做多' : direction === 'short' ? '做空' : direction;
+  const directionCN = ['long', '多头', '多头方向'].includes(direction.toLowerCase()) ? '做多' : ['short', '空头', '空头方向'].includes(direction.toLowerCase()) ? '做空' : direction;
   const entryPrice = parseNumber(d.entry_price, 0);
   const stopPrice = parseNumber(d.stop_price, 0);
   const riskPct = parseNumber(d.risk_pct, 0);
@@ -999,7 +649,7 @@ function buildPositionCloseModel(raw) {
   const d = raw?.data ?? {};
   const symbol = normalizeBaseSymbol(raw?.symbol || 'UNKNOWN');
   const direction = String(d.direction || '-').trim();
-  const directionCN = direction === 'long' ? '做多' : direction === 'short' ? '做空' : direction;
+  const directionCN = ['long', '多头', '多头方向'].includes(direction.toLowerCase()) ? '做多' : ['short', '空头', '空头方向'].includes(direction.toLowerCase()) ? '做空' : direction;
   const closeType = String(d.close_type || 'full').trim();
   const isFullClose = closeType === 'full';
   const entryPrice = parseNumber(d.entry_price, 0);
@@ -1064,7 +714,7 @@ function buildRiskUpdateModel(raw) {
   const d = raw?.data ?? {};
   const symbol = normalizeBaseSymbol(raw?.symbol || 'UNKNOWN');
   const direction = String(d.direction || '-').trim();
-  const directionCN = direction === 'long' ? '做多' : direction === 'short' ? '做空' : direction;
+  const directionCN = ['long', '多头', '多头方向'].includes(direction.toLowerCase()) ? '做多' : ['short', '空头', '空头方向'].includes(direction.toLowerCase()) ? '做空' : direction;
   const entryPrice = parseNumber(d.entry_price, 0);
   const oldStop = parseNumber(d.old_stop, 0);
   const newStop = parseNumber(d.new_stop, 0);
@@ -1187,7 +837,7 @@ function buildPartialCloseModel(raw) {
   const d = raw?.data ?? {};
   const symbol = normalizeBaseSymbol(raw?.symbol || 'UNKNOWN');
   const direction = String(d.direction || '-').trim();
-  const directionCN = direction === 'long' ? '做多' : direction === 'short' ? '做空' : direction;
+  const directionCN = ['long', '多头', '多头方向'].includes(direction.toLowerCase()) ? '做多' : ['short', '空头', '空头方向'].includes(direction.toLowerCase()) ? '做空' : direction;
   const openRate = parseNumber(d.open_rate, 0);
   const closeRate = parseNumber(d.close_rate, 0);
   const amount = parseNumber(d.amount, 0);
