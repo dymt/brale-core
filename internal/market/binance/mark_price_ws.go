@@ -37,10 +37,12 @@ type MarkPriceStream struct {
 	mu     sync.RWMutex
 	quotes map[string]market.PriceQuote
 
-	ctrlMu  sync.Mutex
-	stopCh  chan struct{}
-	cancel  context.CancelFunc
-	running atomic.Bool
+	ctrlMu    sync.Mutex
+	stopCh    chan struct{}
+	cancel    context.CancelFunc
+	runID     atomic.Uint64
+	running   atomic.Bool
+	connected atomic.Bool
 }
 
 func NewMarkPriceStream(opts MarkPriceStreamOptions) *MarkPriceStream {
@@ -66,6 +68,8 @@ func (s *MarkPriceStream) Start(ctx context.Context) error {
 	if s.running.Swap(true) {
 		return nil
 	}
+	runID := s.nextRunID()
+	s.setConnected(runID, false)
 	baseCtx := ctx
 	if baseCtx == nil {
 		baseCtx = context.Background()
@@ -73,13 +77,14 @@ func (s *MarkPriceStream) Start(ctx context.Context) error {
 	logger := logging.FromContext(baseCtx)
 	streamCtx, cancel := context.WithCancel(baseCtx)
 	streamCtx = logging.WithLogger(streamCtx, logger)
+	stopCh := make(chan struct{})
 
 	s.ctrlMu.Lock()
-	s.stopCh = make(chan struct{})
+	s.stopCh = stopCh
 	s.cancel = cancel
 	s.ctrlMu.Unlock()
 
-	go s.run(streamCtx)
+	go s.run(streamCtx, runID, stopCh)
 	return nil
 }
 
@@ -90,6 +95,7 @@ func (s *MarkPriceStream) Close() {
 	if !s.running.Swap(false) {
 		return
 	}
+	s.connected.Store(false)
 	s.ctrlMu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
@@ -128,7 +134,7 @@ func (s *MarkPriceStream) MarkPrice(ctx context.Context, symbol string) (market.
 	return quote, nil
 }
 
-func (s *MarkPriceStream) run(ctx context.Context) {
+func (s *MarkPriceStream) run(ctx context.Context, runID uint64, stopCh <-chan struct{}) {
 	logger := logging.FromContext(ctx).Named("market")
 	defer logger.Info("mark price ws stopped")
 	backoff := time.Second
@@ -136,15 +142,17 @@ func (s *MarkPriceStream) run(ctx context.Context) {
 	retrying := false
 	for {
 		if !s.running.Load() {
+			s.setConnected(runID, false)
 			return
 		}
 		doneC, stopC, err := s.serve(ctx)
 		if err != nil {
+			s.setConnected(runID, false)
 			logger.Warn("mark price ws start failed", zap.Error(err))
 			if connectedOnce {
 				retrying = true
 			}
-			if !s.waitRetry(ctx, backoff) {
+			if !s.waitRetry(ctx, stopCh, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
@@ -153,22 +161,26 @@ func (s *MarkPriceStream) run(ctx context.Context) {
 		if retrying {
 			logger.Info("mark price ws reconnected")
 		}
+		s.setConnected(runID, true)
 		connectedOnce = true
 		retrying = false
 		backoff = time.Second
 		logger.Info("mark price ws connected")
 		select {
 		case <-ctx.Done():
+			s.setConnected(runID, false)
 			signalMarkPriceStop(doneC, stopC)
 			return
-		case <-s.stopCh:
+		case <-stopCh:
+			s.setConnected(runID, false)
 			signalMarkPriceStop(doneC, stopC)
 			return
 		case <-doneC:
+			s.setConnected(runID, false)
 			if connectedOnce {
 				retrying = true
 			}
-			if !s.waitRetry(ctx, backoff) {
+			if !s.waitRetry(ctx, stopCh, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
@@ -258,13 +270,13 @@ func (s *MarkPriceStream) handleEvent(event *futures.WsMarkPriceEvent) {
 	s.mu.Unlock()
 }
 
-func (s *MarkPriceStream) waitRetry(ctx context.Context, backoff time.Duration) bool {
+func (s *MarkPriceStream) waitRetry(ctx context.Context, stopCh <-chan struct{}, backoff time.Duration) bool {
 	timer := time.NewTimer(backoff)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return false
-	case <-s.stopCh:
+	case <-stopCh:
 		return false
 	case <-timer.C:
 		return true
@@ -297,6 +309,37 @@ func quoteIsFresh(quote market.PriceQuote, now time.Time) bool {
 	return now.Sub(time.UnixMilli(quote.Timestamp)) <= defaultMarkPriceMaxAge
 }
 
+// StreamStatus returns the current stream health for a symbol.
+// Implements market.PriceStreamInspector.
+func (s *MarkPriceStream) StreamStatus(symbol string) (market.StreamStatus, bool) {
+	if s == nil {
+		return market.StreamStatus{}, false
+	}
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return market.StreamStatus{}, false
+	}
+	now := time.Now()
+	s.mu.RLock()
+	quote, ok := s.quotes[symbol]
+	s.mu.RUnlock()
+	if !ok || quote.Price <= 0 || quote.Timestamp <= 0 {
+		return market.StreamStatus{}, false
+	}
+
+	status := market.StreamStatus{
+		Symbol:    symbol,
+		Source:    "binance_mark_price_ws",
+		Connected: s.connected.Load(),
+	}
+	ts := time.UnixMilli(quote.Timestamp)
+	status.LastPrice = quote.Price
+	status.LastPriceTS = ts
+	status.AgeMs = now.Sub(ts).Milliseconds()
+	status.Fresh = quoteIsFresh(quote, now)
+	return status, true
+}
+
 func normalizeSymbols(symbols []string) []string {
 	if len(symbols) == 0 {
 		return nil
@@ -315,4 +358,21 @@ func normalizeSymbols(symbols []string) []string {
 		out = append(out, sym)
 	}
 	return out
+}
+
+func (s *MarkPriceStream) nextRunID() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.runID.Add(1)
+}
+
+func (s *MarkPriceStream) setConnected(runID uint64, connected bool) {
+	if s == nil || runID == 0 {
+		return
+	}
+	if s.runID.Load() != runID {
+		return
+	}
+	s.connected.Store(connected)
 }

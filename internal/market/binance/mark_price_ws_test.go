@@ -192,3 +192,100 @@ func TestHandleEventAcceptsLargeMoveWhenPreviousQuoteIsStale(t *testing.T) {
 		t.Fatalf("price=%v want 140 after replacing stale quote", quote.Price)
 	}
 }
+
+func TestStreamStatusReturnsNotFoundWithoutQuote(t *testing.T) {
+	t.Parallel()
+
+	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	if _, found := stream.StreamStatus("BTCUSDT"); found {
+		t.Fatal("StreamStatus() found=true, want false when no quote has been cached")
+	}
+}
+
+func TestStreamStatusSeparatesRunningFromConnection(t *testing.T) {
+	t.Parallel()
+
+	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream.running.Store(true)
+	stream.mu.Lock()
+	stream.quotes["BTCUSDT"] = market.PriceQuote{
+		Symbol:    "BTCUSDT",
+		Price:     101,
+		Timestamp: time.Now().UnixMilli(),
+		Source:    "test",
+	}
+	stream.mu.Unlock()
+
+	status, found := stream.StreamStatus("BTCUSDT")
+	if !found {
+		t.Fatal("StreamStatus() found=false, want true when a fresh quote exists")
+	}
+	if status.Connected {
+		t.Fatalf("Connected=%v want false before websocket connection is established", status.Connected)
+	}
+}
+
+func TestStreamStatusReportsConnectedFreshQuote(t *testing.T) {
+	t.Parallel()
+
+	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream.running.Store(true)
+	stream.connected.Store(true)
+	stream.mu.Lock()
+	stream.quotes["BTCUSDT"] = market.PriceQuote{
+		Symbol:    "BTCUSDT",
+		Price:     102,
+		Timestamp: time.Now().UnixMilli(),
+		Source:    "test",
+	}
+	stream.mu.Unlock()
+
+	status, found := stream.StreamStatus("BTCUSDT")
+	if !found {
+		t.Fatal("StreamStatus() found=false, want true when a fresh quote exists")
+	}
+	if !status.Connected {
+		t.Fatal("Connected=false want true after websocket connection is marked active")
+	}
+	if !status.Fresh {
+		t.Fatal("Fresh=false want true for a fresh quote")
+	}
+	if status.LastPrice != 102 {
+		t.Fatalf("LastPrice=%v want 102", status.LastPrice)
+	}
+}
+
+func TestSetConnectedIgnoresStaleRun(t *testing.T) {
+	t.Parallel()
+
+	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	staleRunID := stream.nextRunID()
+	freshRunID := stream.nextRunID()
+
+	stream.setConnected(staleRunID, true)
+	if stream.connected.Load() {
+		t.Fatal("stale run unexpectedly updated connected state")
+	}
+
+	stream.setConnected(freshRunID, true)
+	if !stream.connected.Load() {
+		t.Fatal("fresh run failed to set connected state")
+	}
+
+	stream.setConnected(staleRunID, false)
+	if !stream.connected.Load() {
+		t.Fatal("stale run cleared connected state for the active run")
+	}
+}
+
+func TestWaitRetryUsesRunStopChannel(t *testing.T) {
+	t.Parallel()
+
+	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stopCh := make(chan struct{})
+	close(stopCh)
+
+	if ok := stream.waitRetry(context.Background(), stopCh, time.Second); ok {
+		t.Fatal("waitRetry() = true, want false when the run stop channel is closed")
+	}
+}

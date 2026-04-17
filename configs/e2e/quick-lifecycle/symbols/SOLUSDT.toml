@@ -1,0 +1,79 @@
+# E2E quick-lifecycle SOLUSDT 币种配置
+# 目标：缩短决策反馈周期，放宽共识门槛，尽快获得一次真实开仓
+
+symbol = "SOLUSDT"
+# 缩短 K 线周期以加快决策频率
+intervals = ["5m", "15m", "1h"]
+kline_limit = 205
+
+[agent]
+indicator = true
+structure = true
+mechanics = true
+
+[require]
+oi = true
+funding = true
+long_short = true
+fear_greed = true
+liquidations = false
+
+[indicators]
+engine = "ta"
+shadow_engine = ""
+ema_fast = 21
+ema_mid = 50
+ema_slow = 200
+rsi_period = 14
+atr_period = 14
+stc_fast = 23
+stc_slow = 50
+bb_period = 20
+bb_multiplier = 2.0
+chop_period = 14
+stoch_rsi_period = 14
+aroon_period = 25
+last_n = 5
+pretty = false
+
+[memory]
+enabled = true
+working_memory_size = 5
+episodic_enabled = true
+episodic_ttl_days = 90
+episodic_max_per_symbol = 3
+semantic_enabled = true
+semantic_max_rules = 10
+
+[consensus]
+# 大幅放宽共识门槛，确保更容易产生开仓信号
+score_threshold = 0.05
+confidence_threshold = 0.05
+
+[cooldown]
+enabled = false
+entry_cooldown_sec = 0
+
+[llm.agent.indicator]
+model = '${LLM_MODEL_INDICATOR}'
+temperature = 0.2
+
+[llm.agent.structure]
+model = '${LLM_MODEL_STRUCTURE}'
+temperature = 0.2
+
+[llm.agent.mechanics]
+model = '${LLM_MODEL_MECHANICS}'
+temperature = 0.2
+
+[llm.provider.indicator]
+model = '${LLM_MODEL_INDICATOR}'
+temperature = 0.2
+
+[llm.provider.structure]
+model = '${LLM_MODEL_STRUCTURE}'
+temperature = 0.2
+
+[llm.provider.mechanics]
+model = '${LLM_MODEL_MECHANICS}'
+temperature = 0.2

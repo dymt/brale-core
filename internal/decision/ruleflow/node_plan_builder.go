@@ -302,14 +302,20 @@ func toStructureCandidates(trend map[string]any) []initexit.StructureCandidate {
 }
 
 func resolveGradeFactor(grade int, riskMgmt map[string]any) float64 {
+	lowFactor := toFloat(riskMgmt["grade_1_factor"])
 	switch grade {
 	case 1:
-		return toFloat(riskMgmt["grade_1_factor"])
+		return lowFactor
 	case 2:
 		return toFloat(riskMgmt["grade_2_factor"])
 	case 3:
 		return toFloat(riskMgmt["grade_3_factor"])
 	default:
+		// Aggressive gate thresholds can still ALLOW setups below the grade ladder.
+		// In that case, size them with the smallest configured grade factor instead of zeroing risk_pct.
+		if lowFactor > 0 {
+			return lowFactor
+		}
 		return 0
 	}
 }

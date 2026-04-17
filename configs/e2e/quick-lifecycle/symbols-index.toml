@@ -1,0 +1,7 @@
+# E2E quick-lifecycle 币种清单
+# 仅包含 SOLUSDT 用于快速生命周期测试
+
+[[symbols]]
+symbol = "SOLUSDT"
+config = "symbols/SOLUSDT.toml"
+strategy = "strategies/SOLUSDT.toml"

@@ -1,0 +1,77 @@
+# E2E quick-lifecycle system.toml
+# 继承生产 system.toml 的核心配置，调整日志级别用于调试。
+# LLM / 数据库 / 通知等配置仍从 .env 注入，与生产一致。
+
+log_format = "text"
+log_level = "debug"
+log_path = "./data/brale-core.log"
+execution_system = "freqtrade"
+exec_endpoint = "http://freqtrade:8080/api/v1"
+exec_api_key = "${EXEC_USERNAME}"
+exec_api_secret = "${EXEC_SECRET}"
+exec_auth = "basic"
+enable_scheduled_decision = true
+llm_min_interval = "3s"
+
+[database]
+dsn = "${DATABASE_DSN}"
+max_open_conns = 10
+max_idle_conns = 3
+
+[telemetry]
+enabled = false
+exporter = "otlp"
+endpoint = "localhost:4317"
+service_name = "brale-core-e2e"
+
+[scheduler]
+backend = "river"
+
+[llm_models.'${LLM_MODEL_INDICATOR}']
+endpoint = "${LLM_INDICATOR_ENDPOINT}"
+api_key = "${LLM_INDICATOR_API_KEY}"
+structured_output = true
+timeout_sec = 300
+concurrency = 1
+
+[llm_models.'${LLM_MODEL_STRUCTURE}']
+endpoint = "${LLM_STRUCTURE_ENDPOINT}"
+api_key = "${LLM_STRUCTURE_API_KEY}"
+structured_output = true
+timeout_sec = 300
+concurrency = 1
+
+[llm_models.'${LLM_MODEL_MECHANICS}']
+endpoint = "${LLM_MECHANICS_ENDPOINT}"
+api_key = "${LLM_MECHANICS_API_KEY}"
+structured_output = true
+timeout_sec = 300
+concurrency = 1
+
+[webhook]
+enabled = true
+addr = ":9991"
+queue_size = 512
+worker_count = 2
+fallback_order_poll_sec = 60
+fallback_reconcile_sec = 120
+
+[notification]
+enabled = ${NOTIFICATION_ENABLED}
+startup_notify_enabled = ${NOTIFICATION_STARTUP_NOTIFY_ENABLED}
+
+[notification.telegram]
+enabled = ${NOTIFICATION_TELEGRAM_ENABLED}
+token = "${NOTIFICATION_TELEGRAM_TOKEN}"
+chat_id = ${NOTIFICATION_TELEGRAM_CHAT_ID}
+
+[notification.feishu]
+enabled = ${NOTIFICATION_FEISHU_ENABLED}
+app_id = "${NOTIFICATION_FEISHU_APP_ID}"
+app_secret = "${NOTIFICATION_FEISHU_APP_SECRET}"
+bot_enabled = ${NOTIFICATION_FEISHU_BOT_ENABLED}
+bot_mode = "${NOTIFICATION_FEISHU_BOT_MODE}"
+verification_token = "${NOTIFICATION_FEISHU_VERIFICATION_TOKEN}"
+encrypt_key = "${NOTIFICATION_FEISHU_ENCRYPT_KEY}"
+default_receive_id_type = "${NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID_TYPE}"
+default_receive_id = "${NOTIFICATION_FEISHU_DEFAULT_RECEIVE_ID}"

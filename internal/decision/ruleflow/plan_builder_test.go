@@ -147,6 +147,21 @@ func TestPlanBuilderAppliesSieveSizeFactor(t *testing.T) {
 	}
 }
 
+func TestResolveEffectiveRiskPctFallsBackToLowestGradeFactorWhenGradeNone(t *testing.T) {
+	riskMgmt := map[string]any{
+		"risk_per_trade_pct": 0.1,
+		"grade_1_factor":     0.7,
+		"grade_2_factor":     0.85,
+		"grade_3_factor":     1.0,
+	}
+
+	got := resolveEffectiveRiskPct(riskMgmt, nil, gateGradeNone, 0.6)
+	want := 0.042
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("risk_pct=%v want %v", got, want)
+	}
+}
+
 func evaluateFlatPlanForRiskMode(t *testing.T, mode string) Result {
 	t.Helper()
 	engine := NewEngine()

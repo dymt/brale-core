@@ -1,0 +1,154 @@
+# E2E quick-lifecycle SOLUSDT 策略配置
+# 目标：放宽建仓质量门槛，保留真实 LLM 风控链路，加快生命周期
+
+symbol = "SOLUSDT"
+id = "e2e-quick-solusdt"
+rule_chain = "configs/rules/default.json"
+
+[risk_management]
+risk_per_trade_pct = 0.1
+max_invest_pct = 0.9
+max_leverage = 10
+grade_3_factor = 1.0
+grade_2_factor = 0.85
+grade_1_factor = 0.70
+min_size_factor = 0.60
+default_size_factor = 1.0
+
+# 市价入场，提高首轮成交概率
+entry_mode = "market"
+orderbook_depth = 5
+entry_offset_atr = 0.0
+
+breakeven_fee_pct = 0.0
+slippage_buffer_pct = 0.0005
+
+# llm 模式覆盖真实 flat_init / tighten 风控链路
+[risk_management.risk_strategy]
+mode = "llm"
+
+[risk_management.initial_exit]
+policy = "atr_structure_v1"
+structure_interval = "auto"
+
+[risk_management.initial_exit.params]
+# 收窄止损，加速 TP/SL 触发
+stop_atr_multiplier = 1.0
+stop_min_distance_pct = 0.003
+take_profit_rr = [1.0, 1.5]
+take_profit_ratios = [0.5, 0.5]
+
+[risk_management.tighten_atr]
+structure_threatened = 1.5
+tp1_atr = 1.5
+tp2_atr = 2
+min_tp_distance_pct = 0.002
+min_tp_gap_pct = 0.002
+# 加快风险计划推进
+min_update_interval_sec = 30
+
+[risk_management.gate]
+# 大幅放宽建仓质量门槛
+quality_threshold = 0.15
+edge_threshold = 0.03
+
+[risk_management.sieve]
+min_size_factor = 0.60
+default_gate_action = "ALLOW"
+default_size_factor = 1.0
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "fuel_ready"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 1.0
+reason_code = "FUEL_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "fuel_ready"
+liq_confidence = "low"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.7
+reason_code = "FUEL_LOW"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "neutral"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.7
+reason_code = "NEUTRAL_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "neutral"
+liq_confidence = "low"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "NEUTRAL_LOW"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_long"
+liq_confidence = "high"
+crowding_align = true
+gate_action = "ALLOW"
+size_factor = 0.4
+reason_code = "CROWD_LONG_ALIGN_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_long"
+liq_confidence = "low"
+crowding_align = true
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_LONG_ALIGN_LOW"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_short"
+liq_confidence = "high"
+crowding_align = true
+gate_action = "ALLOW"
+size_factor = 0.4
+reason_code = "CROWD_SHORT_ALIGN_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_short"
+liq_confidence = "low"
+crowding_align = true
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_SHORT_ALIGN_LOW"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_long"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.35
+reason_code = "CROWD_LONG_COUNTER_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_long"
+liq_confidence = "low"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_LONG_COUNTER_LOW"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_short"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.35
+reason_code = "CROWD_SHORT_COUNTER_HIGH"
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "crowded_short"
+liq_confidence = "low"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 0.5
+reason_code = "CROWD_SHORT_COUNTER_LOW"

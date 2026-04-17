@@ -105,6 +105,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.Handle("/api/debug/plan/status", http.HandlerFunc(s.handleDebugPlanStatus))
 	mux.Handle("/api/debug/plan/clear", http.HandlerFunc(s.handleDebugPlanClear))
 	mux.Handle("/api/llm/rounds", http.HandlerFunc(s.handleLLMRounds))
+	mux.Handle("/api/runtime/market/status", http.HandlerFunc(s.handleMarketStatus))
 	return withCORS(withRequestID(mux)), nil
 }
 
