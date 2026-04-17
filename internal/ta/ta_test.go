@@ -242,6 +242,35 @@ func TestBB_InvalidMultiplier(t *testing.T) {
 	}
 }
 
+func TestSTCFlatSeriesDoesNotReturnInf(t *testing.T) {
+	closes := make([]float64, 40)
+	for i := range closes {
+		closes[i] = 100
+	}
+	result, err := ta.STC(closes, 5, 10, 3, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, v := range result {
+		if math.IsInf(v, 0) {
+			t.Fatalf("result[%d] should not be Inf", i)
+		}
+	}
+}
+
+func TestSuperTrendShortSeriesReturnsNil(t *testing.T) {
+	highs := []float64{10, 11, 12}
+	lows := []float64{9, 10, 11}
+	closes := []float64{9.5, 10.5, 11.5}
+	result, err := ta.SuperTrend(highs, lows, closes, 10, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for series shorter than period, got len=%d", len(result))
+	}
+}
+
 // --- OBV Tests ---
 
 func TestOBV_Basic(t *testing.T) {
