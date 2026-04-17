@@ -228,13 +228,14 @@ func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.Recovery
 		AllowSymbol: deps.allowSymbol,
 	}
 	reconciler := &reconcile.ReconcileService{
-		Store:       deps.store,
-		Executor:    deps.executor,
-		Notifier:    deps.notifier,
-		Cache:       deps.positionCache,
-		PlanCache:   deps.planCache,
-		RiskPlans:   deps.riskPlanSvc,
-		AllowSymbol: deps.allowSymbol,
+		Store:             deps.store,
+		Executor:          deps.executor,
+		Notifier:          deps.notifier,
+		Cache:             deps.positionCache,
+		PlanCache:         deps.planCache,
+		RiskPlans:         deps.riskPlanSvc,
+		CloseRecoverAfter: config.ParseDurationOrDefault(deps.sys.Reconcile.CloseRecoverAfter, 10*time.Minute),
+		AllowSymbol:       deps.allowSymbol,
 	}
 	reconciler.OrderStatusFetcher = &execution.FreqtradeStatusFetcher{
 		Endpoint:  deps.sys.ExecEndpoint,

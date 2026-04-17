@@ -19,6 +19,7 @@ type SystemConfig struct {
 	Notification            NotificationConfig        `mapstructure:"notification"`
 	Telemetry               TelemetryConfig           `mapstructure:"telemetry"`
 	Scheduler               SchedulerConfig           `mapstructure:"scheduler"`
+	Reconcile               ReconcileConfig           `mapstructure:"reconcile"`
 	EnableScheduledDecision *bool                     `mapstructure:"enable_scheduled_decision"`
 }
 
@@ -37,6 +38,10 @@ type TelemetryConfig struct {
 
 type SchedulerConfig struct {
 	Backend string `mapstructure:"backend"`
+}
+
+type ReconcileConfig struct {
+	CloseRecoverAfter string `mapstructure:"close_recover_after"`
 }
 
 type SystemLLMConfig struct {

@@ -40,6 +40,15 @@ func ValidateSystemConfig(cfg SystemConfig) error {
 	default:
 		return validationErrorf("scheduler.backend must be one of river/builtin")
 	}
+	if strings.TrimSpace(cfg.Reconcile.CloseRecoverAfter) != "" {
+		val, err := time.ParseDuration(strings.TrimSpace(cfg.Reconcile.CloseRecoverAfter))
+		if err != nil {
+			return validationErrorf("reconcile.close_recover_after must be a valid duration")
+		}
+		if val <= 0 {
+			return validationErrorf("reconcile.close_recover_after must be > 0")
+		}
+	}
 	return nil
 }
 

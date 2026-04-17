@@ -46,20 +46,21 @@ func CombineHashes(parts ...string) string {
 }
 
 type systemHashInput struct {
-	LogFormat               string          `json:"log_format,omitempty"`
-	LogLevel                string          `json:"log_level,omitempty"`
-	LogPath                 string          `json:"log_path,omitempty"`
-	Database                DatabaseConfig  `json:"database"`
-	ExecutionSystem         string          `json:"execution_system,omitempty"`
-	ExecEndpoint            string          `json:"exec_endpoint,omitempty"`
-	ExecAPIKey              string          `json:"exec_api_key,omitempty"`
-	ExecAPISecret           string          `json:"exec_api_secret,omitempty"`
-	ExecAuth                string          `json:"exec_auth,omitempty"`
-	LLMMinInterval          string          `json:"llm_min_interval,omitempty"`
-	LLMModels               []llmModelEntry `json:"llm_models,omitempty"`
-	Webhook                 webhookHash     `json:"webhook,omitempty"`
-	SchedulerBackend        string          `json:"scheduler_backend,omitempty"`
-	EnableScheduledDecision bool            `json:"enable_scheduled_decision,omitempty"`
+	LogFormat                  string          `json:"log_format,omitempty"`
+	LogLevel                   string          `json:"log_level,omitempty"`
+	LogPath                    string          `json:"log_path,omitempty"`
+	Database                   DatabaseConfig  `json:"database"`
+	ExecutionSystem            string          `json:"execution_system,omitempty"`
+	ExecEndpoint               string          `json:"exec_endpoint,omitempty"`
+	ExecAPIKey                 string          `json:"exec_api_key,omitempty"`
+	ExecAPISecret              string          `json:"exec_api_secret,omitempty"`
+	ExecAuth                   string          `json:"exec_auth,omitempty"`
+	LLMMinInterval             string          `json:"llm_min_interval,omitempty"`
+	LLMModels                  []llmModelEntry `json:"llm_models,omitempty"`
+	Webhook                    webhookHash     `json:"webhook,omitempty"`
+	SchedulerBackend           string          `json:"scheduler_backend,omitempty"`
+	ReconcileCloseRecoverAfter string          `json:"reconcile_close_recover_after,omitempty"`
+	EnableScheduledDecision    bool            `json:"enable_scheduled_decision,omitempty"`
 }
 
 type llmModelEntry struct {
@@ -126,20 +127,21 @@ type strategyHashInput struct {
 
 func buildSystemHashInput(cfg SystemConfig) systemHashInput {
 	return systemHashInput{
-		LogFormat:               cfg.LogFormat,
-		LogLevel:                cfg.LogLevel,
-		LogPath:                 cfg.LogPath,
-		Database:                cfg.Database,
-		ExecutionSystem:         cfg.ExecutionSystem,
-		ExecEndpoint:            cfg.ExecEndpoint,
-		ExecAPIKey:              cfg.ExecAPIKey,
-		ExecAPISecret:           cfg.ExecAPISecret,
-		ExecAuth:                cfg.ExecAuth,
-		LLMMinInterval:          cfg.LLMMinInterval,
-		LLMModels:               sortedLLMModels(cfg.LLMModels),
-		Webhook:                 buildWebhookHash(cfg.Webhook),
-		SchedulerBackend:        cfg.Scheduler.Backend,
-		EnableScheduledDecision: cfg.EnableScheduledDecision != nil && *cfg.EnableScheduledDecision,
+		LogFormat:                  cfg.LogFormat,
+		LogLevel:                   cfg.LogLevel,
+		LogPath:                    cfg.LogPath,
+		Database:                   cfg.Database,
+		ExecutionSystem:            cfg.ExecutionSystem,
+		ExecEndpoint:               cfg.ExecEndpoint,
+		ExecAPIKey:                 cfg.ExecAPIKey,
+		ExecAPISecret:              cfg.ExecAPISecret,
+		ExecAuth:                   cfg.ExecAuth,
+		LLMMinInterval:             cfg.LLMMinInterval,
+		LLMModels:                  sortedLLMModels(cfg.LLMModels),
+		Webhook:                    buildWebhookHash(cfg.Webhook),
+		SchedulerBackend:           cfg.Scheduler.Backend,
+		ReconcileCloseRecoverAfter: cfg.Reconcile.CloseRecoverAfter,
+		EnableScheduledDecision:    cfg.EnableScheduledDecision != nil && *cfg.EnableScheduledDecision,
 	}
 }
 

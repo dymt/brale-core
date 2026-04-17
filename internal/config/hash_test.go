@@ -91,3 +91,28 @@ func TestHashSymbolConfigChangesWhenMemoryConfigChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestHashSystemConfigChangesWhenReconcileConfigChanges(t *testing.T) {
+	base := SystemConfig{
+		Database:        DatabaseConfig{DSN: "postgres://localhost/db"},
+		ExecutionSystem: "freqtrade",
+		ExecEndpoint:    "http://127.0.0.1:8080/api/v1",
+	}
+
+	withShorter := base
+	withShorter.Reconcile.CloseRecoverAfter = "5m"
+	withDefault := base
+	withDefault.Reconcile.CloseRecoverAfter = "10m"
+
+	hashA, err := HashSystemConfig(withShorter)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(withShorter): %v", err)
+	}
+	hashB, err := HashSystemConfig(withDefault)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(withDefault): %v", err)
+	}
+	if hashA == hashB {
+		t.Fatalf("hashes should differ when reconcile.close_recover_after changes")
+	}
+}

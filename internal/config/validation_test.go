@@ -236,6 +236,30 @@ addr = ":9991"
 	}
 }
 
+func TestLoadSystemConfigParsesReconcileCloseRecoverAfter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "system.toml")
+	data := []byte(`execution_system = "freqtrade"
+exec_endpoint = "http://127.0.0.1:8080/api/v1"
+
+[database]
+dsn = "postgres://brale:brale@localhost:5432/brale?sslmode=disable"
+
+[reconcile]
+close_recover_after = "7m"
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write system.toml: %v", err)
+	}
+
+	cfg, err := LoadSystemConfig(path)
+	if err != nil {
+		t.Fatalf("LoadSystemConfig() error = %v", err)
+	}
+	if cfg.Reconcile.CloseRecoverAfter != "7m" {
+		t.Fatalf("close_recover_after=%q want 7m", cfg.Reconcile.CloseRecoverAfter)
+	}
+}
+
 func TestValidateSymbolIndexConfigRejectsCanonicalDuplicate(t *testing.T) {
 	err := ValidateSymbolIndexConfig(SymbolIndexConfig{Symbols: []SymbolIndexEntry{
 		{Symbol: "BTCUSDT", Config: "symbols/btc.toml", Strategy: "strategies/btc.toml"},
