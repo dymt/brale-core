@@ -470,11 +470,30 @@ func (b *Bot) handleDecisionLatest(ctx context.Context, chatID int64, symbol str
 		b.sendText(ctx, chatID, fmt.Sprintf("最近决策获取失败：%s", err.Error()))
 		return
 	}
-	if strings.TrimSpace(resp.Summary) == "查询不存在" && len(resp.Agent) == 0 && len(resp.Gate) == 0 {
+	if strings.TrimSpace(resp.Summary) == "查询不存在" && resp.Input == nil && resp.Decision == nil {
 		b.sendText(ctx, chatID, "查询不存在")
 		return
 	}
-	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, resp.SnapshotID, resp.Gate, resp.Agent, "Decision Snapshot")
+	if resp.Input == nil || resp.Decision == nil {
+		b.logger.Warn("telegram latest missing decision payload",
+			zap.String("symbol", strings.TrimSpace(resp.Symbol)),
+			zap.Uint("snapshot_id", resp.SnapshotID),
+			zap.String("request_id", strings.TrimSpace(resp.RequestID)),
+		)
+		text := strings.TrimSpace(resp.ReportMarkdown)
+		if text == "" {
+			text = strings.TrimSpace(resp.Report)
+		}
+		if text == "" {
+			text = strings.TrimSpace(resp.Summary)
+		}
+		if text == "" {
+			text = "最近决策缺少完整渲染数据"
+		}
+		b.sendText(ctx, chatID, text)
+		return
+	}
+	asset, err := cardimage.NewOGRenderer().RenderDecision(ctx, *resp.Input, *resp.Decision)
 	if err != nil {
 		b.logger.Warn("telegram latest image render failed", zap.String("symbol", symbol), zap.Error(err))
 		b.sendText(ctx, chatID, fmt.Sprintf("最近决策图片生成失败：%s", err.Error()))

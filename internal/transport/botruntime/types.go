@@ -104,19 +104,6 @@ type TradeHistoryItem struct {
 	Profit       float64   `json:"profit"`
 }
 
-type DecisionLatestResponse struct {
-	Status         string         `json:"status"`
-	Symbol         string         `json:"symbol"`
-	SnapshotID     uint           `json:"snapshot_id,omitempty"`
-	Agent          map[string]any `json:"agent,omitempty"`
-	Gate           map[string]any `json:"gate,omitempty"`
-	Report         string         `json:"report"`
-	ReportMarkdown string         `json:"report_markdown"`
-	ReportHTML     string         `json:"report_html"`
-	Summary        string         `json:"summary"`
-	RequestID      string         `json:"request_id"`
-}
-
 type ScheduleResponse struct {
 	Status       string               `json:"status"`
 	LLMScheduled bool                 `json:"llm_scheduled"`
@@ -138,3 +125,4 @@ type DashboardAccountSummaryResponse = runtimeapi.DashboardAccountSummaryRespons
 type DashboardKlineResponse = runtimeapi.DashboardKlineResponse
 type DashboardDecisionFlowResponse = runtimeapi.DashboardDecisionFlowResponse
 type DashboardDecisionHistoryResponse = runtimeapi.DashboardDecisionHistoryResponse
+type DecisionLatestResponse = runtimeapi.DecisionLatestResponse

@@ -321,11 +321,25 @@ func (b *Bot) handleLatest(ctx context.Context, chatID, symbol string) {
 		b.sendReply(ctx, chatID, "latest decision failed: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(resp.Summary) == "查询不存在" && len(resp.Agent) == 0 && len(resp.Gate) == 0 {
+	if strings.TrimSpace(resp.Summary) == "查询不存在" && resp.Input == nil && resp.Decision == nil {
 		b.sendReply(ctx, chatID, "no decision found")
 		return
 	}
-	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, resp.SnapshotID, resp.Gate, resp.Agent, "Decision Snapshot")
+	if resp.Input == nil || resp.Decision == nil {
+		text := strings.TrimSpace(resp.ReportMarkdown)
+		if text == "" {
+			text = strings.TrimSpace(resp.Report)
+		}
+		if text == "" {
+			text = strings.TrimSpace(resp.Summary)
+		}
+		if text == "" {
+			text = "latest decision missing full render payload"
+		}
+		b.sendReply(ctx, chatID, text)
+		return
+	}
+	asset, err := cardimage.NewOGRenderer().RenderDecision(ctx, *resp.Input, *resp.Decision)
 	if err != nil {
 		b.logger.Warn("feishu latest image render failed", zap.String("chat_id", chatID), zap.String("symbol", symbol), zap.Error(err))
 		b.sendReply(ctx, chatID, "latest decision image render failed: "+err.Error())
