@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,13 +13,15 @@ import (
 )
 
 type countSender struct {
-	mu    sync.Mutex
-	calls int
+	mu      sync.Mutex
+	calls   int
+	lastMsg Message
 }
 
 func (s *countSender) Send(ctx context.Context, msg Message) error {
 	s.mu.Lock()
 	s.calls++
+	s.lastMsg = msg
 	s.mu.Unlock()
 	return nil
 }
@@ -27,6 +30,12 @@ func (s *countSender) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
+}
+
+func (s *countSender) lastMessage() Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastMsg
 }
 
 type flakySender struct {
@@ -55,10 +64,6 @@ type staticRenderer struct{}
 
 func (staticRenderer) RenderDecision(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) (*cardimage.ImageAsset, error) {
 	return &cardimage.ImageAsset{Data: []byte("png"), Filename: "test.png", ContentType: "image/png", Caption: report.Symbol}, nil
-}
-
-func (staticRenderer) RenderCard(ctx context.Context, cardType string, symbol string, data map[string]any, title string) (*cardimage.ImageAsset, error) {
-	return &cardimage.ImageAsset{Data: []byte("png"), Filename: "card.png", ContentType: "image/png", Caption: title}, nil
 }
 
 type blockingSender struct {
@@ -95,30 +100,22 @@ func (s *alwaysFailSender) Send(ctx context.Context, msg Message) error {
 	return errors.New("channel down")
 }
 
-type captureRenderer struct {
-	mu       sync.Mutex
-	calls    int
-	cardType string
-	title    string
-	data     map[string]any
+type countingRenderer struct {
+	mu    sync.Mutex
+	calls int
 }
 
-func (r *captureRenderer) RenderDecision(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) (*cardimage.ImageAsset, error) {
+func (r *countingRenderer) RenderDecision(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) (*cardimage.ImageAsset, error) {
+	r.mu.Lock()
+	r.calls++
+	r.mu.Unlock()
 	return &cardimage.ImageAsset{Data: []byte("png"), Filename: "decision.png", ContentType: "image/png", Caption: report.Symbol}, nil
 }
 
-func (r *captureRenderer) RenderCard(ctx context.Context, cardType string, symbol string, data map[string]any, title string) (*cardimage.ImageAsset, error) {
-	cloned := make(map[string]any, len(data))
-	for k, v := range data {
-		cloned[k] = v
-	}
+func (r *countingRenderer) renderCallCount() int {
 	r.mu.Lock()
-	r.calls++
-	r.cardType = cardType
-	r.title = title
-	r.data = cloned
-	r.mu.Unlock()
-	return &cardimage.ImageAsset{Data: []byte("png"), Filename: "card.png", ContentType: "image/png", Caption: title}, nil
+	defer r.mu.Unlock()
+	return r.calls
 }
 
 func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
@@ -255,9 +252,93 @@ func TestSendWithKey_PartialFailureDoesNotPoisonDedupe(t *testing.T) {
 	}
 }
 
+func TestPositionOpen_SendsTextEvenWhenRendererConfigured(t *testing.T) {
+	sender := &countSender{}
+	renderer := &countingRenderer{}
+	mgr := Manager{
+		renderer: renderer,
+		senders:  []Sender{sender},
+		dedupe:   newDedupeGuard(2 * time.Minute),
+	}
+
+	if err := mgr.SendPositionOpen(context.Background(), PositionOpenNotice{
+		Symbol:      "ETHUSDT",
+		Direction:   "long",
+		Qty:         0.5,
+		EntryPrice:  3200,
+		StopPrice:   3120,
+		TakeProfits: []float64{3300, 3380},
+		StopReason:  "structure_low",
+		PositionID:  "pos-1",
+	}); err != nil {
+		t.Fatalf("send position open: %v", err)
+	}
+
+	if got := renderer.renderCallCount(); got != 0 {
+		t.Fatalf("renderer should not be called, got %d", got)
+	}
+	msg := sender.lastMessage()
+	if msg.Image != nil {
+		t.Fatal("position open should send text only")
+	}
+	if !strings.Contains(msg.Markdown, "📈 仓位开启") {
+		t.Fatalf("expected text header, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, noticeLine("stop_reason", "structure_low")) {
+		t.Fatalf("expected stop reason in text body, got %q", msg.Markdown)
+	}
+}
+
+func TestRiskPlanUpdate_SendsTextEvenWhenRendererConfigured(t *testing.T) {
+	sender := &countSender{}
+	renderer := &countingRenderer{}
+	mgr := Manager{
+		renderer: renderer,
+		senders:  []Sender{sender},
+		dedupe:   newDedupeGuard(2 * time.Minute),
+	}
+
+	if err := mgr.SendRiskPlanUpdate(context.Background(), RiskPlanUpdateNotice{
+		Symbol:         "BTCUSDT",
+		Direction:      "long",
+		EntryPrice:     100,
+		OldStop:        90,
+		NewStop:        95,
+		StopReason:     "llm-flat",
+		Reason:         "atr_tighten",
+		TakeProfits:    []float64{110, 120},
+		Source:         "monitor-tighten",
+		MarkPrice:      102,
+		GateSatisfied:  true,
+		ScoreTotal:     3.5,
+		ScoreThreshold: 3,
+		TightenReason:  "volatility_drop",
+		PositionID:     "risk-1",
+	}); err != nil {
+		t.Fatalf("send risk update: %v", err)
+	}
+
+	if got := renderer.renderCallCount(); got != 0 {
+		t.Fatalf("renderer should not be called, got %d", got)
+	}
+	msg := sender.lastMessage()
+	if msg.Image != nil {
+		t.Fatal("risk update should send text only")
+	}
+	if !strings.Contains(msg.Markdown, "📋 风控计划更新") {
+		t.Fatalf("expected risk header, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, "▸ 原止损：90 → 95") {
+		t.Fatalf("expected stop update in text body, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, noticeLine("position_id", "risk-1")) {
+		t.Fatalf("expected position id in text body, got %q", msg.Markdown)
+	}
+}
+
 func TestCloseAggregation_MergesCloseNoticesByExecutorTradeID(t *testing.T) {
 	sender := &countSender{}
-	renderer := &captureRenderer{}
+	renderer := &countingRenderer{}
 	mgr := Manager{
 		renderer: renderer,
 		senders:  []Sender{sender},
@@ -307,26 +388,26 @@ func TestCloseAggregation_MergesCloseNoticesByExecutorTradeID(t *testing.T) {
 	}
 
 	waitForCondition(t, 300*time.Millisecond, func() bool {
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		return sender.callCount() == 1 && renderer.calls == 1
+		return sender.callCount() == 1
 	})
 
-	renderer.mu.Lock()
-	defer renderer.mu.Unlock()
-	if renderer.cardType != "position_close" {
-		t.Fatalf("card type = %q want position_close", renderer.cardType)
+	if got := renderer.renderCallCount(); got != 0 {
+		t.Fatalf("renderer should not be called, got %d", got)
 	}
-	if got := renderer.data["position_id"]; got != "pos-1" {
-		t.Fatalf("position_id = %v want pos-1", got)
+	msg := sender.lastMessage()
+	if msg.Image != nil {
+		t.Fatal("aggregated close should send text only")
 	}
-	if got := renderer.data["executor_position_id"]; got != "42" {
-		t.Fatalf("executor_position_id = %v want 42", got)
+	if !strings.Contains(msg.Markdown, "📉 仓位已关闭") {
+		t.Fatalf("expected close header, got %q", msg.Markdown)
 	}
-	if got := renderer.data["trade_id"]; got != 42 {
-		t.Fatalf("trade_id = %v want 42", got)
+	if !strings.Contains(msg.Markdown, noticeLine("position_id", "pos-1")) {
+		t.Fatalf("expected position id in text body, got %q", msg.Markdown)
 	}
-	if got := renderer.data["trade_duration_s"]; got != int64(3600) {
-		t.Fatalf("trade_duration_s = %v want 3600", got)
+	if !strings.Contains(msg.Markdown, "▸ 持仓时长：1h0m") {
+		t.Fatalf("expected formatted duration in text body, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, "▸ 交易ID：42") {
+		t.Fatalf("expected trade id in text body, got %q", msg.Markdown)
 	}
 }
