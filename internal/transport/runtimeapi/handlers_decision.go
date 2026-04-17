@@ -96,7 +96,7 @@ func (s *Server) handleDecisionLatest(w http.ResponseWriter, r *http.Request) {
 		Report:         markdown,
 		ReportMarkdown: markdown,
 		ReportHTML:     html,
-		Summary:        "",
+		Summary:        buildDecisionLatestSummary(report),
 		RequestID:      requestIDFromContext(ctx),
 	})
 }

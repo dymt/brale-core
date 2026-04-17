@@ -2,6 +2,7 @@ package decision
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,9 @@ import (
 	"brale-core/internal/risk"
 	"brale-core/internal/store"
 	"brale-core/internal/strategy"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type captureRiskPlanNotifier struct {
@@ -62,6 +66,9 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 			if input.DistanceToLiqPct != 0 {
 				t.Fatalf("distance_to_liq_pct=%v, want 0", input.DistanceToLiqPct)
 			}
+			if input.CurrentStopLoss != 99 {
+				t.Fatalf("current_stop_loss=%v, want tightened baseline 99", input.CurrentStopLoss)
+			}
 			return &TightenRiskUpdatePatch{
 				StopLoss:    &stop,
 				TakeProfits: []float64{106.5, 109.5},
@@ -108,6 +115,62 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 	}
 	if trace == nil || trace.Stage != "risk_tighten" {
 		t.Fatalf("trace=%#v", trace)
+	}
+}
+
+func TestApplyTightenRiskPatchStopNotImprovedIncludesBaselineAndLLMStops(t *testing.T) {
+	stop := 98.5
+	plan := risk.RiskPlan{
+		StopPrice: 99,
+		TPLevels: []risk.TPLevel{
+			{LevelID: "tp-1", Price: 108, QtyPct: 0.5},
+			{LevelID: "tp-2", Price: 112, QtyPct: 0.5},
+		},
+	}
+
+	_, _, err := applyTightenRiskPatch(plan, "long", 100, 105, &TightenRiskUpdatePatch{
+		StopLoss:    &stop,
+		TakeProfits: []float64{109, 113},
+	})
+	if err == nil {
+		t.Fatalf("expected stop not improved error")
+	}
+	reject, ok := asTightenPatchRejectError(err)
+	if !ok {
+		t.Fatalf("expected tightenPatchRejectError, got %T", err)
+	}
+	if reject.BaselineStop != 99 {
+		t.Fatalf("baseline_stop=%v want 99", reject.BaselineStop)
+	}
+	if reject.LLMStop != stop {
+		t.Fatalf("llm_stop=%v want %v", reject.LLMStop, stop)
+	}
+	if !strings.Contains(err.Error(), "baseline_stop=99.0000") || !strings.Contains(err.Error(), "llm_stop=98.5000") {
+		t.Fatalf("error=%q", err.Error())
+	}
+}
+
+func TestRiskPlanUpdateLogFieldsIncludeTightenPatchStops(t *testing.T) {
+	core, logs := observer.New(zap.ErrorLevel)
+	logger := zap.New(core)
+	err := &tightenPatchRejectError{
+		Reason:       "tighten llm patch stop_loss is not improved",
+		BaselineStop: 99,
+		LLMStop:      98.5,
+	}
+
+	logger.Error("risk plan update failed", riskPlanUpdateLogFields(err)...)
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("log entries=%d want 1", len(entries))
+	}
+	ctxMap := entries[0].ContextMap()
+	if ctxMap["baseline_stop"] != 99.0 {
+		t.Fatalf("baseline_stop=%v want 99", ctxMap["baseline_stop"])
+	}
+	if ctxMap["llm_stop"] != 98.5 {
+		t.Fatalf("llm_stop=%v want 98.5", ctxMap["llm_stop"])
 	}
 }
 

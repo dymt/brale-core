@@ -47,7 +47,7 @@ func (p *Pipeline) handleInPosition(ctx context.Context, logger *zap.Logger, out
 	p.applyReportMarkPrice(ctx, &res)
 	execResult, err := p.applyRiskPlanUpdate(ctx, res, comp, posID)
 	if err != nil {
-		logger.Error("risk plan update failed", zap.Error(err))
+		logger.Error("risk plan update failed", riskPlanUpdateLogFields(err)...)
 		p.notifyError(ctx, err)
 	}
 	applyTightenExecutionDerived(&res, execResult)
@@ -78,6 +78,17 @@ func (p *Pipeline) handleInPosition(ctx context.Context, logger *zap.Logger, out
 	}
 	logger.Info("fsm hold")
 	return out, nil
+}
+
+func riskPlanUpdateLogFields(err error) []zap.Field {
+	fields := []zap.Field{zap.Error(err)}
+	if reject, ok := asTightenPatchRejectError(err); ok {
+		fields = append(fields,
+			zap.Float64("baseline_stop", reject.BaselineStop),
+			zap.Float64("llm_stop", reject.LLMStop),
+		)
+	}
+	return fields
 }
 
 func (p *Pipeline) applyExitConfirmFromTighten(res *SymbolResult, posID string, exec tightenExecution, logger *zap.Logger) {

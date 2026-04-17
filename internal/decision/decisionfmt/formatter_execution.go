@@ -35,15 +35,18 @@ func resolveExecutionTitle(report DecisionReport) string {
 		return ""
 	}
 	if exec.Executed {
-		return "执行收紧风控"
+		return "已执行收紧风控"
 	}
 	if blocked := formatExecutionBlockedReasons(exec.BlockedBy); blocked != "" {
-		return fmt.Sprintf("继续持仓（收紧未执行：%s）", blocked)
+		return fmt.Sprintf("收紧受阻（%s）", blocked)
+	}
+	if exec.Eligible {
+		return "满足收紧条件（待执行）"
 	}
 	if exec.Evaluated {
-		return "继续持仓（收紧未触发）"
+		return "收紧未触发（条件不足）"
 	}
-	return "继续持仓"
+	return "收紧未评估"
 }
 
 func parseExecutionSummary(derived map[string]any) *executionSummary {
@@ -79,15 +82,18 @@ func parseExecutionSummary(derived map[string]any) *executionSummary {
 
 func formatExecutionSummary(exec executionSummary) string {
 	if exec.Executed {
-		return "执行收紧风控"
+		return "已执行收紧风控"
 	}
 	if blocked := formatExecutionBlockedReasons(exec.BlockedBy); blocked != "" {
-		return fmt.Sprintf("继续持仓（收紧未执行：%s）", blocked)
+		return fmt.Sprintf("收紧受阻（%s）", blocked)
+	}
+	if exec.Eligible {
+		return "满足收紧条件（待执行）"
 	}
 	if exec.Evaluated {
-		return "继续持仓（收紧未触发）"
+		return "收紧未触发（条件不足）"
 	}
-	return "继续持仓（收紧未评估）"
+	return "收紧未评估"
 }
 
 func formatExecutionBlockedReasons(reasons []string) string {
@@ -130,7 +136,7 @@ func translateExecutionBlockedReason(reason string) string {
 	case "binding_missing":
 		return "策略绑定缺失"
 	case "no_tighten_needed":
-		return "执行阶段未发现更优止损（继续持仓）"
+		return "未发现更优止损"
 	case "not_evaluated":
 		return "未完成评估"
 	case "tighten_debounce":
@@ -188,10 +194,22 @@ func resolveHoldStatusLine(report DecisionReport) (string, string, bool) {
 	}
 	if action == "TIGHTEN" {
 		exec := parseExecutionSummary(report.Gate.Derived)
-		if exec != nil && strings.EqualFold(exec.Action, "tighten") && exec.Executed {
-			return "持仓状态", "执行收紧风控", true
+		if exec != nil && strings.EqualFold(exec.Action, "tighten") {
+			if exec.Executed {
+				return "持仓状态", "已执行收紧风控", true
+			}
+			if len(exec.BlockedBy) > 0 {
+				return "持仓状态", fmt.Sprintf("收紧受阻（%s）", formatExecutionBlockedReasons(exec.BlockedBy)), true
+			}
+			if exec.Eligible {
+				return "持仓状态", "满足收紧条件", true
+			}
+			if exec.Evaluated {
+				return "持仓状态", "收紧未触发", true
+			}
+			return "持仓状态", "收紧未评估", true
 		}
-		return "持仓状态", "继续持仓", true
+		return "持仓状态", "进入收紧流程", true
 	}
 	return "持仓状态", "继续持仓", true
 }

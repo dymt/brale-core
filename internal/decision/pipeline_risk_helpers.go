@@ -2,6 +2,7 @@ package decision
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -195,6 +196,31 @@ func riskPlanTakeProfits(plan risk.RiskPlan) []float64 {
 	return out
 }
 
+type tightenPatchRejectError struct {
+	Reason       string
+	BaselineStop float64
+	LLMStop      float64
+}
+
+func (e *tightenPatchRejectError) Error() string {
+	if e == nil {
+		return ""
+	}
+	reason := strings.TrimSpace(e.Reason)
+	if reason == "" {
+		reason = "tighten llm patch rejected"
+	}
+	return fmt.Sprintf("%s: baseline_stop=%.4f llm_stop=%.4f", reason, e.BaselineStop, e.LLMStop)
+}
+
+func asTightenPatchRejectError(err error) (*tightenPatchRejectError, bool) {
+	var target *tightenPatchRejectError
+	if !errors.As(err, &target) || target == nil {
+		return nil, false
+	}
+	return target, true
+}
+
 func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markPrice float64, patch *TightenRiskUpdatePatch) (risk.RiskPlan, bool, error) {
 	if patch == nil || patch.StopLoss == nil {
 		return plan, false, fmt.Errorf("tighten llm patch stop_loss is required")
@@ -211,7 +237,11 @@ func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markP
 		return plan, false, fmt.Errorf("tighten llm patch side must be long/short")
 	}
 	if !isStopImproved(direction, plan.StopPrice, stop, markPrice) {
-		return plan, false, fmt.Errorf("tighten llm patch stop_loss is not improved")
+		return plan, false, &tightenPatchRejectError{
+			Reason:       "tighten llm patch stop_loss is not improved",
+			BaselineStop: plan.StopPrice,
+			LLMStop:      stop,
+		}
 	}
 	last := entry
 	for _, tp := range patch.TakeProfits {

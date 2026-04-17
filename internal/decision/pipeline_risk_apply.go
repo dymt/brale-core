@@ -137,7 +137,7 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 			PositionAgeMin:      computePositionAgeMin(pos.CreatedAt),
 			TP1Hit:              tp1Hit(plan),
 			DistanceToLiqPct:    computeDistanceToLiqPct(updateCtx.Gate, updateCtx.MarkPrice),
-			CurrentStopLoss:     plan.StopPrice,
+			CurrentStopLoss:     tightenPlan.StopPrice,
 			CurrentTakeProfits:  riskPlanTakeProfits(plan),
 			AgentIndicator:      updateCtx.AgentIndicator,
 			AgentStructure:      updateCtx.AgentStructure,

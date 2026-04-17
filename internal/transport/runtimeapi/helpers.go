@@ -73,6 +73,37 @@ func buildObserveSummary(gate fund.GateDecision) string {
 	return "观察完成"
 }
 
+func buildDecisionLatestSummary(report decisionfmt.DecisionReport) string {
+	prefix := "最新决策"
+	if symbol := strings.TrimSpace(report.Symbol); symbol != "" {
+		prefix = symbol + " 最新决策"
+	}
+
+	text := strings.TrimSpace(decisionfmt.ResolveExecutionTitle(report))
+	if text == "" {
+		text = strings.TrimSpace(report.Gate.Overall.DecisionText)
+	}
+	if text == "" {
+		text = strings.TrimSpace(decisionfmt.GateDecisionText(report.Gate.Overall.DecisionAction, report.Gate.Overall.ReasonCode))
+	}
+
+	reason := strings.TrimSpace(report.Gate.Overall.Reason)
+	if reason == "" {
+		reason = strings.TrimSpace(report.Gate.Overall.ReasonCode)
+	}
+
+	switch {
+	case text == "" && reason == "":
+		return prefix
+	case text == "":
+		return fmt.Sprintf("%s：%s", prefix, reason)
+	case reason == "" || strings.Contains(text, reason):
+		return fmt.Sprintf("%s：%s", prefix, text)
+	default:
+		return fmt.Sprintf("%s：%s（原因：%s）", prefix, text, reason)
+	}
+}
+
 func buildObserveReport(res ObserveSymbolResult) (string, string, string) {
 	input, err := buildDecisionInputFromResult(res)
 	if err != nil {
