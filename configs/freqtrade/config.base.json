@@ -33,8 +33,9 @@
       "BNB/.*"
     ],
     "pair_whitelist": [
-      "STO/USDT:USDT",
-      "XAG/USDT:USDT"
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT"
     ],
     "secret": ""
   },

@@ -11,6 +11,9 @@ import (
 )
 
 func installCodexConfig(prepared preparedInstall) error {
+	if prepared.mode != "stdio" {
+		return fmt.Errorf("install target %q does not support --mode %s yet", prepared.target, prepared.mode)
+	}
 	doc, err := loadCodexInstallDocument(prepared.configPath)
 	if err != nil {
 		return err

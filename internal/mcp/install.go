@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,8 +15,11 @@ import (
 
 const (
 	defaultInstallTarget = "claude-code"
+	defaultInstallMode   = "sse"
 	defaultServerName    = "brale-core"
 	defaultEndpoint      = "http://127.0.0.1:9991"
+	defaultSSEPort       = "8765"
+	defaultSSEPath       = "/sse"
 )
 
 var supportedInstallTargets = []string{
@@ -29,6 +35,7 @@ type InstallOptions struct {
 	Command    string
 	ConfigPath string
 	Target     string
+	Mode       string
 	Endpoint   string
 	SystemPath string
 	IndexPath  string
@@ -44,17 +51,28 @@ type InstallResult struct {
 
 type preparedInstall struct {
 	target           string
+	mode             string
 	name             string
 	command          string
 	configPath       string
 	args             []string
+	endpoint         string
+	sseURL           string
+	repoRoot         string
 	removeLegacyPath string
 }
+
+var ensureSSEAvailableFunc = ensureSSEAvailable
 
 func Install(opts InstallOptions) (InstallResult, error) {
 	prepared, err := prepareInstall(opts)
 	if err != nil {
 		return InstallResult{}, err
+	}
+	if prepared.mode == "sse" && shouldEnsureLocalSSE(prepared.sseURL) {
+		if err := ensureSSEAvailableFunc(prepared); err != nil {
+			return InstallResult{}, fmt.Errorf("ensure MCP SSE endpoint %s: %w\nhint: use --mode stdio if you want a local spawned MCP process instead", prepared.sseURL, err)
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(prepared.configPath), 0o755); err != nil {
 		return InstallResult{}, fmt.Errorf("create install dir: %w", err)
@@ -149,22 +167,18 @@ func prepareInstall(opts InstallOptions) (preparedInstall, error) {
 	if err != nil {
 		return preparedInstall{}, err
 	}
+	mode, err := normalizeInstallMode(opts.Mode)
+	if err != nil {
+		return preparedInstall{}, err
+	}
+	if target == "codex" && mode == "sse" {
+		return preparedInstall{}, fmt.Errorf("install target %q does not support --mode %s yet", target, mode)
+	}
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		name = defaultServerName
 	}
-	command := strings.TrimSpace(opts.Command)
-	if command == "" {
-		exe, err := os.Executable()
-		if err != nil {
-			return preparedInstall{}, fmt.Errorf("resolve executable: %w", err)
-		}
-		command = exe
-	}
-	command, err = absoluteExecutablePath(command)
-	if err != nil {
-		return preparedInstall{}, fmt.Errorf("resolve command path: %w", err)
-	}
+	command := ""
 	configPath := strings.TrimSpace(opts.ConfigPath)
 	configPathIsDefault := configPath == ""
 	if configPathIsDefault {
@@ -177,36 +191,57 @@ func prepareInstall(opts InstallOptions) (preparedInstall, error) {
 	if err != nil {
 		return preparedInstall{}, fmt.Errorf("resolve config path: %w", err)
 	}
-	systemPath, err := absoluteExistingFile(defaultIfEmpty(opts.SystemPath, "configs/system.toml"))
-	if err != nil {
-		return preparedInstall{}, fmt.Errorf("resolve system path: %w", err)
-	}
-	indexPath, err := absoluteExistingFile(defaultIfEmpty(opts.IndexPath, "configs/symbols-index.toml"))
-	if err != nil {
-		return preparedInstall{}, fmt.Errorf("resolve index path: %w", err)
-	}
-	auditPath := strings.TrimSpace(opts.AuditPath)
-	if auditPath == "" {
-		auditPath, err = DefaultAuditLogPath()
-		if err != nil {
-			return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
-		}
-	}
-	auditPath, err = filepath.Abs(auditPath)
-	if err != nil {
-		return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
-	}
 	endpoint := strings.TrimSpace(opts.Endpoint)
 	if endpoint == "" {
 		endpoint = defaultEndpoint
 	}
-	args := []string{
-		"--endpoint", endpoint,
-		"mcp", "serve",
-		"--mode", "stdio",
-		"--system", systemPath,
-		"--index", indexPath,
-		"--audit-log", auditPath,
+	sseURL, err := buildSSEURL(endpoint)
+	if err != nil {
+		return preparedInstall{}, fmt.Errorf("resolve SSE URL from endpoint %q: %w", endpoint, err)
+	}
+	repoRoot := resolveInstallRepoRoot(opts.SystemPath, opts.IndexPath)
+	var args []string
+	if mode == "stdio" {
+		systemPath, err := absoluteExistingFile(defaultIfEmpty(opts.SystemPath, "configs/system.toml"))
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve system path: %w", err)
+		}
+		indexPath, err := absoluteExistingFile(defaultIfEmpty(opts.IndexPath, "configs/symbols-index.toml"))
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve index path: %w", err)
+		}
+		auditPath := strings.TrimSpace(opts.AuditPath)
+		if auditPath == "" {
+			auditPath, err = DefaultAuditLogPath()
+			if err != nil {
+				return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
+			}
+		}
+		auditPath, err = filepath.Abs(auditPath)
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve audit log path: %w", err)
+		}
+		command = strings.TrimSpace(opts.Command)
+		if command == "" {
+			exe, err := os.Executable()
+			if err != nil {
+				return preparedInstall{}, fmt.Errorf("resolve executable: %w", err)
+			}
+			command = exe
+		}
+		command, err = absoluteExecutablePath(command)
+		if err != nil {
+			return preparedInstall{}, fmt.Errorf("resolve command path: %w", err)
+		}
+		args = []string{
+			"--endpoint", endpoint,
+			"mcp", "serve",
+			"--mode", "stdio",
+			"--system", systemPath,
+			"--index", indexPath,
+			"--audit-log", auditPath,
+		}
+		repoRoot = resolveInstallRepoRoot(systemPath, indexPath)
 	}
 	removeLegacyPath := ""
 	if target == "claude-code" && configPathIsDefault {
@@ -218,10 +253,14 @@ func prepareInstall(opts InstallOptions) (preparedInstall, error) {
 	}
 	return preparedInstall{
 		target:           target,
+		mode:             mode,
 		name:             name,
 		command:          command,
 		configPath:       configPath,
 		args:             args,
+		endpoint:         endpoint,
+		sseURL:           sseURL,
+		repoRoot:         repoRoot,
 		removeLegacyPath: removeLegacyPath,
 	}, nil
 }
@@ -235,12 +274,11 @@ func installClaudeCodeConfig(prepared preparedInstall) error {
 	if err != nil {
 		return err
 	}
-	servers[prepared.name] = map[string]any{
-		"type":    "stdio",
-		"command": prepared.command,
-		"args":    prepared.args,
-		"env":     map[string]any{},
+	entry, err := buildInstallEntry(prepared)
+	if err != nil {
+		return err
 	}
+	servers[prepared.name] = entry
 	raw, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal claude-code config: %w", err)
@@ -260,10 +298,11 @@ func installJSONConfig(prepared preparedInstall) error {
 	if err != nil {
 		return err
 	}
-	servers[prepared.name] = map[string]any{
-		"command": prepared.command,
-		"args":    prepared.args,
+	entry, err := buildInstallEntry(prepared)
+	if err != nil {
+		return err
 	}
+	servers[prepared.name] = entry
 	raw, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal install config: %w", err)
@@ -283,6 +322,19 @@ func normalizeInstallTarget(raw string) (string, error) {
 		return target, nil
 	}
 	return "", fmt.Errorf("unsupported install target %q", raw)
+}
+
+func normalizeInstallMode(raw string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	if mode == "" {
+		return defaultInstallMode, nil
+	}
+	switch mode {
+	case "sse", "stdio":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported install mode %q", raw)
+	}
 }
 
 func loadInstallDocument(path string) (map[string]any, error) {
@@ -316,6 +368,98 @@ func ensureMap(doc map[string]any, key string) (map[string]any, error) {
 	typed := map[string]any{}
 	doc[key] = typed
 	return typed, nil
+}
+
+func buildInstallEntry(prepared preparedInstall) (map[string]any, error) {
+	switch prepared.mode {
+	case "stdio":
+		return buildStdioEntry(prepared), nil
+	case "sse":
+		return buildSSEEntry(prepared)
+	default:
+		return nil, fmt.Errorf("unsupported install mode %q", prepared.mode)
+	}
+}
+
+func buildStdioEntry(prepared preparedInstall) map[string]any {
+	entry := map[string]any{
+		"command": prepared.command,
+		"args":    prepared.args,
+	}
+	if prepared.target == "claude-code" {
+		entry["type"] = "stdio"
+		entry["env"] = map[string]any{}
+	}
+	return entry
+}
+
+func buildSSEEntry(prepared preparedInstall) (map[string]any, error) {
+	if prepared.target == "codex" {
+		return nil, fmt.Errorf("install target %q does not support --mode sse yet", prepared.target)
+	}
+	return map[string]any{
+		"type": "sse",
+		"url":  prepared.sseURL,
+	}, nil
+}
+
+func buildSSEURL(endpoint string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" {
+		parsed.Scheme = "http"
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		host = strings.TrimSpace(parsed.Host)
+	}
+	if host == "" {
+		return "", fmt.Errorf("endpoint host is empty")
+	}
+	return (&url.URL{
+		Scheme: parsed.Scheme,
+		Host:   net.JoinHostPort(host, defaultSSEPort),
+		Path:   defaultSSEPath,
+	}).String(), nil
+}
+
+func shouldEnsureLocalSSE(sseURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(sseURL))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveInstallRepoRoot(paths ...string) string {
+	for _, rawPath := range paths {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		dir := filepath.Dir(path)
+		if filepath.Base(dir) == "configs" {
+			return filepath.Dir(dir)
+		}
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return "."
+}
+
+func runCommand(ctx context.Context, dir string, name string, args ...string) error {
+	return runCommandFunc(ctx, dir, name, args...)
 }
 
 func absoluteExecutablePath(path string) (string, error) {

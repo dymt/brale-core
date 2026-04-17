@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,7 +10,7 @@ import (
 
 	"brale-core/internal/mcp"
 
-	"github.com/manifoldco/promptui"
+	huh "charm.land/huh/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -25,6 +26,7 @@ type setupCommandOptions struct {
 	installMCP bool
 	skipMCP    bool
 	mcpTarget  string
+	mcpMode    string
 	configPath string
 	command    string
 	name       string
@@ -53,7 +55,7 @@ var setupMessages = map[string]setupTexts{
 		envExists:       "[OK] 已存在 .env，保持不覆盖",
 		noMCPInstalled:  "[OK] setup 完成：未安装 MCP 客户端配置",
 		mcpInstalledFmt: "[OK] setup 完成：已写入 MCP 配置到 %s",
-		nextStep:        "[NEXT] 如需填写交易所与 LLM 凭据，请编辑 .env 或运行 make init。",
+		nextStep:        "[NEXT] 如需填写交易所与 LLM 凭据，请编辑 .env 或运行 make init；完成后执行 make start 启动 Docker 栈。",
 		promptInstall:   "是否安装 MCP 客户端配置？",
 		promptTarget:    "选择 MCP 客户端目标",
 		promptEndpoint:  "输入 MCP endpoint（brale runtime API 地址）",
@@ -66,7 +68,7 @@ var setupMessages = map[string]setupTexts{
 		envExists:       "[OK] using existing .env",
 		noMCPInstalled:  "[OK] setup finished without installing MCP client config",
 		mcpInstalledFmt: "[OK] setup finished: installed MCP client config to %s",
-		nextStep:        "[NEXT] Edit .env with your exchange and LLM credentials, or run make init for the onboarding UI.",
+		nextStep:        "[NEXT] Edit .env with your exchange and LLM credentials, or run make init for the interactive CLI wizard. Then run make start to launch the Docker stack.",
 		promptInstall:   "Install MCP client config?",
 		promptTarget:    "Select MCP client target",
 		promptEndpoint:  "Enter MCP endpoint (brale runtime API address)",
@@ -83,7 +85,7 @@ type setupTargetOption struct {
 }
 
 var setupTargets = []setupTargetOption{
-	{value: "claude-code", labelZH: "Claude Code / Cloud Code", labelEN: "Claude Code / Cloud Code"},
+	{value: "claude-code", labelZH: "Claude Code", labelEN: "Claude Code"},
 	{value: "claude-desktop", labelZH: "Claude Desktop", labelEN: "Claude Desktop"},
 	{value: "opencode", labelZH: "OpenCode", labelEN: "OpenCode"},
 	{value: "codex", labelZH: "Codex", labelEN: "Codex"},
@@ -96,7 +98,12 @@ func setupCmd() *cobra.Command {
 		Use:   "setup",
 		Short: "初始化 .env，并可选安装 MCP 客户端配置",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSetup(cmd, opts)
+			err := runSetup(cmd, opts)
+			if errors.Is(err, huh.ErrUserAborted) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "\n✗ Setup cancelled.")
+				return nil
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&opts.repoRoot, "repo", ".", "仓库根目录路径")
@@ -104,6 +111,7 @@ func setupCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.installMCP, "install-mcp", false, "执行 MCP 客户端配置安装")
 	cmd.Flags().BoolVar(&opts.skipMCP, "skip-mcp", false, "跳过 MCP 客户端配置安装")
 	cmd.Flags().StringVar(&opts.mcpTarget, "mcp-target", "", "MCP 安装目标：claude-code、claude-desktop、opencode、codex 或 custom")
+	cmd.Flags().StringVar(&opts.mcpMode, "mcp-mode", "", "MCP 安装模式：sse 或 stdio（默认沿用 install 默认值）")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "显式指定 MCP 配置文件路径")
 	cmd.Flags().StringVar(&opts.command, "command", "", "bralectl 可执行文件路径")
 	cmd.Flags().StringVar(&opts.name, "name", "brale-core", "MCP server 名称")
@@ -117,7 +125,7 @@ func runSetup(cmd *cobra.Command, opts setupCommandOptions) error {
 	if opts.installMCP && opts.skipMCP {
 		return fmt.Errorf("--install-mcp and --skip-mcp cannot be used together")
 	}
-	if opts.skipMCP && (strings.TrimSpace(opts.mcpTarget) != "" || strings.TrimSpace(opts.configPath) != "") {
+	if opts.skipMCP && (strings.TrimSpace(opts.mcpTarget) != "" || strings.TrimSpace(opts.mcpMode) != "" || strings.TrimSpace(opts.configPath) != "") {
 		return fmt.Errorf("--skip-mcp cannot be combined with MCP install flags")
 	}
 
@@ -170,11 +178,16 @@ func runSetup(cmd *cobra.Command, opts setupCommandOptions) error {
 	}
 	systemPath := defaultSetupPath(repoRoot, opts.systemPath, "configs/system.toml")
 	indexPath := defaultSetupPath(repoRoot, opts.indexPath, "configs/symbols-index.toml")
+	installMode := strings.TrimSpace(opts.mcpMode)
+	if installMode == "" && target == "codex" {
+		installMode = "stdio"
+	}
 	installOpts := mcp.InstallOptions{
 		Name:       opts.name,
 		Command:    opts.command,
 		ConfigPath: configPath,
 		Target:     target,
+		Mode:       installMode,
 		Endpoint:   endpoint,
 		SystemPath: systemPath,
 		IndexPath:  indexPath,
@@ -248,6 +261,7 @@ func ensureEnvFile(repoRoot string) (bool, error) {
 func shouldInstallMCP(opts setupCommandOptions) bool {
 	return opts.installMCP ||
 		strings.TrimSpace(opts.mcpTarget) != "" ||
+		strings.TrimSpace(opts.mcpMode) != "" ||
 		strings.TrimSpace(opts.configPath) != ""
 }
 
@@ -339,71 +353,78 @@ func printSetupSummary(out io.Writer, lines ...string) error {
 }
 
 func promptSetupLanguage() (string, error) {
-	items := []string{"中文", "English"}
-	prompt := promptui.Select{
-		Label: "Select language / 选择语言",
-		Items: items,
-		Size:  len(items),
-	}
-	idx, _, err := prompt.Run()
-	if err != nil {
+	var lang string
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select language / 选择语言").
+				Options(
+					huh.NewOption("中文", setupLangZH),
+					huh.NewOption("English", setupLangEN),
+				).
+				Value(&lang),
+		),
+	).Run(); err != nil {
 		return "", fmt.Errorf("prompt language: %w", err)
 	}
-	if idx == 0 {
-		return setupLangZH, nil
-	}
-	return setupLangEN, nil
+	return lang, nil
 }
 
 func promptSetupConfirm(texts setupTexts) (bool, error) {
-	items := []string{texts.yesLabel, texts.noLabel}
-	prompt := promptui.Select{
-		Label: texts.promptInstall,
-		Items: items,
-		Size:  len(items),
-	}
-	idx, _, err := prompt.Run()
-	if err != nil {
+	var install bool
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(texts.promptInstall).
+				Value(&install).
+				Affirmative(texts.yesLabel).
+				Negative(texts.noLabel),
+		),
+	).Run(); err != nil {
 		return false, fmt.Errorf("prompt install MCP: %w", err)
 	}
-	return idx == 0, nil
+	return install, nil
 }
 
 func promptSetupTarget(lang string) (string, error) {
 	label := setupMessages[lang].promptTarget
-	items := make([]string, 0, len(setupTargets))
-	for _, target := range setupTargets {
+	opts := make([]huh.Option[string], 0, len(setupTargets))
+	for _, t := range setupTargets {
+		display := t.labelEN
 		if lang == setupLangZH {
-			items = append(items, target.labelZH)
-			continue
+			display = t.labelZH
 		}
-		items = append(items, target.labelEN)
+		opts = append(opts, huh.NewOption(display, t.value))
 	}
-	prompt := promptui.Select{
-		Label: label,
-		Items: items,
-		Size:  min(8, len(items)),
-	}
-	idx, _, err := prompt.Run()
-	if err != nil {
+	var target string
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(label).
+				Options(opts...).
+				Value(&target),
+		),
+	).Run(); err != nil {
 		return "", fmt.Errorf("prompt MCP target: %w", err)
 	}
-	return setupTargets[idx].value, nil
+	return target, nil
 }
 
 func promptSetupInput(label string, initial string) (string, error) {
-	prompt := promptui.Prompt{
-		Label:   label,
-		Default: initial,
-		Validate: func(input string) error {
-			if strings.TrimSpace(input) == "" {
-				return fmt.Errorf("value cannot be empty")
-			}
-			return nil
-		},
-	}
-	value, err := prompt.Run()
-	if err != nil {
+	value := initial
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(label).
+				Value(&value).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return fmt.Errorf("value cannot be empty")
+					}
+					return nil
+				}),
+		),
+	).Run(); err != nil {
 		return "", fmt.Errorf("prompt input: %w", err)
 	}
 	return strings.TrimSpace(value), nil

@@ -4,15 +4,12 @@ set -euo pipefail
 REPO_URL_DEFAULT="https://github.com/laukkw/brale-core.git"
 REF_DEFAULT="master"
 TARGET_DIR_DEFAULT="${HOME}/brale-core"
-ONBOARDING_URL_DEFAULT="http://127.0.0.1:9992"
 
 repo_url="${BRALE_REPO_URL:-${REPO_URL_DEFAULT}}"
 ref="${BRALE_REF:-${REF_DEFAULT}}"
 target_dir="${BRALE_DIR:-${TARGET_DIR_DEFAULT}}"
-onboarding_url="${BRALE_ONBOARDING_URL:-${ONBOARDING_URL_DEFAULT}}"
 compose_project_name="${BRALE_COMPOSE_PROJECT_NAME:-brale-core}"
-open_browser=1
-start_onboarding=1
+run_init=1
 with_mcp=0
 run_setup=0
 setup_lang=""
@@ -27,12 +24,11 @@ Options:
   --dir PATH          Target checkout directory (default: ~/brale-core)
   --ref REF           Git ref to checkout (default: master)
   --repo-url URL      Repository URL
-  --onboarding-url U  Expected onboarding URL (default: http://127.0.0.1:9992)
-  --no-onboarding     Skip launching the onboarding UI
+  --no-init           Skip the interactive init wizard and start with the existing .env
+  --no-onboarding     Deprecated alias for --no-init
   --with-mcp          Start the stack with the optional MCP SSE service
   --setup             Run 'make setup' after clone/update
   --setup-lang LANG   Preselect setup wizard language (zh or en)
-  --no-open           Do not try to open the browser automatically
   -h, --help          Show this help text
 EOF
 }
@@ -54,6 +50,56 @@ require_cmd() {
   fi
 }
 
+run_make_with_tty() {
+  local -a cmd=("$@")
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${cmd[@]}") </dev/tty >/dev/tty
+  else
+    (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${cmd[@]}")
+  fi
+}
+
+detect_env_enable_mcp() {
+  if [[ "$with_mcp" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ ! -f "$target_dir/.env" ]]; then
+    return 0
+  fi
+  local value
+  value="$(awk -F= '/^[[:space:]]*ENABLE_MCP[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$target_dir/.env" 2>/dev/null || true)"
+  case "${value,,}" in
+    1|true|yes|on)
+      with_mcp=1
+      ;;
+  esac
+}
+
+wait_for_stack() {
+  local ready=0
+  for _ in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:9991/healthz" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" docker compose -f docker-compose.yml logs --tail=200 brale freqtrade) || true
+    return 1
+  fi
+}
+
+print_stack_endpoints() {
+  log "[OK] stack started"
+  log "[OPEN] Freqtrade API: http://127.0.0.1:8080/api/v1/ping"
+  log "[OPEN] Brale health:  http://127.0.0.1:9991/healthz"
+  if [[ "$with_mcp" -eq 1 ]]; then
+    log "[OPEN] MCP SSE:       http://127.0.0.1:8765/sse"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir)
@@ -68,12 +114,13 @@ while [[ $# -gt 0 ]]; do
       repo_url="$2"
       shift 2
       ;;
-    --onboarding-url)
-      onboarding_url="$2"
-      shift 2
+    --no-init)
+      run_init=0
+      shift
       ;;
     --no-onboarding)
-      start_onboarding=0
+      run_init=0
+      log "[WARN] --no-onboarding is deprecated; use --no-init instead"
       shift
       ;;
     --with-mcp)
@@ -94,10 +141,6 @@ while [[ $# -gt 0 ]]; do
           ;;
       esac
       shift 2
-      ;;
-    --no-open)
-      open_browser=0
-      shift
       ;;
     -h|--help)
       usage
@@ -165,68 +208,52 @@ if [[ "$run_setup" -eq 1 ]]; then
   if [[ -n "$setup_lang" ]]; then
     setup_cmd+=("SETUP_LANG=$setup_lang")
   fi
-  if ! (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${setup_cmd[@]}"); then
+  if ! run_make_with_tty "${setup_cmd[@]}"; then
     fail "setup wizard failed"
   fi
 fi
 
-if [[ "$start_onboarding" -ne 1 ]]; then
-  log "[INFO] onboarding disabled; checking whether the stack can start headlessly"
+detect_env_enable_mcp
+
+if [[ "$run_init" -ne 1 ]]; then
+  log "[INFO] init wizard skipped; checking whether the stack can start headlessly"
   if check_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make check 2>&1)"; then
     printf '%s\n' "$check_output"
     log "[INFO] starting core stack"
-    start_cmd=(make start "ENABLE_ONBOARDING=0")
+    start_cmd=(make start)
     if [[ "$with_mcp" -eq 1 ]]; then
       start_cmd+=("ENABLE_MCP=1")
     fi
     start_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${start_cmd[@]}" 2>&1)" || {
       printf '%s\n' "$start_output"
-      fail "failed to start stack without onboarding"
+      fail "failed to start stack without init"
     }
     printf '%s\n' "$start_output"
-    log "[OK] stack started"
-    if [[ "$with_mcp" -eq 1 ]]; then
-      log "[OPEN] MCP SSE will listen on http://127.0.0.1:8765/sse"
-    fi
+    wait_for_stack || fail "stack did not become ready in time"
+    print_stack_endpoints
     exit 0
   fi
   printf '%s\n' "$check_output"
   log "[WARN] .env is not ready for headless startup; skipping docker compose up"
-  log "[NEXT] edit .env manually, run 'make setup', or rerun bootstrap without --no-onboarding"
+  log "[NEXT] edit .env manually, run 'make setup', or rerun bootstrap without --no-init"
   exit 0
 fi
 
-log "[INFO] building and starting onboarding container"
-make_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" make init 2>&1)" || {
-  printf '%s\n' "$make_output"
-  fail "failed to start onboarding via make init"
-}
-printf '%s\n' "$make_output"
-
-ready=0
-for _ in $(seq 1 60); do
-  if curl -fsS "$onboarding_url/api/status" >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 1
-done
-
-if [[ "$ready" -ne 1 ]]; then
-  (cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" docker compose -f docker-compose.yml logs --tail=200 onboarding) || true
-  fail "onboarding did not become ready in time"
+log "[INFO] running interactive init wizard"
+if ! run_make_with_tty make init; then
+  fail "failed to complete make init"
 fi
+detect_env_enable_mcp
 
-log "[OK] onboarding is ready"
-log "[OPEN] $onboarding_url"
+log "[INFO] starting Docker stack"
+start_cmd=(make start)
 if [[ "$with_mcp" -eq 1 ]]; then
-  log "[INFO] MCP SSE is not started during onboarding-only bootstrap. After filling .env, run: make start ENABLE_MCP=1"
+  start_cmd+=("ENABLE_MCP=1")
 fi
-
-if [[ "$open_browser" -eq 1 ]]; then
-  if command -v open >/dev/null 2>&1; then
-    open "$onboarding_url" >/dev/null 2>&1 || true
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$onboarding_url" >/dev/null 2>&1 || true
-  fi
-fi
+start_output="$(cd "$target_dir" && HOST_UID="$host_uid" HOST_GID="$host_gid" COMPOSE_PROJECT_NAME="$compose_project_name" "${start_cmd[@]}" 2>&1)" || {
+  printf '%s\n' "$start_output"
+  fail "failed to start Docker stack"
+}
+printf '%s\n' "$start_output"
+wait_for_stack || fail "stack did not become ready in time"
+print_stack_endpoints

@@ -2,9 +2,17 @@ SHELL := /bin/bash
 
 COMPOSE_FILE ?= docker-compose.yml
 COMPOSE_PROJECT_NAME ?= brale-core
-ENABLE_MCP ?= 0
 SETUP_LANG ?=
 SETUP_ARGS ?=
+
+ENV_ENABLE_MCP := $(strip $(shell awk -F= '/^[[:space:]]*ENABLE_MCP[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$$/,"",$$2); print $$2; exit}' .env 2>/dev/null))
+ifeq ($(origin ENABLE_MCP), undefined)
+ifneq ($(ENV_ENABLE_MCP),)
+ENABLE_MCP := $(ENV_ENABLE_MCP)
+else
+ENABLE_MCP := 0
+endif
+endif
 
 BRALE_CONFIG_ROOT ?= $(CURDIR)/configs
 BRALE_DATA_ROOT ?= $(CURDIR)/data/brale
@@ -219,15 +227,23 @@ build: ## Build bralectl into _output/bralectl
 	go build -o "$(BRALECTL_OUTPUT_BIN)" ./cmd/bralectl
 
 bralectl-build: ## Build the local bralectl binary
-	@if ! command -v go >/dev/null 2>&1; then \
-		echo "[ERR] go command not found"; \
-		exit 1; \
-	fi
 	@mkdir -p "$(dir $(BRALECTL_BIN))"
-	go build -o "$(BRALECTL_BIN)" ./cmd/bralectl
+	@if command -v go >/dev/null 2>&1; then \
+		go build -o "$(BRALECTL_BIN)" ./cmd/bralectl; \
+	else \
+		echo "[INFO] go not found, building bralectl in Docker"; \
+		$(MAKE) bralectl-builder-image; \
+		docker run --rm \
+			-e GOPROXY="$(GOPROXY)" \
+			-e GOSUMDB="$(GOSUMDB)" \
+			-v "$(CURDIR):/src" \
+			-w /src \
+			"$(BRALECTL_DOCKER_IMAGE)" \
+			go build -o "$(BRALECTL_BIN)" ./cmd/bralectl; \
+	fi
 
 bralectl-builder-image:
-	@docker build --target builder -f "$(CURDIR)/Dockerfile" -t "$(BRALECTL_DOCKER_IMAGE)" "$(CURDIR)"
+	@docker build --target bralectl-builder -f "$(CURDIR)/Dockerfile" -t "$(BRALECTL_DOCKER_IMAGE)" "$(CURDIR)"
 
 add-symbol:
 	@if [ -z "$(SYMBOL)" ]; then \

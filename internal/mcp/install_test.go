@@ -32,7 +32,18 @@ func TestInstallMergesMCPConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
+	origEnsure := ensureSSEAvailableFunc
+	t.Cleanup(func() {
+		ensureSSEAvailableFunc = origEnsure
+	})
+	ensureCalled := false
+	ensureSSEAvailableFunc = func(prepared preparedInstall) error {
+		ensureCalled = true
+		return nil
+	}
+
 	result, err := Install(InstallOptions{
+		Target:     "opencode",
 		Name:       "brale-core",
 		Command:    commandPath,
 		ConfigPath: configPath,
@@ -40,9 +51,13 @@ func TestInstallMergesMCPConfig(t *testing.T) {
 		SystemPath: systemPath,
 		IndexPath:  indexPath,
 		AuditPath:  auditPath,
+		Mode:       "stdio",
 	})
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
+	}
+	if ensureCalled {
+		t.Fatal("ensureSSEAvailable should not run in stdio mode")
 	}
 	if result.ConfigPath != configPath {
 		t.Fatalf("ConfigPath=%s want %s", result.ConfigPath, configPath)
@@ -85,6 +100,89 @@ func TestInstallMergesMCPConfig(t *testing.T) {
 	}
 }
 
+func TestInstallDefaultsToSSEForClaudeCodeAndRemovesLegacyFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	legacyDir := filepath.Join(home, ".config", "claude")
+	legacyPath := filepath.Join(legacyDir, "mcp_settings.json")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"mcpServers":{"legacy":{"command":"old"}}}`), 0o644); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	systemPath := filepath.Join(home, "system.toml")
+	indexPath := filepath.Join(home, "symbols-index.toml")
+	auditPath := filepath.Join(home, "audit.jsonl")
+	commandPath := filepath.Join(home, "bralectl")
+	if err := os.WriteFile(systemPath, []byte("[database]\ndsn = \"postgres://brale:brale@localhost:5432/brale?sslmode=disable\"\n"), 0o644); err != nil {
+		t.Fatalf("write system: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("[[symbols]]\nsymbol = \"BTCUSDT\"\nconfig = \"symbols/BTCUSDT.toml\"\nstrategy = \"strategies/BTCUSDT.toml\"\n"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+
+	origEnsure := ensureSSEAvailableFunc
+	t.Cleanup(func() {
+		ensureSSEAvailableFunc = origEnsure
+	})
+	var ensured preparedInstall
+	ensureSSEAvailableFunc = func(prepared preparedInstall) error {
+		ensured = prepared
+		return nil
+	}
+
+	result, err := Install(InstallOptions{
+		Target:     "claude-code",
+		Name:       "brale-core",
+		Command:    commandPath,
+		Endpoint:   "http://127.0.0.1:9991",
+		SystemPath: systemPath,
+		IndexPath:  indexPath,
+		AuditPath:  auditPath,
+	})
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	wantConfigPath := filepath.Join(home, ".claude.json")
+	if result.ConfigPath != wantConfigPath {
+		t.Fatalf("ConfigPath=%s want %s", result.ConfigPath, wantConfigPath)
+	}
+	if ensured.mode != "sse" {
+		t.Fatalf("ensure mode=%q want sse", ensured.mode)
+	}
+	if ensured.sseURL != "http://127.0.0.1:8765/sse" {
+		t.Fatalf("ensure sseURL=%q want %q", ensured.sseURL, "http://127.0.0.1:8765/sse")
+	}
+
+	raw, err := os.ReadFile(wantConfigPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	servers := doc["mcpServers"].(map[string]any)
+	brale := servers["brale-core"].(map[string]any)
+	if brale["type"] != "sse" {
+		t.Fatalf("type=%v want sse", brale["type"])
+	}
+	if brale["url"] != "http://127.0.0.1:8765/sse" {
+		t.Fatalf("url=%v want %s", brale["url"], "http://127.0.0.1:8765/sse")
+	}
+	if _, ok := brale["command"]; ok {
+		t.Fatalf("unexpected command for sse config: %v", brale)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy config still exists: err=%v", err)
+	}
+}
+
 func TestInstallWritesClaudeCodeConfigToClaudeJSONAndRemovesLegacyFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -111,6 +209,15 @@ func TestInstallWritesClaudeCodeConfigToClaudeJSONAndRemovesLegacyFile(t *testin
 		t.Fatalf("write command: %v", err)
 	}
 
+	origEnsure := ensureSSEAvailableFunc
+	t.Cleanup(func() {
+		ensureSSEAvailableFunc = origEnsure
+	})
+	ensureSSEAvailableFunc = func(prepared preparedInstall) error {
+		t.Fatal("ensureSSEAvailable should not run in stdio mode")
+		return nil
+	}
+
 	result, err := Install(InstallOptions{
 		Target:     "claude-code",
 		Name:       "brale-core",
@@ -119,6 +226,7 @@ func TestInstallWritesClaudeCodeConfigToClaudeJSONAndRemovesLegacyFile(t *testin
 		SystemPath: systemPath,
 		IndexPath:  indexPath,
 		AuditPath:  auditPath,
+		Mode:       "stdio",
 	})
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
@@ -138,6 +246,9 @@ func TestInstallWritesClaudeCodeConfigToClaudeJSONAndRemovesLegacyFile(t *testin
 	}
 	servers := doc["mcpServers"].(map[string]any)
 	brale := servers["brale-core"].(map[string]any)
+	if brale["command"] != commandPath {
+		t.Fatalf("command=%v want %s", brale["command"], commandPath)
+	}
 	if brale["type"] != "stdio" {
 		t.Fatalf("type=%v want stdio", brale["type"])
 	}
@@ -186,6 +297,7 @@ func TestInstallRejectsMissingCommand(t *testing.T) {
 		ConfigPath: filepath.Join(dir, "mcp.json"),
 		SystemPath: systemPath,
 		IndexPath:  indexPath,
+		Mode:       "stdio",
 	})
 	if err == nil || !strings.Contains(err.Error(), "command path") {
 		t.Fatalf("err=%v", err)
@@ -207,6 +319,7 @@ func TestInstallRejectsDirectoryForSystemPath(t *testing.T) {
 		ConfigPath: filepath.Join(dir, "mcp.json"),
 		SystemPath: dir,
 		IndexPath:  indexPath,
+		Mode:       "stdio",
 	})
 	if err == nil || !strings.Contains(err.Error(), "file path") {
 		t.Fatalf("err=%v", err)
@@ -279,6 +392,7 @@ func TestInstallWritesCodexConfigTOML(t *testing.T) {
 		SystemPath: systemPath,
 		IndexPath:  indexPath,
 		AuditPath:  auditPath,
+		Mode:       "stdio",
 	})
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
@@ -361,6 +475,65 @@ func TestInstallRejectsUnsupportedTargetEvenWithExplicitConfigPath(t *testing.T)
 	})
 	if err == nil || !strings.Contains(err.Error(), "unsupported install target") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateInstallOptionsRejectsCodexSSEBeforeSideEffects(t *testing.T) {
+	dir := t.TempDir()
+	systemPath := filepath.Join(dir, "system.toml")
+	indexPath := filepath.Join(dir, "symbols-index.toml")
+	if err := os.WriteFile(systemPath, []byte("[database]\ndsn = \"postgres://brale:brale@localhost:5432/brale?sslmode=disable\"\n"), 0o644); err != nil {
+		t.Fatalf("write system: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("[[symbols]]\nsymbol = \"BTCUSDT\"\nconfig = \"symbols/BTCUSDT.toml\"\nstrategy = \"strategies/BTCUSDT.toml\"\n"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	err := ValidateInstallOptions(InstallOptions{
+		Target:     "codex",
+		Mode:       "sse",
+		ConfigPath: filepath.Join(dir, "config.toml"),
+		SystemPath: systemPath,
+		IndexPath:  indexPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not support --mode sse") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestInstallSkipsLocalDockerEnsureForRemoteSSE(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "mcp.json")
+	systemPath := filepath.Join(dir, "system.toml")
+	indexPath := filepath.Join(dir, "symbols-index.toml")
+	if err := os.WriteFile(systemPath, []byte("[database]\ndsn = \"postgres://brale:brale@localhost:5432/brale?sslmode=disable\"\n"), 0o644); err != nil {
+		t.Fatalf("write system: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("[[symbols]]\nsymbol = \"BTCUSDT\"\nconfig = \"symbols/BTCUSDT.toml\"\nstrategy = \"strategies/BTCUSDT.toml\"\n"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	origEnsure := ensureSSEAvailableFunc
+	t.Cleanup(func() {
+		ensureSSEAvailableFunc = origEnsure
+	})
+	ensureSSEAvailableFunc = func(prepared preparedInstall) error {
+		t.Fatal("ensureSSEAvailable should not run for remote SSE installs")
+		return nil
+	}
+
+	result, err := Install(InstallOptions{
+		Target:     "claude-code",
+		ConfigPath: configPath,
+		Endpoint:   "https://remote.example.com:9991",
+		SystemPath: systemPath,
+		IndexPath:  indexPath,
+	})
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if result.ConfigPath != configPath {
+		t.Fatalf("ConfigPath=%s want %s", result.ConfigPath, configPath)
 	}
 }
 

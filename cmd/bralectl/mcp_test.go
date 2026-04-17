@@ -29,6 +29,7 @@ strategy = "strategies/BTCUSDT.toml"
 	out, errOut, err := executeRootCommand(
 		t,
 		"mcp", "install",
+		"--mode", "stdio",
 		"--config", configPath,
 		"--command", commandPath,
 		"--system", systemPath,
@@ -46,6 +47,58 @@ strategy = "strategies/BTCUSDT.toml"
 		t.Fatalf("read config: %v", readErr)
 	}
 	if !strings.Contains(string(raw), `"brale-core"`) || !strings.Contains(string(raw), `"mcpServers"`) {
+		t.Fatalf("config=%s", string(raw))
+	}
+}
+
+func TestMCPInstallCommandDefaultsModeToSSE(t *testing.T) {
+	cmd := mcpInstallCmd()
+	flag := cmd.Flags().Lookup("mode")
+	if flag == nil {
+		t.Fatal("mode flag is missing")
+	}
+	if got := flag.DefValue; got != "sse" {
+		t.Fatalf("default mode=%q want sse", got)
+	}
+}
+
+func TestMCPInstallCommandDefaultsCodexToStdio(t *testing.T) {
+	dir := t.TempDir()
+	systemPath := filepath.Join(dir, "system.toml")
+	indexPath := filepath.Join(dir, "symbols-index.toml")
+	configPath := filepath.Join(dir, "config.toml")
+	auditPath := filepath.Join(dir, "audit.jsonl")
+	commandPath := filepath.Join(dir, "bralectl")
+	writeTestFile(t, systemPath, `[database]
+dsn = "postgres://brale:brale@localhost:5432/brale?sslmode=disable"`)
+	writeTestFile(t, indexPath, `
+[[symbols]]
+symbol = "BTCUSDT"
+config = "symbols/BTCUSDT.toml"
+strategy = "strategies/BTCUSDT.toml"
+`)
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+
+	_, errOut, err := executeRootCommand(
+		t,
+		"mcp", "install",
+		"--target", "codex",
+		"--config", configPath,
+		"--command", commandPath,
+		"--system", systemPath,
+		"--index", indexPath,
+		"--audit-log", auditPath,
+	)
+	if err != nil {
+		t.Fatalf("execute command: %v\nstderr=%s", err, errOut)
+	}
+	raw, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config: %v", readErr)
+	}
+	if !strings.Contains(string(raw), `[mcp_servers.brale-core]`) {
 		t.Fatalf("config=%s", string(raw))
 	}
 }

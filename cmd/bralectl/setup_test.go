@@ -38,6 +38,7 @@ strategy = "strategies/BTCUSDT.toml"
 		"--lang", "en",
 		"--install-mcp",
 		"--mcp-target", "opencode",
+		"--mcp-mode", "stdio",
 		"--config", configPath,
 		"--command", commandPath,
 		"--system", systemPath,
@@ -109,6 +110,72 @@ strategy = "strategies/BTCUSDT.toml"
 	}
 	if _, statErr := os.Stat(filepath.Join(repo, ".env")); !os.IsNotExist(statErr) {
 		t.Fatalf(".env should not be created on invalid setup, got err=%v", statErr)
+	}
+}
+
+func TestSetupCommandRejectsSkipMCPWithMCPMode(t *testing.T) {
+	repo := t.TempDir()
+	writeSetupFile(t, filepath.Join(repo, ".env.example"), "EXEC_USERNAME=\nEXEC_SECRET=\n")
+
+	_, errOut, err := executeRootCommand(
+		t,
+		"setup",
+		"--repo", repo,
+		"--lang", "en",
+		"--skip-mcp",
+		"--mcp-mode", "stdio",
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(errOut, "--skip-mcp cannot be combined") && !strings.Contains(err.Error(), "--skip-mcp cannot be combined") {
+		t.Fatalf("stderr=%s err=%v", errOut, err)
+	}
+}
+
+func TestSetupCommandDefaultsCodexToStdio(t *testing.T) {
+	repo := t.TempDir()
+	writeSetupFile(t, filepath.Join(repo, ".env.example"), "EXEC_USERNAME=\nEXEC_SECRET=\n")
+	systemPath := filepath.Join(repo, "configs", "system.toml")
+	indexPath := filepath.Join(repo, "configs", "symbols-index.toml")
+	commandPath := filepath.Join(repo, "data", "brale", "bin", "bralectl")
+	configPath := filepath.Join(repo, "config.toml")
+	if err := os.MkdirAll(filepath.Dir(commandPath), 0o755); err != nil {
+		t.Fatalf("mkdir command dir: %v", err)
+	}
+	writeSetupFile(t, systemPath, `[database]
+dsn = "postgres://brale:brale@localhost:5432/brale?sslmode=disable"`)
+	writeSetupFile(t, indexPath, `
+[[symbols]]
+symbol = "BTCUSDT"
+config = "symbols/BTCUSDT.toml"
+strategy = "strategies/BTCUSDT.toml"
+`)
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+
+	_, errOut, err := executeRootCommand(
+		t,
+		"setup",
+		"--repo", repo,
+		"--lang", "en",
+		"--install-mcp",
+		"--mcp-target", "codex",
+		"--config", configPath,
+		"--command", commandPath,
+		"--system", systemPath,
+		"--index", indexPath,
+	)
+	if err != nil {
+		t.Fatalf("execute command: %v\nstderr=%s", err, errOut)
+	}
+	raw, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config: %v", readErr)
+	}
+	if !strings.Contains(string(raw), `[mcp_servers.brale-core]`) {
+		t.Fatalf("config=%s", string(raw))
 	}
 }
 

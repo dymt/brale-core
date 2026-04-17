@@ -12,7 +12,7 @@ import (
 	"brale-core/internal/config"
 	symbolpkg "brale-core/internal/pkg/symbol"
 
-	"github.com/manifoldco/promptui"
+	huh "charm.land/huh/v2"
 )
 
 type TemplateCandidate struct {
@@ -70,25 +70,23 @@ func SelectTemplateSymbol(candidates []TemplateCandidate) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("没有可用的模板币种；请先确保 symbols-index.toml 中至少有一个完整配置并已加入 pair_whitelist")
 	}
-	items := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		items = append(items, fmt.Sprintf("%s  (pair: %s)", candidate.Symbol, candidate.FreqtradePair))
+	opts := make([]huh.Option[string], 0, len(candidates))
+	for _, c := range candidates {
+		label := fmt.Sprintf("%s  (pair: %s)", c.Symbol, c.FreqtradePair)
+		opts = append(opts, huh.NewOption(label, c.Symbol))
 	}
-	prompt := promptui.Select{
-		Label: "请选择模板币种",
-		Items: items,
-		Size:  min(12, len(items)),
-		Searcher: func(input string, index int) bool {
-			item := strings.ToLower(items[index])
-			query := strings.ToLower(strings.TrimSpace(input))
-			return strings.Contains(item, query)
-		},
-	}
-	idx, _, err := prompt.Run()
-	if err != nil {
+	var selected string
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("请选择模板币种").
+				Options(opts...).
+				Value(&selected),
+		),
+	).Run(); err != nil {
 		return "", fmt.Errorf("prompt template symbol: %w", err)
 	}
-	return candidates[idx].Symbol, nil
+	return selected, nil
 }
 
 func loadFreqtradePairWhitelist(path string) (map[string]struct{}, error) {

@@ -1,11 +1,29 @@
 FROM node:22-bookworm-slim AS node-runtime
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.25-bookworm AS bralectl-builder
 
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
+ARG HTTP_PROXY=
+ARG HTTPS_PROXY=
+ARG NO_PROXY=
+ARG http_proxy=
+ARG https_proxy=
+ARG no_proxy=
+ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+ENV no_proxy=${no_proxy}
+ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
+ENV NPM_CONFIG_REPLACE_REGISTRY_HOST=always
+ENV NPM_CONFIG_FETCH_RETRIES=5
+ENV NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000
+ENV NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -13,10 +31,15 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
-COPY webui ./webui
+RUN CGO_ENABLED=0 go build -o /out/bralectl ./cmd/bralectl
+
+FROM bralectl-builder AS builder
+
+COPY webui/og-card-demo/package.json webui/og-card-demo/package-lock.json /src/webui/og-card-demo/
 COPY --from=node-runtime /usr/local/ /usr/local/
 RUN npm ci --prefix /src/webui/og-card-demo
-RUN CGO_ENABLED=0 go build -o /out/bralectl ./cmd/bralectl
+
+COPY webui ./webui
 RUN CGO_ENABLED=0 go build -o /out/brale-core ./cmd/brale-core
 
 FROM debian:bookworm-slim AS brale-runtime

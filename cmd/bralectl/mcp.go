@@ -92,6 +92,7 @@ func normalizeMCPServeMode(raw string) (string, error) {
 func mcpInstallCmd() *cobra.Command {
 	var (
 		target     string
+		mode       string
 		configPath string
 		command    string
 		name       string
@@ -103,11 +104,16 @@ func mcpInstallCmd() *cobra.Command {
 		Use:   "install",
 		Short: "写入 MCP client 配置",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			installMode := mode
+			if flag := cmd.Flags().Lookup("mode"); flag != nil && !flag.Changed && strings.EqualFold(strings.TrimSpace(target), "codex") {
+				installMode = "stdio"
+			}
 			result, err := mcp.Install(mcp.InstallOptions{
 				Name:       name,
 				Command:    command,
 				ConfigPath: configPath,
 				Target:     target,
+				Mode:       installMode,
 				Endpoint:   flagEndpoint,
 				SystemPath: systemPath,
 				IndexPath:  indexPath,
@@ -121,6 +127,7 @@ func mcpInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "claude-code", "安装目标：claude-code、claude-desktop、opencode、codex 或 custom")
+	cmd.Flags().StringVar(&mode, "mode", "sse", "安装模式：sse（默认）或 stdio")
 	cmd.Flags().StringVar(&configPath, "config", "", "显式指定 MCP 配置文件路径")
 	cmd.Flags().StringVar(&command, "command", "", "bralectl 可执行文件路径")
 	cmd.Flags().StringVar(&name, "name", "brale-core", "MCP server 名称")
