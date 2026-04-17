@@ -182,8 +182,8 @@ type DashboardFlowNode struct {
 }
 
 type DashboardTightenInfo struct {
-	Triggered bool   `json:"triggered"`
-	Reason    string `json:"reason"`
+	Executed bool   `json:"executed"`
+	Reason   string `json:"reason"`
 }
 
 type DashboardDecisionHistoryResponse struct {

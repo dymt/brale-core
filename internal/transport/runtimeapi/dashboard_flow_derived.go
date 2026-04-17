@@ -43,7 +43,7 @@ func resolveDashboardTightenInfo(gate *store.GateEventRecord) *DashboardTightenI
 	if rm == nil {
 		return nil
 	}
-	return &DashboardTightenInfo{Triggered: rm.Triggered, Reason: rm.Reason}
+	return &DashboardTightenInfo{Executed: rm.Executed, Reason: rm.Reason}
 }
 
 func resolveDashboardTightenFromRiskHistory(ctx context.Context, st store.RiskPlanQueryStore, pos store.PositionRecord) *DashboardTightenInfo {
@@ -51,14 +51,14 @@ func resolveDashboardTightenFromRiskHistory(ctx context.Context, st store.RiskPl
 	if rm == nil {
 		return nil
 	}
-	return &DashboardTightenInfo{Triggered: rm.Triggered, Reason: rm.Reason}
+	return &DashboardTightenInfo{Executed: rm.Executed, Reason: rm.Reason}
 }
 
 func toReadmodelTightenInfo(tighten *DashboardTightenInfo) *readmodel.TightenInfo {
 	if tighten == nil {
 		return nil
 	}
-	return &readmodel.TightenInfo{Triggered: tighten.Triggered, Reason: tighten.Reason}
+	return &readmodel.TightenInfo{Executed: tighten.Executed, Reason: tighten.Reason}
 }
 
 func readmodelSummarizePlanReason(gate store.GateEventRecord, tighten *DashboardTightenInfo) string {

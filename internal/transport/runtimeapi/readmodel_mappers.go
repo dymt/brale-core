@@ -10,7 +10,7 @@ func mapDashboardTightenInfo(info *dashboard.TightenInfo) *DashboardTightenInfo 
 	if info == nil {
 		return nil
 	}
-	return &DashboardTightenInfo{Triggered: info.Triggered, Reason: info.Reason}
+	return &DashboardTightenInfo{Executed: info.Executed, Reason: info.Reason}
 }
 
 func mapDashboardDecisionHistoryItems(items []decisionflowrm.HistoryItem) []DashboardDecisionHistoryItem {

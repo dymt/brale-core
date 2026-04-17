@@ -39,7 +39,7 @@ func ResolveTightenInfo(gate *store.GateEventRecord) *TightenInfo {
 	if executed {
 		reason = "executed"
 	}
-	return &TightenInfo{Triggered: executed, Reason: reason}
+	return &TightenInfo{Executed: executed, Reason: reason}
 }
 
 func ResolveTightenFromRiskHistory(ctx context.Context, st store.RiskPlanQueryStore, pos store.PositionRecord, timelineLimit int) *TightenInfo {
@@ -52,7 +52,7 @@ func ResolveTightenFromRiskHistory(ctx context.Context, st store.RiskPlanQuerySt
 	}
 	for _, item := range timeline {
 		if IsTightenSource(item.Source) {
-			return &TightenInfo{Triggered: true, Reason: strings.ToLower(strings.TrimSpace(item.Source))}
+			return &TightenInfo{Executed: true, Reason: strings.ToLower(strings.TrimSpace(item.Source))}
 		}
 	}
 	return nil

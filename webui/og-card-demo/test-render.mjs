@@ -180,7 +180,7 @@ async function main() {
     ],
   });
   const tightenSkippedModel = buildModel(tightenSkippedInput);
-  assert.equal(tightenSkippedModel.sourceCard.lines[1].text, '持仓处理：收紧未执行 · 原因：评分未达标');
+  assert.equal(tightenSkippedModel.sourceCard.lines[1].text, '持仓处理：收紧受阻 · 原因：评分未达标');
   assert.equal(tightenSkippedModel.sourceCard.lines[2].text, '当前仓位：多头');
 
   const tightenExecutedInput = createInput({
@@ -203,6 +203,33 @@ async function main() {
   assert.equal(tightenExecutedModel.sourceCard.lines[1].text, '持仓处理：已执行收紧');
   assert.equal(tightenExecutedModel.sourceCard.lines[2].text, '当前仓位：空头');
   assert.equal(tightenExecutedModel.sourceCard.lines[3].text, '止损：2415.5 · 止盈：2399.1 / 2377.3');
+
+  // ---------- KEEP scenario (no tighten) ----------
+  const keepInput = createInput({
+    decision_action: '保持',
+    decision_text: '继续持仓',
+    direction: '多头',
+  });
+  const keepModel = buildModel(keepInput);
+  const keepLines = keepModel.sourceCard.lines.map((l) => l.text);
+  assert.ok(!keepLines.some((t) => t.includes('收紧')), 'KEEP decision should not mention tighten');
+  await renderScenario({ tmpDir, name: 'keep-hold', input: keepInput });
+
+  // ---------- TIGHTEN not-triggered scenario ----------
+  const tightenNotTriggeredInput = createInput({
+    decision_action: '收紧',
+    decision_text: '收紧未触发（条件不足）',
+    direction: '多头',
+    execution: {
+      action: 'tighten',
+      evaluated: true,
+      executed: false,
+      blocked_by: [],
+    },
+  });
+  const tightenNotTriggeredModel = buildModel(tightenNotTriggeredInput);
+  assert.equal(tightenNotTriggeredModel.sourceCard.lines[1].text, '持仓处理：收紧未触发（条件不足）');
+  await renderScenario({ tmpDir, name: 'tighten-not-triggered', input: tightenNotTriggeredInput });
 
   const sampleInputPath = path.resolve('./sample-input.json');
   const sampleResult = await renderCard({ inputPath: sampleInputPath, outputPath: sampleOutputPath });

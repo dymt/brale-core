@@ -459,17 +459,23 @@ function buildDecisionModel(raw) {
       sourceLines.push({
         text: '持仓处理：已执行收紧',
         note: false,
-        kind: 'default',
+        kind: 'success',
       });
     } else if (blockedBy.length > 0) {
       sourceLines.push({
-        text: `持仓处理：收紧未执行 · 原因：${blockedBy.join(' / ')}`,
+        text: `持仓处理：收紧受阻 · 原因：${blockedBy.join(' / ')}`,
         note: false,
         kind: 'danger',
       });
+    } else if (parseBool(execution.eligible, false)) {
+      sourceLines.push({
+        text: '持仓处理：满足收紧条件（待执行）',
+        note: false,
+        kind: 'default',
+      });
     } else if (parseBool(execution.evaluated, false)) {
       sourceLines.push({
-        text: '持仓处理：收紧未触发',
+        text: '持仓处理：收紧未触发（条件不足）',
         note: false,
         kind: 'default',
       });

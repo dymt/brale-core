@@ -21,7 +21,7 @@ func buildDashboardFlowTrace(stages dashboardFlowStageSet, gate *store.GateEvent
 func buildDashboardFlowNodes(stages dashboardFlowStageSet, gate *store.GateEventRecord, tighten *DashboardTightenInfo) []DashboardFlowNode {
 	var rmTighten *readmodel.TightenInfo
 	if tighten != nil {
-		rmTighten = &readmodel.TightenInfo{Triggered: tighten.Triggered, Reason: tighten.Reason}
+		rmTighten = &readmodel.TightenInfo{Executed: tighten.Executed, Reason: tighten.Reason}
 	}
 	return mapDashboardFlowNodes(readmodel.BuildFlowNodes(stages, gate, rmTighten))
 }

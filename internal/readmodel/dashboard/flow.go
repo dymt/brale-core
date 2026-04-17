@@ -531,7 +531,7 @@ func summarizePlanOutcome(gate store.GateEventRecord, tighten *TightenInfo) stri
 func summarizeTerminalOutcome(gate store.GateEventRecord, tighten *TightenInfo) string {
 	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
 	if action == "TIGHTEN" && tighten != nil {
-		if tighten.Triggered {
+		if tighten.Executed {
 			return "tighten executed"
 		}
 		return "tighten blocked"
@@ -547,7 +547,7 @@ func summarizeTerminalOutcome(gate store.GateEventRecord, tighten *TightenInfo) 
 
 func summarizeTerminalStatus(gate store.GateEventRecord, tighten *TightenInfo) string {
 	action := strings.ToUpper(strings.TrimSpace(gate.DecisionAction))
-	if action == "TIGHTEN" && tighten != nil && !tighten.Triggered {
+	if action == "TIGHTEN" && tighten != nil && !tighten.Executed {
 		return "blocked"
 	}
 	if !gate.GlobalTradeable {

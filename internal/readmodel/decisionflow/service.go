@@ -339,7 +339,7 @@ func prependDecisionHeader(title, body string) string {
 func resolvePlanSource(gate store.GateEventRecord, tighten *dashboard.DecisionTightenDetail) string {
 	var rmTighten *dashboard.TightenInfo
 	if tighten != nil {
-		rmTighten = &dashboard.TightenInfo{Triggered: tighten.Executed, Reason: tighten.DisplayReason}
+		rmTighten = &dashboard.TightenInfo{Executed: tighten.Executed, Reason: tighten.DisplayReason}
 	}
 	nodes := dashboard.BuildFlowNodes(dashboard.FlowStageSet{}, &gate, rmTighten)
 	if len(nodes) == 0 {

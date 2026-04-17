@@ -17,8 +17,8 @@ type RiskState struct {
 }
 
 type TightenInfo struct {
-	Triggered bool
-	Reason    string
+	Executed bool
+	Reason   string
 }
 
 type FlowAnchor struct {

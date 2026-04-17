@@ -2151,7 +2151,7 @@ function renderTightenDetail(tighten) {
   const progress = Number.isFinite(score) && Number.isFinite(threshold) && threshold > 0
     ? Math.max(0, Math.min(100, (score / threshold) * 100))
     : 0;
-  const stateLabel = tighten.executed ? "已执行" : tighten.eligible ? "待执行" : tighten.evaluated ? "未触发" : "未评估";
+  const stateLabel = tighten.executed ? "已执行" : blockedBy.length > 0 ? "收紧受阻" : tighten.eligible ? "待执行" : tighten.evaluated ? "未触发" : "未评估";
   const stateClass = tighten.executed ? "pass" : blockedBy.length > 0 ? "fail" : "neutral";
   return `<section class="decision-section tighten-section ${stateClass}">
     <div class="decision-section-head">
@@ -2161,7 +2161,7 @@ function renderTightenDetail(tighten) {
     <div class="decision-fact-grid tighten-fact-grid">
       <div class="decision-fact-card">
         <span>执行状态</span>
-        <strong>${escapeHtml(tighten.executed ? "已执行收紧" : "仅完成评估")}</strong>
+        <strong>${escapeHtml(tighten.executed ? "已执行收紧" : blockedBy.length > 0 ? "收紧受阻" : tighten.eligible ? "待执行" : tighten.evaluated ? "收紧未触发" : "收紧未评估")}</strong>
       </div>
       <div class="decision-fact-card">
         <span>止盈同步收紧</span>
