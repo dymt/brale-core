@@ -18,7 +18,7 @@ func TestRiskMonitorStopBeyondLiquidationLong(t *testing.T) {
 		Symbol:    "BTCUSDT",
 		Direction: "long",
 		Entry:     100,
-		StopLoss:  120,
+		StopLoss:  80,
 		RiskPct:   0.2,
 		Leverage:  10,
 		RiskAnnotations: execution.RiskAnnotations{
@@ -40,7 +40,7 @@ func TestRiskMonitorStopBeyondLiquidationShort(t *testing.T) {
 		Symbol:    "BTCUSDT",
 		Direction: "short",
 		Entry:     100,
-		StopLoss:  80,
+		StopLoss:  120,
 		RiskPct:   0.2,
 		Leverage:  10,
 		RiskAnnotations: execution.RiskAnnotations{

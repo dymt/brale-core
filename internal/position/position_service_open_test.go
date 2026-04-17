@@ -62,6 +62,60 @@ func TestSubmitOpenFromPlanWithStopLossPlacesOrder(t *testing.T) {
 	}
 }
 
+func TestSubmitOpenFromPlanRejectsStopBeyondLiquidation(t *testing.T) {
+	executor := &countingOpenExecutor{}
+	svc := &PositionService{
+		Store:     &stubStore{},
+		Executor:  executor,
+		PlanCache: NewPlanCache(),
+	}
+
+	plan := execution.ExecutionPlan{
+		PositionID:   "ETHUSDT-3",
+		Symbol:       "ETHUSDT",
+		Direction:    "long",
+		Entry:        2100,
+		StopLoss:     1000,
+		PositionSize: 0.1,
+		Leverage:     2,
+	}
+
+	_, err := svc.SubmitOpenFromPlan(context.Background(), plan, 2100)
+	if err == nil || !strings.Contains(err.Error(), "beyond liquidation") {
+		t.Fatalf("expected liquidation validation error, got %v", err)
+	}
+	if executor.placeCalls != 0 {
+		t.Fatalf("expected PlaceOrder not called, got %d", executor.placeCalls)
+	}
+}
+
+func TestSubmitOpenFromPlanUsesOrderEntryForLiquidationGuard(t *testing.T) {
+	executor := &countingOpenExecutor{}
+	svc := &PositionService{
+		Store:     &stubStore{},
+		Executor:  executor,
+		PlanCache: NewPlanCache(),
+	}
+
+	plan := execution.ExecutionPlan{
+		PositionID:   "ETHUSDT-4",
+		Symbol:       "ETHUSDT",
+		Direction:    "long",
+		Entry:        100,
+		StopLoss:     60,
+		PositionSize: 1,
+		Leverage:     2,
+	}
+
+	_, err := svc.SubmitOpenFromPlan(context.Background(), plan, 150)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executor.placeCalls != 1 {
+		t.Fatalf("expected PlaceOrder called once, got %d", executor.placeCalls)
+	}
+}
+
 type countingOpenExecutor struct {
 	stubExecutor
 	placeCalls int

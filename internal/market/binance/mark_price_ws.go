@@ -4,6 +4,8 @@ package binance
 import (
 	"context"
 	"errors"
+	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +17,11 @@ import (
 
 	"github.com/adshao/go-binance/v2/futures"
 	"go.uber.org/zap"
+)
+
+const (
+	defaultMarkPriceMaxAge   = 30 * time.Second
+	defaultMarkPriceSpikePct = 0.30
 )
 
 type MarkPriceStreamOptions struct {
@@ -115,11 +122,15 @@ func (s *MarkPriceStream) MarkPrice(ctx context.Context, symbol string) (market.
 	if !ok || quote.Price <= 0 {
 		return market.PriceQuote{}, market.ErrPriceUnavailable
 	}
+	if !quoteIsFresh(quote, time.Now()) {
+		return market.PriceQuote{}, market.ErrPriceUnavailable
+	}
 	return quote, nil
 }
 
 func (s *MarkPriceStream) run(ctx context.Context) {
 	logger := logging.FromContext(ctx).Named("market")
+	defer logger.Info("mark price ws stopped")
 	backoff := time.Second
 	connectedOnce := false
 	retrying := false
@@ -217,6 +228,25 @@ func (s *MarkPriceStream) handleEvent(event *futures.WsMarkPriceEvent) {
 	if symbol == "" {
 		return
 	}
+	s.mu.RLock()
+	prev, ok := s.quotes[symbol]
+	s.mu.RUnlock()
+	eventTime := time.Now()
+	if event.Time > 0 {
+		eventTime = time.UnixMilli(event.Time)
+	}
+	if ok && prev.Price > 0 && quoteIsFresh(prev, eventTime) {
+		change := math.Abs(price-prev.Price) / prev.Price
+		if change > defaultMarkPriceSpikePct {
+			logging.L().Named("market").Warn("mark price spike rejected",
+				zap.String("symbol", symbol),
+				zap.Float64("prev_price", prev.Price),
+				zap.Float64("new_price", price),
+				zap.Float64("change_pct", change*100),
+			)
+			return
+		}
+	}
 	quote := market.PriceQuote{
 		Symbol:    symbol,
 		Price:     price,
@@ -242,10 +272,29 @@ func (s *MarkPriceStream) waitRetry(ctx context.Context, backoff time.Duration) 
 }
 
 func nextBackoff(backoff time.Duration) time.Duration {
-	if backoff < 5*time.Second {
-		return backoff + time.Second
+	next := backoff + time.Second
+	if next > 5*time.Second {
+		next = 5 * time.Second
 	}
-	return 5 * time.Second
+	jitterBound := next / 5
+	if jitterBound <= 0 {
+		return next
+	}
+	jitter := time.Duration(rand.Int63n(int64(jitterBound)))
+	if rand.Intn(2) == 0 {
+		return next + jitter
+	}
+	if next > jitter {
+		return next - jitter
+	}
+	return next
+}
+
+func quoteIsFresh(quote market.PriceQuote, now time.Time) bool {
+	if quote.Timestamp <= 0 {
+		return false
+	}
+	return now.Sub(time.UnixMilli(quote.Timestamp)) <= defaultMarkPriceMaxAge
 }
 
 func normalizeSymbols(symbols []string) []string {

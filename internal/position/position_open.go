@@ -140,6 +140,12 @@ func (s *PositionService) SubmitOpenFromPlan(ctx context.Context, plan execution
 			price = triggerPrice
 		}
 	}
+	if liqPrice := risk.CalcLiquidationPriceForPosition(price, plan.Direction, plan.Leverage, plan.PositionSize); risk.IsStopBeyondLiquidation(plan.Direction, plan.StopLoss, liqPrice) {
+		err := fmt.Errorf("stop_loss %.4f is beyond liquidation %.4f", plan.StopLoss, liqPrice)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return execution.PlaceOrderResp{}, err
+	}
 	logging.FromContext(ctx).Named("execution").Info("open intent created",
 		zap.String("position_id", plan.PositionID),
 		zap.String("symbol", plan.Symbol),
