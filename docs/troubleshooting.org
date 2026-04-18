@@ -26,6 +26,127 @@
 2. 检查币种调度模式是否为 =trade=
 3. 检查 =enable_scheduled_decision= 与 =[scheduler].backend=
 
+** 数据库迁移失败
+
+*症状：* 启动时报 =dirty database version= 或 =migration checksum mismatch=。
+
+*可能原因：*
+- 上次迁移中途中断，留下 dirty state
+- 手动修改了已应用的 migration 文件
+- 降级后 migration 版本与数据库状态不匹配
+
+*诊断步骤：*
+
+1. 查看迁移状态：
+   #+begin_src bash
+   docker compose exec timescaledb psql -U brale -d brale \
+     -c "SELECT version, dirty FROM schema_migrations;"
+   #+end_src
+2. 检查 =dirty= 字段，若为 =true= 说明上次迁移未完成
+3. 查看 Brale 容器启动日志：=docker compose logs brale | grep -i migrat=
+
+*解决方案：*
+
+#+begin_src bash
+make stop
+make migrate-down          # 回滚到上一个稳定版本
+make migrate-up            # 重新执行迁移
+make start
+#+end_src
+
+若回滚失败，可手动修正 =schema_migrations= 表中的 =dirty= 标记后重试。
+
+** 止损未触发
+
+*症状：* 价格已越过止损位，但仓位仍未关闭。
+
+*可能原因：*
+- Mark Price WebSocket 延迟或断连，导致 RiskMonitor 未收到最新价格
+- 交易所侧止损（server-side stoploss）与客户端止损存在执行差异
+- =[risk_guard] max_drawdown_pct= 配置过大，允许了更大回撤
+- RiskMonitor 检查间隔内价格快速穿越止损位（跳空）
+
+*诊断步骤：*
+
+1. 检查 RiskMonitor 日志：
+   #+begin_src bash
+   docker compose logs brale | grep -i "risk.*monitor\|price.*stale\|stop.*check"
+   #+end_src
+2. 确认 Mark Price 是否在更新：
+   #+begin_src bash
+   docker compose logs brale | grep "mark price ws"
+   #+end_src
+3. 检查策略配置中的风控参数：
+   #+begin_src bash
+   grep -A 5 'risk_guard' configs/strategies/*.toml
+   #+end_src
+
+*解决方案：*
+- 确认 WebSocket 连接正常；若反复断连，检查网络与代理配置
+- 调低 =[risk_guard] max_drawdown_pct= 以收紧保护
+- 检查 =stop_loss_mode= 配置，确认是否同时启用了服务端止损
+
+** 对账异常
+
+*症状：* 仓位状态卡在 =aborting= 或 =close_pending=，长时间不推进。
+
+*可能原因：*
+- Freqtrade 侧状态已变更但 Webhook 回调失败
+- Bridge 获取仓位状态超时或返回异常
+- 对账重试次数耗尽
+
+*诊断步骤：*
+
+1. 查看对账日志：
+   #+begin_src bash
+   docker compose logs brale | grep -i "reconcile\|bridge\|state mismatch"
+   #+end_src
+2. 检查 Freqtrade 侧仓位状态：
+   #+begin_src bash
+   curl -s http://127.0.0.1:8080/api/v1/status
+   #+end_src
+3. 查看数据库中仓位当前状态：
+   #+begin_src bash
+   docker compose exec timescaledb psql -U brale -d brale \
+     -c "SELECT position_id, symbol, status, updated_at FROM positions WHERE status NOT IN ('closed');"
+   #+end_src
+
+*解决方案：*
+- 若 Freqtrade 侧已无对应仓位，可通过数据库手动修正仓位状态
+- 检查 Webhook 地址配置是否正确，确认 Brale 能接收到回调
+- 必要时重启 Brale 容器触发一次完整对账：=make rebuild=
+
+** LLM 连续失败
+
+*症状：* 决策轮次中多个 Agent 输出为空或报错，日志显示连续 LLM 调用失败。
+
+*可能原因：*
+- API Key 过期或余额不足
+- 触发了 Provider 的速率限制（HTTP 429）
+- LLM 端点超时（网络问题或模型负载高）
+- Token 预算超限（单次请求 token 过多）
+
+*诊断步骤：*
+
+1. 探测 LLM 端点：
+   #+begin_src bash
+   bralectl llm probe
+   #+end_src
+2. 查看详细错误日志：
+   #+begin_src bash
+   docker compose logs brale | grep -i "openai\|llm.*error\|429\|timeout\|token.*budget"
+   #+end_src
+3. 检查 LLM 配置：
+   #+begin_src bash
+   grep -A 3 'llm_models' configs/system.toml
+   #+end_src
+
+*解决方案：*
+- 验证 API Key 有效性与余额
+- 若遇 429 限流，调大 =[scheduler] min_llm_interval= 增加调用间隔
+- 若超时，检查 =endpoint= 配置与网络代理
+- 若 token 超限，检查品种配置的 =kline_limit= 与 =intervals= 是否过大
+
 * English Version
 
 ** make start stalls in wait-freqtrade
@@ -51,3 +172,124 @@
 1. Query =/api/runtime/schedule/status=
 2. Check whether the symbol mode is =trade=
 3. Verify =enable_scheduled_decision= and =[scheduler].backend=
+
+** Database Migration Failure
+
+*Symptoms:* Startup reports =dirty database version= or =migration checksum mismatch=.
+
+*Possible causes:*
+- A previous migration was interrupted, leaving a dirty state
+- An already-applied migration file was modified manually
+- Version downgrade left a mismatch between migration version and DB state
+
+*Diagnostic steps:*
+
+1. Inspect migration state:
+   #+begin_src bash
+   docker compose exec timescaledb psql -U brale -d brale \
+     -c "SELECT version, dirty FROM schema_migrations;"
+   #+end_src
+2. If =dirty= is =true=, the last migration did not finish cleanly
+3. Check Brale startup logs: =docker compose logs brale | grep -i migrat=
+
+*Resolution:*
+
+#+begin_src bash
+make stop
+make migrate-down          # roll back to the last stable version
+make migrate-up            # re-run migrations
+make start
+#+end_src
+
+If rollback also fails, manually correct the =dirty= flag in =schema_migrations= and retry.
+
+** Stoploss Not Triggered
+
+*Symptoms:* Price has crossed the stop-loss level but the position remains open.
+
+*Possible causes:*
+- Mark Price WebSocket delayed or disconnected — RiskMonitor did not receive the latest price
+- Gap between exchange-side (server) stoploss and client-side stoploss execution
+- =[risk_guard] max_drawdown_pct= is set too high, allowing a larger drawdown
+- Price gapped through the stop level between RiskMonitor check intervals
+
+*Diagnostic steps:*
+
+1. Check RiskMonitor logs:
+   #+begin_src bash
+   docker compose logs brale | grep -i "risk.*monitor\|price.*stale\|stop.*check"
+   #+end_src
+2. Confirm Mark Price is updating:
+   #+begin_src bash
+   docker compose logs brale | grep "mark price ws"
+   #+end_src
+3. Review risk-guard config:
+   #+begin_src bash
+   grep -A 5 'risk_guard' configs/strategies/*.toml
+   #+end_src
+
+*Resolution:*
+- Ensure the WebSocket connection is stable; check network and proxy settings if it keeps dropping
+- Lower =[risk_guard] max_drawdown_pct= to tighten protection
+- Verify =stop_loss_mode= config and whether server-side stoploss is also enabled
+
+** Reconciliation Anomaly
+
+*Symptoms:* Position stuck in =aborting= or =close_pending= state for an extended period.
+
+*Possible causes:*
+- Freqtrade state has changed but the webhook callback failed to reach Brale
+- Bridge status fetch timed out or returned an error
+- Reconciliation retry attempts exhausted
+
+*Diagnostic steps:*
+
+1. Check reconcile logs:
+   #+begin_src bash
+   docker compose logs brale | grep -i "reconcile\|bridge\|state mismatch"
+   #+end_src
+2. Verify position state on Freqtrade:
+   #+begin_src bash
+   curl -s http://127.0.0.1:8080/api/v1/status
+   #+end_src
+3. Query position state in the database:
+   #+begin_src bash
+   docker compose exec timescaledb psql -U brale -d brale \
+     -c "SELECT position_id, symbol, status, updated_at FROM positions WHERE status NOT IN ('closed');"
+   #+end_src
+
+*Resolution:*
+- If Freqtrade no longer holds the position, manually patch the position status in the database
+- Confirm the webhook address is correct and Brale can receive callbacks
+- If needed, restart the Brale container to trigger a full reconciliation: =make rebuild=
+
+** LLM Consecutive Failures
+
+*Symptoms:* Multiple Agent outputs are empty or errored in a decision round; logs show consecutive LLM call failures.
+
+*Possible causes:*
+- API key expired or balance depleted
+- Provider rate limit hit (HTTP 429)
+- LLM endpoint timeout (network issue or high model load)
+- Token budget exceeded (request too large)
+
+*Diagnostic steps:*
+
+1. Probe LLM endpoints:
+   #+begin_src bash
+   bralectl llm probe
+   #+end_src
+2. Review detailed error logs:
+   #+begin_src bash
+   docker compose logs brale | grep -i "openai\|llm.*error\|429\|timeout\|token.*budget"
+   #+end_src
+3. Check LLM config:
+   #+begin_src bash
+   grep -A 3 'llm_models' configs/system.toml
+   #+end_src
+
+*Resolution:*
+- Verify API key validity and remaining balance
+- For 429 rate limits, increase =[scheduler] min_llm_interval= to add delay between calls
+- For timeouts, check =endpoint= config and network proxy settings
+- For token budget issues, review the symbol's =kline_limit= and =intervals= settings

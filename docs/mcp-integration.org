@@ -39,6 +39,27 @@ bralectl mcp serve --mode http --addr 0.0.0.0:8765 \
 
 ** 安装配置
 
+*** 平台配置文件路径
+
+不同操作系统下 MCP 配置文件的默认位置：
+
+**** Claude Desktop
+
+| 平台 | 路径 |
+|------+------|
+| macOS | =~/Library/Application Support/Claude/claude_desktop_config.json= |
+| Linux | =~/.config/Claude/claude_desktop_config.json= |
+| Windows | =%APPDATA%\Claude\claude_desktop_config.json= |
+
+**** Claude Code
+
+| 平台 | 路径 |
+|------+------|
+| macOS / Linux | =~/.claude/settings.json= |
+| Windows | =%USERPROFILE%\.claude\settings.json= |
+
+=bralectl mcp install= 会自动检测当前平台并写入对应路径。
+
 *** 自动安装
 
 #+begin_src bash
@@ -208,6 +229,27 @@ bralectl mcp serve --mode http --addr 0.0.0.0:8765 \
 #+end_src
 
 ** Installation
+
+*** Platform Config File Paths
+
+Default MCP configuration file locations by operating system:
+
+**** Claude Desktop
+
+| Platform | Path |
+|----------+------|
+| macOS | =~/Library/Application Support/Claude/claude_desktop_config.json= |
+| Linux | =~/.config/Claude/claude_desktop_config.json= |
+| Windows | =%APPDATA%\Claude\claude_desktop_config.json= |
+
+**** Claude Code
+
+| Platform | Path |
+|----------+------|
+| macOS / Linux | =~/.claude/settings.json= |
+| Windows | =%USERPROFILE%\.claude\settings.json= |
+
+=bralectl mcp install= auto-detects the current platform and writes to the correct path.
 
 *** Auto-Install
 

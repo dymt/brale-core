@@ -110,6 +110,30 @@ bralectl setup [--repo .] [--lang zh|en] [--install-mcp] [--skip-mcp] \
 | =--index= | =<repo>/configs/symbols-index.toml= | symbols-index.toml 路径 |
 | =--audit-log= | （自动生成） | MCP 审计日志路径 |
 
+*** init — 交互式初始化向导
+
+交互式引导用户完成完整的项目初始化：创建或更新 =.env=、填写交易所凭证与 API Key、
+配置 LLM 端点、生成运行时配置文件。适合首次部署或重新配置。
+
+#+begin_src bash
+bralectl init [--repo /path/to/brale-core] [--lang zh|en]
+#+end_src
+
+| 参数 | 默认值 | 说明 |
+|------+---------+------|
+| =--repo= | =.= | 项目根目录路径（须包含 =.env.example= 与 =configs/= 目录） |
+| =--lang= | 交互选择 | 向导语言：=zh=（中文）或 =en=（英文） |
+
+向导流程：
+
+1. 若 =.env= 不存在，从 =.env.example= 复制初始模板
+2. 引导填写交易所凭证（Binance API Key / Secret）
+3. 引导填写 LLM 端点与 API Key
+4. 引导配置通知渠道（Telegram / 飞书，可选）
+5. 根据填写内容生成运行时配置（Freqtrade config 等）
+
+完成后可直接执行 =make start= 启动服务栈。
+
 *** schedule — 调度控制
 
 | 子命令 | 说明 |
@@ -450,6 +474,31 @@ bralectl setup [--repo .] [--lang zh|en] [--install-mcp] [--skip-mcp] \
 | =--system= | =<repo>/configs/system.toml= | System config path |
 | =--index= | =<repo>/configs/symbols-index.toml= | Symbol index path |
 | =--audit-log= | auto-generated | MCP audit log file path |
+
+*** init — Interactive Setup Wizard
+
+Walks the user through a complete project initialization: creates or updates =.env=,
+collects exchange credentials and API keys, configures LLM endpoints, and generates
+runtime config files. Best suited for first-time deployment or full reconfiguration.
+
+#+begin_src bash
+bralectl init [--repo /path/to/brale-core] [--lang zh|en]
+#+end_src
+
+| Flag | Default | Description |
+|------+---------+-------------|
+| =--repo= | =.= | Project root (must contain =.env.example= and =configs/=) |
+| =--lang= | interactive | Wizard language: =zh= (Chinese) or =en= (English) |
+
+Wizard steps:
+
+1. Copy =.env.example= to =.env= if it does not already exist
+2. Prompt for exchange credentials (Binance API Key / Secret)
+3. Prompt for LLM endpoint and API key
+4. Prompt for notification channels (Telegram / Feishu, optional)
+5. Generate runtime configs (Freqtrade config, etc.) from the collected values
+
+After completion, run =make start= to launch the stack.
 
 *** schedule — Scheduler Control
 

@@ -37,9 +37,22 @@ make start
 
 ** 备份与恢复
 
+*** 备份
+
 #+begin_src bash
 docker compose exec -T timescaledb pg_dump -U brale brale > backup.sql
-cat backup.sql | docker compose exec -T timescaledb psql -U brale -d brale
+#+end_src
+
+*** 恢复
+
+#+begin_src bash
+make stop                                                              # 1. 停止服务栈
+# 如果需要恢复 pgdata 目录，先清空再还原：
+# rm -rf ./data/pgdata && cp -a /path/to/backup/pgdata ./data/pgdata
+cat backup.sql | docker compose exec -T timescaledb psql -U brale -d brale  # 2. 导入 SQL 备份
+make migrate-up                                                        # 3. 确保迁移为最新版本
+make start                                                             # 4. 重新启动
+make status                                                            # 5. 验证服务健康
 #+end_src
 
 * English Version
@@ -79,7 +92,20 @@ make start
 
 ** Backup and Restore
 
+*** Backup
+
 #+begin_src bash
 docker compose exec -T timescaledb pg_dump -U brale brale > backup.sql
-cat backup.sql | docker compose exec -T timescaledb psql -U brale -d brale
+#+end_src
+
+*** Restore
+
+#+begin_src bash
+make stop                                                              # 1. Stop the stack
+# If restoring the pgdata directory, clear and copy first:
+# rm -rf ./data/pgdata && cp -a /path/to/backup/pgdata ./data/pgdata
+cat backup.sql | docker compose exec -T timescaledb psql -U brale -d brale  # 2. Import SQL backup
+make migrate-up                                                        # 3. Ensure migrations are up to date
+make start                                                             # 4. Restart
+make status                                                            # 5. Verify health
 #+end_src

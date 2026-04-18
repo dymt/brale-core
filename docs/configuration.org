@@ -106,6 +106,47 @@ close_recover_after = "10m"   # 平仓状态回收超时，默认 10 分钟
 - 持仓收紧（tighten）参数
 - sieve 二次风控规则
 
+** Sieve / Grade / Gate Quality 配置
+
+策略配置中的 Gate 与 Sieve 系统控制决策信号的过滤与质量评估。
+
+*** Sieve 规则
+
+Sieve 是二次风控筛选层，在 Gate 通过后对信号做额外校验。配置位于 =configs/strategies/*.toml= 的 =[sieve]= 段：
+
+#+begin_src toml
+[sieve]
+min_consensus = 2            # 最低共识数：至少 N 个 Provider 同方向才放行
+require_indicator = true     # 是否强制要求 indicator Provider 同意
+require_structure = false    # 是否强制要求 structure Provider 同意
+max_counter_signals = 1      # 允许的最大反向信号数
+#+end_src
+
+*** Grade（Agent 置信度映射）
+
+每个 Agent 在决策输出中会附带 =movement_confidence=（0–1 之间的浮点数），表示其对方向判断的置信程度。这个值会映射为 Gate Quality 的权重因子：
+
+- =movement_confidence= 越高，该 Agent 对应的 Provider 布尔信号在 Gate Quality 计算中权重越大
+- 低置信度的 Agent 输出会被自动降权，减少噪声对最终判断的影响
+
+*** Gate Quality
+
+Gate Quality 是综合评分，决定一轮决策是否达到执行阈值。计算方式：
+
+1. 每个 Provider 输出一个布尔信号（agree / disagree）
+2. 每个信号乘以其对应 Agent 的 =movement_confidence= 作为权重
+3. 加权求和后与 =movement_score_threshold= 比较
+
+相关配置位于 =[gate]= 段：
+
+#+begin_src toml
+[gate]
+movement_score_threshold = 30   # Gate Quality 最低通过分数
+consensus_required = 2          # 最低 Provider 共识数
+#+end_src
+
+Gate Quality = Σ(Provider_signal × Agent_movement_confidence × 100)。只有当 Gate Quality ≥ =movement_score_threshold= 且共识数 ≥ =consensus_required= 时，决策才会进入 Plan 阶段。
+
 ** 添加新币种
 
 推荐使用 =bralectl= 工具一键添加：
@@ -242,6 +283,47 @@ Controls trading and risk-management parameters:
 - slippage buffer
 - in-position tightening parameters
 - sieve secondary risk-control rules
+
+** Sieve / Grade / Gate Quality Configuration
+
+The Gate and Sieve systems in strategy configs control decision signal filtering and quality assessment.
+
+*** Sieve Rules
+
+Sieve is a secondary risk-control filter that runs after Gate to apply additional validation. Configured in the =[sieve]= section of =configs/strategies/*.toml=:
+
+#+begin_src toml
+[sieve]
+min_consensus = 2            # minimum consensus: at least N Providers must agree on direction
+require_indicator = true     # require indicator Provider to agree
+require_structure = false    # require structure Provider to agree
+max_counter_signals = 1      # max allowed counter-directional signals
+#+end_src
+
+*** Grade (Agent Confidence Mapping)
+
+Each Agent outputs a =movement_confidence= value (float between 0 and 1) representing its directional conviction. This value maps to the weight factor used in Gate Quality computation:
+
+- Higher =movement_confidence= gives more weight to the corresponding Provider's boolean signal in the Gate Quality calculation
+- Low-confidence Agent outputs are automatically down-weighted, reducing noise impact on the final verdict
+
+*** Gate Quality
+
+Gate Quality is the composite score that determines whether a decision round reaches execution threshold. The computation:
+
+1. Each Provider outputs a boolean signal (agree / disagree)
+2. Each signal is multiplied by its corresponding Agent's =movement_confidence= as a weight
+3. The weighted sum is compared against =movement_score_threshold=
+
+The relevant config lives in the =[gate]= section:
+
+#+begin_src toml
+[gate]
+movement_score_threshold = 30   # minimum gate quality score to pass
+consensus_required = 2          # minimum number of Provider agreements
+#+end_src
+
+Gate Quality = Σ(Provider_signal × Agent_movement_confidence × 100). A decision advances to the Plan stage only when Gate Quality ≥ =movement_score_threshold= and consensus count ≥ =consensus_required=.
 
 ** Adding New Symbols
 
