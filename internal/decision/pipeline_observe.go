@@ -78,7 +78,8 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 	roundOutcome := "ok"
 	defer func() {
 		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
-			logger.Warn("save llm round failed", zap.Error(err))
+			logger.Error("save llm round failed", zap.Error(err), zap.String("round_id", roundID.String()))
+			p.notifyError(ctx, fmt.Errorf("llm round save failed (round=%s): %w", roundID.String(), err))
 		}
 	}()
 	if decisionCtx == nil {

@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"brale-core/internal/market"
+	"brale-core/internal/pkg/logging"
 	"brale-core/internal/pkg/parseutil"
 	"brale-core/internal/snapshot"
 
 	"github.com/adshao/go-binance/v2/futures"
+	"go.uber.org/zap"
 )
 
 // =====================
@@ -64,30 +66,43 @@ func (m *FuturesMarket) Klines(ctx context.Context, symbol, interval string, lim
 		return nil, market.UnavailableErrorf("empty klines")
 	}
 	out := make([]snapshot.Candle, 0, len(klines))
-	for _, k := range klines {
+	var skipped int
+	for i, k := range klines {
 		open, err := parseFloat(k.Open)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("open", i, k.OpenTime, err)
+			continue
 		}
 		high, err := parseFloat(k.High)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("high", i, k.OpenTime, err)
+			continue
 		}
 		low, err := parseFloat(k.Low)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("low", i, k.OpenTime, err)
+			continue
 		}
 		closeVal, err := parseFloat(k.Close)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("close", i, k.OpenTime, err)
+			continue
 		}
 		vol, err := parseFloat(k.Volume)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("volume", i, k.OpenTime, err)
+			continue
 		}
 		takerBuy, err := parseFloat(k.TakerBuyBaseAssetVolume)
 		if err != nil {
-			return nil, err
+			skipped++
+			logKlineParseSkip("taker_buy", i, k.OpenTime, err)
+			continue
 		}
 		takerSell := vol - takerBuy
 		if takerSell < 0 {
@@ -103,6 +118,9 @@ func (m *FuturesMarket) Klines(ctx context.Context, symbol, interval string, lim
 			TakerBuyVolume:  takerBuy,
 			TakerSellVolume: takerSell,
 		})
+	}
+	if len(out) == 0 {
+		return nil, market.UnavailableErrorf("all %d klines failed to parse", len(klines))
 	}
 	return out, nil
 }
@@ -910,4 +928,13 @@ func parseFloat(raw string) (float64, error) {
 		return 0, market.ExternalError(fmt.Errorf("invalid number: %w", err), "binance_parse_error")
 	}
 	return val, nil
+}
+
+func logKlineParseSkip(field string, index int, openTime int64, err error) {
+	logging.L().Warn("kline parse skip",
+		zap.String("field", field),
+		zap.Int("index", index),
+		zap.Int64("open_time", openTime),
+		zap.Error(err),
+	)
 }

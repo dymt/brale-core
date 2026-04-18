@@ -94,18 +94,38 @@ func (s *ReconcileService) abortIfCanceled(ctx context.Context, pos store.Positi
 
 func (s *ReconcileService) progressAbort(ctx context.Context, pos store.PositionRecord) error {
 	logAbortStuckWarning(ctx, pos)
-	status, ok, err := s.loadBridgeStatus(ctx, pos)
-	if err != nil {
-		logAbortStatusFetchDegraded(ctx, pos, err, "aborting")
+
+	const maxRetries = 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		status, ok, err := s.loadBridgeStatus(ctx, pos)
+		if err != nil {
+			lastErr = err
+			backoff := time.Duration(1<<uint(attempt)) * 500 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			continue
+		}
+		if ok && isTerminalCancelStatus(status) {
+			reason := pos.AbortReason
+			if reason == "" {
+				reason = "order_" + status
+			}
+			return s.finalizeAbort(ctx, pos, reason)
+		}
 		return s.cancelEntry(ctx, pos)
 	}
-	if ok && isTerminalCancelStatus(status) {
-		reason := pos.AbortReason
-		if reason == "" {
-			reason = "order_" + status
-		}
-		return s.finalizeAbort(ctx, pos, reason)
-	}
+
+	logAbortStatusFetchDegraded(ctx, pos, lastErr, "aborting")
+	logging.FromContext(ctx).Named("reconcile").Error("abort status fetch exhausted retries, issuing conservative cancel",
+		zap.String("symbol", pos.Symbol),
+		zap.String("position_id", pos.PositionID),
+		zap.Int("retries", maxRetries),
+		zap.Error(lastErr),
+	)
 	return s.cancelEntry(ctx, pos)
 }
 
