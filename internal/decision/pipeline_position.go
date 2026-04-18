@@ -328,7 +328,15 @@ func (p *Pipeline) buildInPositionPromptSummary(ctx context.Context, pos store.P
 	if err != nil {
 		return base, nil
 	}
-	riskSummary, err := position.BuildPositionRiskSummary(plain)
+	liqPrice := 0.0
+	if cache := p.planCache(); cache != nil {
+		if cachedPlan, ok := cache.Get(pos.Symbol); ok && cachedPlan != nil {
+			if strings.TrimSpace(cachedPlan.PositionID) == "" || strings.EqualFold(strings.TrimSpace(cachedPlan.PositionID), strings.TrimSpace(pos.PositionID)) {
+				liqPrice = cachedPlan.RiskAnnotations.LiqPrice
+			}
+		}
+	}
+	riskSummary, err := position.BuildPositionRiskSummary(plain, liqPrice)
 	if err != nil {
 		return base, nil
 	}

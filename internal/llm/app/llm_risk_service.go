@@ -87,8 +87,10 @@ func (s LLMRiskService) TightenRiskLLM() decision.TightenRiskUpdateLLM {
 			return nil, err
 		}
 		return &decision.TightenRiskUpdatePatch{
+			Action:      parsed.Action,
 			StopLoss:    parsed.StopLoss,
 			TakeProfits: append([]float64(nil), parsed.TakeProfits...),
+			Reason:      parsed.Reason,
 			Trace: &execution.LLMRiskTrace{
 				Stage:        llm.LLMStageRiskTighten.String(),
 				Flow:         llm.LLMFlowInPosition.String(),
@@ -96,8 +98,10 @@ func (s LLMRiskService) TightenRiskLLM() decision.TightenRiskUpdateLLM {
 				UserPrompt:   user,
 				RawOutput:    raw,
 				ParsedOutput: map[string]any{
+					"action":       parsed.Action,
 					"stop_loss":    optionalFloat(parsed.StopLoss),
 					"take_profits": append([]float64(nil), parsed.TakeProfits...),
+					"reason":       optionalString(parsed.Reason),
 				},
 			},
 		}, nil
@@ -210,8 +214,10 @@ type flatRiskPatchPayload struct {
 }
 
 type tightenRiskPatchPayload struct {
+	Action      string    `json:"action"`
 	StopLoss    *float64  `json:"stop_loss"`
 	TakeProfits []float64 `json:"take_profits"`
+	Reason      *string   `json:"reason"`
 }
 
 var flatRiskPatchAllowedFields = map[string]struct{}{
@@ -282,6 +288,20 @@ func decodeTightenRiskPatch(raw string) (tightenRiskPatchPayload, error) {
 	var payload tightenRiskPatchPayload
 	if err := decodeStrictJSON(clean, &payload); err != nil {
 		return tightenRiskPatchPayload{}, err
+	}
+	payload.Action = strings.ToLower(strings.TrimSpace(payload.Action))
+	switch payload.Action {
+	case "adjust", "hold":
+	default:
+		return tightenRiskPatchPayload{}, fmt.Errorf("action must be adjust or hold")
+	}
+	if payload.Reason == nil || strings.TrimSpace(*payload.Reason) == "" {
+		return tightenRiskPatchPayload{}, fmt.Errorf("reason is required")
+	}
+	reason := strings.TrimSpace(*payload.Reason)
+	payload.Reason = &reason
+	if payload.Action == "hold" {
+		return payload, nil
 	}
 	if payload.StopLoss == nil {
 		return tightenRiskPatchPayload{}, fmt.Errorf("stop_loss is required")

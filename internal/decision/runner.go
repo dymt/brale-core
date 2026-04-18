@@ -16,9 +16,9 @@ import (
 	"brale-core/internal/decision/provider"
 	"brale-core/internal/decision/ruleflow"
 	"brale-core/internal/execution"
+	"brale-core/internal/memory"
 	"brale-core/internal/risk/initexit"
 	"brale-core/internal/strategy"
-	"brale-core/internal/memory"
 )
 
 type Runner struct {
@@ -79,8 +79,10 @@ type TightenRiskUpdateInput struct {
 }
 
 type TightenRiskUpdatePatch struct {
+	Action      string
 	StopLoss    *float64
 	TakeProfits []float64
+	Reason      *string
 	Trace       *execution.LLMRiskTrace
 }
 

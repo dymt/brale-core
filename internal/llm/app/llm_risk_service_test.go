@@ -29,15 +29,34 @@ func (s *stubRiskSessionProvider) Call(_ context.Context, system, user string) (
 }
 
 func TestDecodeTightenRiskPatch(t *testing.T) {
-	payload, err := decodeTightenRiskPatch(`{"stop_loss":99.1,"take_profits":[101.2,102.8]}`)
+	payload, err := decodeTightenRiskPatch(`{"action":"adjust","stop_loss":99.1,"take_profits":[101.2,102.8],"reason":"follow momentum"}`)
 	if err != nil {
 		t.Fatalf("decode tighten patch: %v", err)
+	}
+	if payload.Action != "adjust" {
+		t.Fatalf("action=%q", payload.Action)
 	}
 	if payload.StopLoss == nil || *payload.StopLoss != 99.1 {
 		t.Fatalf("stop_loss=%v", payload.StopLoss)
 	}
 	if len(payload.TakeProfits) != 2 {
 		t.Fatalf("take_profits=%v", payload.TakeProfits)
+	}
+	if payload.Reason == nil || *payload.Reason != "follow momentum" {
+		t.Fatalf("reason=%v", payload.Reason)
+	}
+}
+
+func TestDecodeTightenRiskPatchHoldAllowsNoAdjustmentFields(t *testing.T) {
+	payload, err := decodeTightenRiskPatch(`{"action":"hold","stop_loss":0,"take_profits":[],"reason":"structure unchanged"}`)
+	if err != nil {
+		t.Fatalf("decode tighten hold patch: %v", err)
+	}
+	if payload.Action != "hold" {
+		t.Fatalf("action=%q", payload.Action)
+	}
+	if payload.Reason == nil || *payload.Reason != "structure unchanged" {
+		t.Fatalf("reason=%v", payload.Reason)
 	}
 }
 
@@ -222,7 +241,7 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 }
 
 func TestLLMRiskServiceTightenRiskLLMUsesStatelessCall(t *testing.T) {
-	providerStub := &stubRiskSessionProvider{callResp: `{"stop_loss":101.2,"take_profits":[103.1,104.6]}`}
+	providerStub := &stubRiskSessionProvider{callResp: `{"action":"adjust","stop_loss":101.2,"take_profits":[103.1,104.6],"reason":"protect open profit"}`}
 	svc := LLMRiskService{
 		Provider: providerStub,
 		Prompts:  LLMPromptBuilder{RiskFlatInitSystem: "risk-system", RiskTightenSystem: "risk-tighten-system"},
@@ -237,6 +256,12 @@ func TestLLMRiskServiceTightenRiskLLMUsesStatelessCall(t *testing.T) {
 	patch, err := tightenFn(context.Background(), tightenInputForRiskTests())
 	if err != nil {
 		t.Fatalf("tighten risk llm: %v", err)
+	}
+	if patch.Action != "adjust" {
+		t.Fatalf("action=%q", patch.Action)
+	}
+	if patch.Reason == nil || *patch.Reason != "protect open profit" {
+		t.Fatalf("reason=%v", patch.Reason)
 	}
 	if patch.Trace == nil || patch.Trace.SystemPrompt != "risk-tighten-system" || patch.Trace.UserPrompt == "" || patch.Trace.RawOutput == "" {
 		t.Fatalf("trace=%#v", patch.Trace)

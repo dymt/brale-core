@@ -70,8 +70,10 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 				t.Fatalf("current_stop_loss=%v, want tightened baseline 99", input.CurrentStopLoss)
 			}
 			return &TightenRiskUpdatePatch{
+				Action:      "adjust",
 				StopLoss:    &stop,
 				TakeProfits: []float64{106.5, 109.5},
+				Reason:      ptrString("trail under structure"),
 				Trace: &execution.LLMRiskTrace{
 					Stage:        "risk_tighten",
 					Flow:         "in_position",
@@ -129,6 +131,7 @@ func TestApplyTightenRiskPatchStopNotImprovedIncludesBaselineAndLLMStops(t *test
 	}
 
 	_, _, err := applyTightenRiskPatch(plan, "long", 100, 105, &TightenRiskUpdatePatch{
+		Action:      "adjust",
 		StopLoss:    &stop,
 		TakeProfits: []float64{109, 113},
 	})
@@ -147,6 +150,33 @@ func TestApplyTightenRiskPatchStopNotImprovedIncludesBaselineAndLLMStops(t *test
 	}
 	if !strings.Contains(err.Error(), "baseline_stop=99.0000") || !strings.Contains(err.Error(), "llm_stop=98.5000") {
 		t.Fatalf("error=%q", err.Error())
+	}
+}
+
+func TestApplyTightenRiskPatchHoldKeepsPlan(t *testing.T) {
+	plan := risk.RiskPlan{
+		StopPrice: 99,
+		TPLevels: []risk.TPLevel{
+			{LevelID: "tp-1", Price: 108, QtyPct: 0.5},
+			{LevelID: "tp-2", Price: 112, QtyPct: 0.5},
+		},
+	}
+
+	got, tpTightened, err := applyTightenRiskPatch(plan, "long", 100, 105, &TightenRiskUpdatePatch{
+		Action: "hold",
+		Reason: ptrString("no new risk signal"),
+	})
+	if err != nil {
+		t.Fatalf("apply tighten risk patch hold: %v", err)
+	}
+	if tpTightened {
+		t.Fatalf("tp_tightened=%v, want false", tpTightened)
+	}
+	if got.StopPrice != plan.StopPrice {
+		t.Fatalf("stop_price=%v want %v", got.StopPrice, plan.StopPrice)
+	}
+	if len(got.TPLevels) != len(plan.TPLevels) || got.TPLevels[0].Price != plan.TPLevels[0].Price || got.TPLevels[1].Price != plan.TPLevels[1].Price {
+		t.Fatalf("tp_levels=%+v want %+v", got.TPLevels, plan.TPLevels)
 	}
 }
 
@@ -262,6 +292,10 @@ func TestNewTightenUpdateResultCopiesTakeProfits(t *testing.T) {
 	if result.StopLoss != 99.8 {
 		t.Fatalf("stop loss=%v want 99.8", result.StopLoss)
 	}
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func TestLogRiskPlanUpdateCarriesOriginalPlanStopReason(t *testing.T) {

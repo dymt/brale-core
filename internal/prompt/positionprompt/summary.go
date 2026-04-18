@@ -23,6 +23,14 @@ type Summary struct {
 	HasPartialTake        bool     `json:"has_partial_take,omitempty"`
 	BarsInPosition        int      `json:"bars_in_position,omitempty"`
 	TimeInPositionBucket  string   `json:"time_in_position_bucket,omitempty"`
+
+	// Precise numeric values for risk-aware providers.
+	UnrealizedPnlPct     float64 `json:"unrealized_pnl_pct,omitempty"`
+	PeakUnrealizedPnlPct float64 `json:"peak_unrealized_pnl_pct,omitempty"`
+	PositionAgeMinutes   float64 `json:"position_age_minutes,omitempty"`
+	CurrentStopLoss      float64 `json:"current_stop_loss,omitempty"`
+	DistanceToLiqPct     float64 `json:"distance_to_liq_pct,omitempty"`
+	MarkPrice            float64 `json:"mark_price,omitempty"`
 }
 
 type Builder interface {
@@ -72,5 +80,11 @@ func (DefaultBuilder) BuildWithRisk(symbol string, entryPrice, size float64, lev
 	out.HasPartialTake = riskSummary.HasPartialTake
 	out.BarsInPosition = riskSummary.BarsInPosition
 	out.TimeInPositionBucket = strings.TrimSpace(riskSummary.TimeInPositionBucket)
+	out.UnrealizedPnlPct = riskSummary.UnrealizedPnlPct
+	out.PeakUnrealizedPnlPct = riskSummary.PeakUnrealizedPnlPct
+	out.PositionAgeMinutes = riskSummary.PositionAgeMinutes
+	out.CurrentStopLoss = riskSummary.CurrentStopLoss
+	out.DistanceToLiqPct = riskSummary.DistanceToLiqPct
+	out.MarkPrice = riskSummary.MarkPrice
 	return out, nil
 }

@@ -222,7 +222,18 @@ func asTightenPatchRejectError(err error) (*tightenPatchRejectError, bool) {
 }
 
 func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markPrice float64, patch *TightenRiskUpdatePatch) (risk.RiskPlan, bool, error) {
-	if patch == nil || patch.StopLoss == nil {
+	if patch == nil {
+		return plan, false, fmt.Errorf("tighten llm patch is required")
+	}
+	action := strings.ToLower(strings.TrimSpace(patch.Action))
+	switch action {
+	case "", "adjust":
+	case "hold":
+		return plan, false, nil
+	default:
+		return plan, false, fmt.Errorf("tighten llm patch action must be adjust or hold")
+	}
+	if patch.StopLoss == nil {
 		return plan, false, fmt.Errorf("tighten llm patch stop_loss is required")
 	}
 	if len(patch.TakeProfits) == 0 {

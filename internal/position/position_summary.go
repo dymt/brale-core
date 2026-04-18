@@ -13,28 +13,37 @@ import (
 )
 
 type PositionSummary struct {
-	PositionStatus    string  `json:"position_status"`
-	Side              string  `json:"side"`
-	Timeframe         string  `json:"timeframe"`
-	EntryFillPrice    float64 `json:"entry_fill_price"`
-	CurrentPrice      float64 `json:"current_price"`
-	UnrealizedR       float64 `json:"unrealized_R"`
-	PeakUnrealizedR   float64 `json:"peak_unrealized_R"`
-	CurrentSLRelative string  `json:"current_sl_relative"`
-	HasPartialTake    bool    `json:"has_partial_take"`
-	BarsInPosition    int     `json:"bars_in_position"`
+	PositionStatus       string  `json:"position_status"`
+	Side                 string  `json:"side"`
+	Timeframe            string  `json:"timeframe"`
+	EntryFillPrice       float64 `json:"entry_fill_price"`
+	CurrentPrice         float64 `json:"current_price"`
+	UnrealizedR          float64 `json:"unrealized_R"`
+	PeakUnrealizedR      float64 `json:"peak_unrealized_R"`
+	PeakUnrealizedPnlPct float64 `json:"peak_unrealized_pnl_pct,omitempty"`
+	CurrentSLRelative    string  `json:"current_sl_relative"`
+	HasPartialTake       bool    `json:"has_partial_take"`
+	BarsInPosition       int     `json:"bars_in_position"`
+	PositionAgeMinutes   float64 `json:"position_age_minutes,omitempty"`
+	CurrentStopLoss      float64 `json:"current_stop_loss,omitempty"`
 }
 
 type PositionRiskSummary struct {
-	Side                  string `json:"side"`
-	PositionStatus        string `json:"position_status"`
-	Timeframe             string `json:"timeframe,omitempty"`
-	UnrealizedRBucket     string `json:"unrealized_R_bucket"`
-	PeakUnrealizedRBucket string `json:"peak_unrealized_R_bucket"`
-	CurrentSLRelative     string `json:"current_sl_relative"`
-	HasPartialTake        bool   `json:"has_partial_take"`
-	BarsInPosition        int    `json:"bars_in_position"`
-	TimeInPositionBucket  string `json:"time_in_position_bucket,omitempty"`
+	Side                  string  `json:"side"`
+	PositionStatus        string  `json:"position_status"`
+	Timeframe             string  `json:"timeframe,omitempty"`
+	UnrealizedRBucket     string  `json:"unrealized_R_bucket"`
+	PeakUnrealizedRBucket string  `json:"peak_unrealized_R_bucket"`
+	CurrentSLRelative     string  `json:"current_sl_relative"`
+	HasPartialTake        bool    `json:"has_partial_take"`
+	BarsInPosition        int     `json:"bars_in_position"`
+	TimeInPositionBucket  string  `json:"time_in_position_bucket,omitempty"`
+	UnrealizedPnlPct      float64 `json:"unrealized_pnl_pct,omitempty"`
+	PeakUnrealizedPnlPct  float64 `json:"peak_unrealized_pnl_pct,omitempty"`
+	PositionAgeMinutes    float64 `json:"position_age_minutes,omitempty"`
+	CurrentStopLoss       float64 `json:"current_stop_loss,omitempty"`
+	DistanceToLiqPct      float64 `json:"distance_to_liq_pct,omitempty"`
+	MarkPrice             float64 `json:"mark_price,omitempty"`
 }
 
 func BuildPositionSummary(pos store.PositionRecord, plan risk.RiskPlan, currentPrice float64, barInterval time.Duration) (PositionSummary, error) {
@@ -91,25 +100,36 @@ func BuildPositionSummary(pos store.PositionRecord, plan risk.RiskPlan, currentP
 	if unrealizedR > peak {
 		peak = unrealizedR
 	}
+	peakUnrealizedPnlPct := 0.0
+	if pos.AvgEntry > 0 {
+		peakUnrealizedPnlPct = (peak * riskDistance / pos.AvgEntry) * 100
+	}
 	bars := int(time.Since(pos.CreatedAt) / barInterval)
 	if bars < 0 {
 		bars = 0
 	}
+	positionAgeMinutes := time.Since(pos.CreatedAt).Minutes()
+	if positionAgeMinutes < 0 {
+		positionAgeMinutes = 0
+	}
 	return PositionSummary{
-		PositionStatus:    pos.Status,
-		Side:              side,
-		Timeframe:         formatTimeframe(barInterval),
-		EntryFillPrice:    pos.AvgEntry,
-		CurrentPrice:      currentPrice,
-		UnrealizedR:       unrealizedR,
-		PeakUnrealizedR:   peak,
-		CurrentSLRelative: bucket,
-		HasPartialTake:    risk.HasTPHits(plan),
-		BarsInPosition:    bars,
+		PositionStatus:       pos.Status,
+		Side:                 side,
+		Timeframe:            formatTimeframe(barInterval),
+		EntryFillPrice:       pos.AvgEntry,
+		CurrentPrice:         currentPrice,
+		UnrealizedR:          unrealizedR,
+		PeakUnrealizedR:      peak,
+		PeakUnrealizedPnlPct: math.Round(peakUnrealizedPnlPct*100) / 100,
+		CurrentSLRelative:    bucket,
+		HasPartialTake:       risk.HasTPHits(plan),
+		BarsInPosition:       bars,
+		PositionAgeMinutes:   math.Round(positionAgeMinutes*100) / 100,
+		CurrentStopLoss:      plan.StopPrice,
 	}, nil
 }
 
-func BuildPositionRiskSummary(summary PositionSummary) (PositionRiskSummary, error) {
+func BuildPositionRiskSummary(summary PositionSummary, liquidationPrice float64) (PositionRiskSummary, error) {
 	if strings.TrimSpace(summary.Side) == "" {
 		return PositionRiskSummary{}, fmt.Errorf("side is required")
 	}
@@ -120,6 +140,10 @@ func BuildPositionRiskSummary(summary PositionSummary) (PositionRiskSummary, err
 	peakBucket := bucketUnrealizedR(summary.PeakUnrealizedR)
 	timeBucket := bucketBarsInPosition(summary.BarsInPosition)
 	status := strings.ToLower(strings.TrimSpace(summary.PositionStatus))
+
+	unrealizedPnlPct := computeDirectionalPnlPct(summary.Side, summary.EntryFillPrice, summary.CurrentPrice)
+	distanceToLiqPct := computeDistanceToLiqPct(summary.CurrentPrice, liquidationPrice)
+
 	return PositionRiskSummary{
 		Side:                  summary.Side,
 		PositionStatus:        status,
@@ -130,7 +154,34 @@ func BuildPositionRiskSummary(summary PositionSummary) (PositionRiskSummary, err
 		HasPartialTake:        summary.HasPartialTake,
 		BarsInPosition:        summary.BarsInPosition,
 		TimeInPositionBucket:  timeBucket,
+		UnrealizedPnlPct:      math.Round(unrealizedPnlPct*100) / 100,
+		PeakUnrealizedPnlPct:  summary.PeakUnrealizedPnlPct,
+		PositionAgeMinutes:    summary.PositionAgeMinutes,
+		CurrentStopLoss:       summary.CurrentStopLoss,
+		DistanceToLiqPct:      math.Round(distanceToLiqPct*10000) / 10000,
+		MarkPrice:             summary.CurrentPrice,
 	}, nil
+}
+
+func computeDirectionalPnlPct(side string, entryPrice float64, currentPrice float64) float64 {
+	if entryPrice <= 0 || currentPrice <= 0 {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		return (currentPrice - entryPrice) / entryPrice * 100
+	case "short":
+		return (entryPrice - currentPrice) / entryPrice * 100
+	default:
+		return 0
+	}
+}
+
+func computeDistanceToLiqPct(currentPrice float64, liquidationPrice float64) float64 {
+	if currentPrice <= 0 || liquidationPrice <= 0 {
+		return 0
+	}
+	return math.Abs(currentPrice-liquidationPrice) / currentPrice
 }
 
 func bucketUnrealizedR(val float64) string {

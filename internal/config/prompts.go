@@ -209,7 +209,7 @@ const defaultRiskFlatInitPrompt = "" +
 	"- reason 必须是中文、简短（建议 1-2 句），并明确引用输入字段名\n"
 
 const defaultRiskTightenUpdatePrompt = "" +
-	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、结构锚点摘要与三个 Agent 摘要，输出一个严格 JSON 对象，生成可执行的新止损与止盈列表。\n" +
+	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、结构锚点摘要与三个 Agent 摘要，判断是否需要调整止损/止盈，若需要则输出新值。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -218,8 +218,10 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"\n" +
 	"输出 JSON Schema（必须完全一致）：\n" +
 	"{\n" +
+	"  \"action\": \"adjust\" | \"hold\",\n" +
 	"  \"stop_loss\": 0.0,\n" +
-	"  \"take_profits\": [0.0]\n" +
+	"  \"take_profits\": [0.0],\n" +
+	"  \"reason\": \"简要说明调整/不调整的依据\"\n" +
 	"}\n" +
 	"\n" +
 	"约束（必须满足）：\n" +
@@ -228,9 +230,9 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"- 仓位风控上下文中 unrealized_pnl_pct 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离。\n" +
 	"- 刚入场微利（unrealized_pnl_pct 接近 0 且 position_age_minutes 较短）时 tighten 应保守；浮盈较大时可更积极保护利润。\n" +
 	"- tp1_hit=true 时止盈列表长度应减少（已触发的不再包含）。\n" +
-	"- direction=long：stop_loss 必须 > current_stop_loss 且 < mark_price；take_profits 必须严格递增。\n" +
-	"- direction=short：stop_loss 必须 < current_stop_loss 且 > mark_price；take_profits 必须严格递减。\n" +
-	"- 禁止返回与当前完全相同的 stop_loss 与 take_profits。\n"
+	"- 若当前止损/止盈合理且无明确调整依据，应返回 action=\"hold\"，stop_loss/take_profits 保持原值。\n" +
+	"- action=\"adjust\" 时：direction=long：stop_loss 必须 > current_stop_loss 且 < mark_price；take_profits 必须严格递增。\n" +
+	"- action=\"adjust\" 时：direction=short：stop_loss 必须 < current_stop_loss 且 > mark_price；take_profits 必须严格递减。\n"
 
 type PromptDefaults struct {
 	AgentIndicator              string
