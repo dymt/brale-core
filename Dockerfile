@@ -51,13 +51,19 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1000 brale \
+    && useradd -u 1000 -g brale -s /usr/sbin/nologin -M brale
 
 WORKDIR /app
 COPY --from=node-runtime /usr/local/ /usr/local/
 COPY --from=builder /out/bralectl /usr/local/bin/bralectl
 COPY --from=builder /out/brale-core /usr/local/bin/brale-core
 COPY --from=builder /src/webui/og-card-demo /app/webui/og-card-demo
+
+EXPOSE 9991
+
+USER 1000:1000
 
 ENTRYPOINT ["brale-core"]
 CMD ["-system", "configs/system.toml", "-symbols", "configs/symbols-index.toml"]

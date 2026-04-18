@@ -1,9 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL_DEFAULT="https://github.com/laukkw/brale-core.git"
-REF_DEFAULT="master"
+# Detect defaults from the current repo context when possible.
+_detect_repo_url() {
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git remote get-url origin 2>/dev/null || true
+  fi
+}
+
+_detect_ref() {
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git symbolic-ref --short HEAD 2>/dev/null || true
+  fi
+}
+
+_detected_url="$(_detect_repo_url)"
+_detected_ref="$(_detect_ref)"
+
+REPO_URL_DEFAULT="${_detected_url:-https://github.com/laukkw/brale-core.git}"
+REF_DEFAULT="${_detected_ref:-main}"
 TARGET_DIR_DEFAULT="${HOME}/brale-core"
+WAIT_STACK_TIMEOUT="${BRALE_WAIT_STACK_TIMEOUT:-120}"
 
 repo_url="${BRALE_REPO_URL:-${REPO_URL_DEFAULT}}"
 ref="${BRALE_REF:-${REF_DEFAULT}}"
@@ -22,11 +39,11 @@ Usage: bootstrap.sh [options]
 
 Options:
   --dir PATH          Target checkout directory (default: ~/brale-core)
-  --ref REF           Git ref to checkout (default: master)
+  --ref REF           Git ref to checkout (default: main)
   --repo-url URL      Repository URL
   --no-init           Skip the interactive init wizard and start with the existing .env
   --no-onboarding     Deprecated alias for --no-init
-  --with-mcp          Start the stack with the optional MCP SSE service
+  --with-mcp          Start the stack with the optional MCP Streamable HTTP service
   --setup             Run 'make setup' after clone/update
   --setup-lang LANG   Preselect setup wizard language (zh or en)
   -h, --help          Show this help text
@@ -77,7 +94,7 @@ detect_env_enable_mcp() {
 
 wait_for_stack() {
   local ready=0
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$WAIT_STACK_TIMEOUT"); do
     if curl -fsS "http://127.0.0.1:9991/healthz" >/dev/null 2>&1; then
       ready=1
       break
@@ -96,7 +113,7 @@ print_stack_endpoints() {
   log "[OPEN] Freqtrade API: http://127.0.0.1:8080/api/v1/ping"
   log "[OPEN] Brale health:  http://127.0.0.1:9991/healthz"
   if [[ "$with_mcp" -eq 1 ]]; then
-    log "[OPEN] MCP SSE:       http://127.0.0.1:8765/sse"
+    log "[OPEN] MCP HTTP:      http://127.0.0.1:8765/mcp"
   fi
 }
 

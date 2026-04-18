@@ -10,6 +10,16 @@ services:
         HOST_GID: ${HOST_GID:-1000}
     restart: unless-stopped
     environment:
+      # NOTE: For production, use Docker secrets or an env_file instead of inline defaults.
+      # Example with secrets:
+      #   environment:
+      #     POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      #   secrets:
+      #     - pg_password
+      # Then define at top level:
+      #   secrets:
+      #     pg_password:
+      #       file: ./secrets/pg_password.txt
       POSTGRES_USER: ${POSTGRES_USER:-brale}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brale}
       POSTGRES_DB: ${POSTGRES_DB:-brale}

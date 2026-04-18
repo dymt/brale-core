@@ -1,9 +1,12 @@
 SHELL := /bin/bash
+.SHELLFLAGS := -euo pipefail -c
 
 COMPOSE_FILE ?= docker-compose.yml
 COMPOSE_PROJECT_NAME ?= brale-core
 SETUP_LANG ?=
 SETUP_ARGS ?=
+WAIT_FREQTRADE_TIMEOUT ?= 90
+WAIT_BRALE_TIMEOUT ?= 90
 
 ENV_ENABLE_MCP := $(strip $(shell awk -F= '/^[[:space:]]*ENABLE_MCP[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$$/,"",$$2); print $$2; exit}' .env 2>/dev/null))
 ENV_NOTIFICATION_TELEGRAM_TOKEN := $(strip $(shell awk -F= '/^[[:space:]]*NOTIFICATION_TELEGRAM_TOKEN[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$$/,"",$$2); print $$2; exit}' .env 2>/dev/null))
@@ -18,6 +21,7 @@ endif
 
 BRALE_CONFIG_ROOT ?= $(CURDIR)/configs
 BRALE_SYSTEM_IN ?= $(BRALE_CONFIG_ROOT)/system.toml
+BRALE_SYMBOL_INDEX_IN ?= $(BRALE_CONFIG_ROOT)/symbols-index.toml
 BRALE_SYSTEM_PATH_IN_CONTAINER ?= /app/configs/system.toml
 BRALE_SYMBOL_INDEX_PATH_IN_CONTAINER ?= /app/configs/symbols-index.toml
 BRALE_DATA_ROOT ?= $(CURDIR)/data/brale
@@ -40,8 +44,13 @@ BRALECTL_INSTALL_DIR ?= $(HOME)/.local/bin
 BRALECTL_INSTALL_BIN ?= $(BRALECTL_INSTALL_DIR)/bralectl
 BRALECTL_DOCKER_IMAGE ?= brale-core-go-builder
 TEMPLATE_SYMBOL ?=
+VERIFY_CTL ?= 1
+CTL_SYMBOL ?= $(strip $(shell awk -F'"' '/^[[:space:]]*symbol[[:space:]]*=[[:space:]]*"/ { print $$2; exit }' "$(BRALE_SYMBOL_INDEX_IN)" 2>/dev/null))
+CTL_TIMEOUT ?= 3m
+CTL_REPORT_DIR ?= $(OUTPUT_ROOT)/smoke
 
 ENABLE_MCP_NORM := $(if $(filter 1 true TRUE yes YES on ON,$(ENABLE_MCP)),1,0)
+VERIFY_CTL_NORM := $(if $(filter 1 true TRUE yes YES on ON,$(VERIFY_CTL)),1,0)
 OPTIONAL_STACK_SERVICES := $(if $(filter 1,$(ENABLE_MCP_NORM)),mcp,)
 REBUILD_SERVICES := brale $(if $(filter 1,$(ENABLE_MCP_NORM)),mcp,)
 
@@ -74,7 +83,7 @@ COMPOSE = $(STACK_EXPORTS) $(STACK_PROXY_SOURCE) docker compose -f "$(COMPOSE_FI
 # PREPARE_STACK runs the prepare-stack logic locally (via Go) or in Docker.
 PREPARE_STACK_ARGS = -env-file .env -config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" -config-out "$(FREQTRADE_CONFIG_FILE)" -proxy-env-out "$(STACK_PROXY_ENV_FILE)" -system-in "$(BRALE_SYSTEM_IN)"
 
-.PHONY: help env-init setup init check prepare start apply-config start-freqtrade wait-freqtrade start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs build bralectl-build install-bralectl bralectl-builder-image add-symbol llm-probe migrate-up migrate-down e2e-start e2e-stop e2e-reset e2e-status e2e-test e2e-logs
+.PHONY: help env-init setup init check prepare start apply-config start-freqtrade wait-freqtrade wait-brale ctl-smoke post-start-verify start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs build bralectl-build install-bralectl bralectl-builder-image add-symbol llm-probe migrate-up migrate-down e2e-start e2e-stop e2e-reset e2e-status e2e-test e2e-logs
 
 help: ## Show the main make targets and optional component switches
 	@printf '%-22s %s\n' "env-init" "Create .env from .env.example if missing"; \
@@ -82,19 +91,21 @@ help: ## Show the main make targets and optional component switches
 	printf '%-22s %s\n' "install-bralectl" "Build and install bralectl into ~/.local/bin (override BRALECTL_INSTALL_DIR)"; \
 	printf '%-22s %s\n' "setup" "Run bralectl setup (env init + optional MCP client config)"; \
 	printf '%-22s %s\n' "init" "Interactive CLI wizard: configure .env + generate runtime configs"; \
-	printf '%-22s %s\n' "start" "Start freqtrade + brale; add ENABLE_MCP=1 for MCP service"; \
+	printf '%-22s %s\n' "start" "Start freqtrade + brale, then run ctl smoke verification by default"; \
 	printf '%-22s %s\n' "mcp-start" "Start only the MCP service (dependencies auto-start)"; \
-	printf '%-22s %s\n' "rebuild" "Rebuild brale (and mcp when ENABLE_MCP=1)"; \
+	printf '%-22s %s\n' "rebuild" "Rebuild brale (and mcp when ENABLE_MCP=1), then run ctl smoke verification"; \
 	printf '%-22s %s\n' "stop / down" "Stop services / remove the full compose stack"; \
 	printf '%-22s %s\n' "logs / mcp-logs" "Tail core logs / tail MCP logs"; \
 	echo ""; \
 	echo "Optional switches:"; \
 	printf '  %-18s %s\n' "ENABLE_MCP=1" "Include the mcp service"; \
+	printf '  %-18s %s\n' "VERIFY_CTL=0" "Skip the post-start ctl smoke verification"; \
+	printf '  %-18s %s\n' "CTL_SYMBOL=..." "Override the symbol used by ctl smoke verification"; \
 	printf '  %-18s %s\n' "SETUP_LANG=zh|en" "Preselect the setup wizard language"; \
 	printf '  %-18s %s\n' "SETUP_ARGS='...'" "Pass extra flags to bralectl setup"; \
 	printf '  %-18s %s\n' "BRALECTL_INSTALL_DIR=..." "Install bralectl into a custom bin directory"
 
-env-init: ## Create .env from .env.example when missing
+env-init: ## Create .env from .env.example when missing, then validate required variables
 	@set -e; \
 	if [ -f ".env" ]; then \
 		echo "[OK] .env already exists"; \
@@ -104,6 +115,17 @@ env-init: ## Create .env from .env.example when missing
 	else \
 		echo "[ERR] .env.example not found"; \
 		exit 1; \
+	fi; \
+	missing=""; \
+	for var in POSTGRES_USER POSTGRES_PASSWORD EXEC_USERNAME EXEC_SECRET; do \
+		val=$$(awk -F= "/^[[:space:]]*$$var[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$$/,\"\",\$$2); print \$$2; exit}" .env 2>/dev/null); \
+		if [ -z "$$val" ]; then \
+			missing="$$missing $$var"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "[WARN] .env is missing required values:$$missing"; \
+		echo "       Please edit .env before running 'make start'."; \
 	fi
 
 setup: bralectl-build env-init ## Run the local setup wizard (env init + optional MCP install)
@@ -169,6 +191,7 @@ start: check prepare ## Start the core stack; use ENABLE_MCP=1 for optional MCP 
 	@$(MAKE) start-freqtrade
 	@$(MAKE) wait-freqtrade
 	@$(COMPOSE) up -d --build brale $(OPTIONAL_STACK_SERVICES)
+	@$(MAKE) post-start-verify
 
 apply-config: check prepare stop ## Regenerate configs and restart the stack
 	@$(MAKE) start ENABLE_MCP="$(ENABLE_MCP)"
@@ -183,8 +206,8 @@ wait-freqtrade: ## Wait for freqtrade health to turn green
 		echo "[ERR] freqtrade container id not found"; \
 		exit 1; \
 	fi; \
-	echo "[INFO] waiting freqtrade health..."; \
-	for i in $$(seq 1 45); do \
+	echo "[INFO] waiting freqtrade health (timeout=$(WAIT_FREQTRADE_TIMEOUT)s)..."; \
+	for i in $$(seq 1 $(WAIT_FREQTRADE_TIMEOUT)); do \
 		status=$$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$$cid" 2>/dev/null || true); \
 		if [ "$$status" = "healthy" ]; then \
 			echo "[OK] freqtrade healthy"; \
@@ -195,6 +218,51 @@ wait-freqtrade: ## Wait for freqtrade health to turn green
 	echo "[ERR] freqtrade did not become healthy in time — recent logs:"; \
 	$(COMPOSE) logs --tail=30 freqtrade 2>&1 || true; \
 	exit 1
+
+wait-brale: ## Wait for brale health to turn green
+	@ \
+	cid=$$($(COMPOSE) ps -q brale); \
+	if [ -z "$$cid" ]; then \
+		echo "[ERR] brale container id not found"; \
+		exit 1; \
+	fi; \
+	echo "[INFO] waiting brale health (timeout=$(WAIT_BRALE_TIMEOUT)s)..."; \
+	for i in $$(seq 1 $(WAIT_BRALE_TIMEOUT)); do \
+		status=$$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$$cid" 2>/dev/null || true); \
+		if [ "$$status" = "healthy" ]; then \
+			echo "[OK] brale healthy"; \
+			exit 0; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "[ERR] brale did not become healthy in time — recent logs:"; \
+	$(COMPOSE) logs --tail=50 brale 2>&1 || true; \
+	exit 1
+
+ctl-smoke: wait-brale ## Run ctl suite against the live stack
+	@if [ ! -x "$(BRALECTL_BIN)" ]; then \
+		$(MAKE) bralectl-build; \
+	fi
+	@if [ -z "$(CTL_SYMBOL)" ]; then \
+		echo "[ERR] CTL_SYMBOL is empty"; \
+		echo "[ERR] add at least one symbol to $(BRALE_SYMBOL_INDEX_IN) or pass CTL_SYMBOL=..."; \
+		exit 1; \
+	fi
+	@mkdir -p "$(CTL_REPORT_DIR)"
+	@"$(BRALECTL_BIN)" test run \
+		--endpoint "http://127.0.0.1:$(BRALE_HOST_PORT)" \
+		--profile "main-stack" \
+		--suites "ctl" \
+		--symbol "$(CTL_SYMBOL)" \
+		--timeout "$(CTL_TIMEOUT)" \
+		--report-dir "$(CTL_REPORT_DIR)"
+
+post-start-verify: ## Run post-start smoke verification unless VERIFY_CTL=0
+	@if [ "$(VERIFY_CTL_NORM)" != "1" ]; then \
+		echo "[INFO] ctl smoke verification skipped (VERIFY_CTL=$(VERIFY_CTL))"; \
+	else \
+		$(MAKE) ctl-smoke; \
+	fi
 
 start-brale: ## Start only the brale runtime service
 	@$(COMPOSE) up -d brale
@@ -216,6 +284,7 @@ stop-brale:
 
 rebuild: check prepare ## Rebuild brale (and mcp when ENABLE_MCP=1)
 	@$(COMPOSE) up -d --build $(REBUILD_SERVICES)
+	@$(MAKE) post-start-verify
 
 stop: ## Stop the running compose services
 	@$(COMPOSE) stop brale freqtrade mcp
@@ -223,7 +292,7 @@ stop: ## Stop the running compose services
 restart: apply-config
 
 down: ## Remove the compose stack and orphans
-	@$(COMPOSE) down --remove-orphans
+	@$(COMPOSE) --profile mcp down --remove-orphans
 
 status: ## Show compose service status
 	@$(COMPOSE) ps
