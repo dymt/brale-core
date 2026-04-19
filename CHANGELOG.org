@@ -1,0 +1,128 @@
+#+TITLE: Changelog
+#+AUTHOR: Brale Core Team
+#+OPTIONS: toc:2
+
+本文件记录 brale-core 各版本发布的变更内容，按时间倒序排列。
+
+* Unreleased (dev branch, 2026-04-16 – 2026-04-19)
+
+本轮迭代覆盖 48 次提交（4724e27..HEAD），聚焦于 *LLM 运行时韧性*、*CLI 工作流重构*、*MCP 传输升级*、*通知系统简化* 和 *Docker 栈参数化*。
+
+** 修改了哪些方面
+
+| 领域 | 说明 |
+|------+------|
+| LLM 运行时 | 新增熔断器、令牌预算、递归 Schema 保护、重试日志 |
+| CLI 工作流 | 替换 Web Onboarding → =bralectl init= 交互向导；新增 =setup= / =prepare-stack= / =test= 命令 |
+| MCP 传输 | SSE → Streamable HTTP（保留 stdio）；Docker HTTP 探针 |
+| 通知与 OG 卡片 | 简化 Notice 类型体系；新增关机 / 错误 / Gate Plan 卡片；术语翻译移至 Go 层 |
+| 风控路径 | Tighten 新增 =action/reason= 字段；对齐 Dashboard 合约；拒绝过期价格与不安全清算计划 |
+| Docker 栈 | Compose 参数化（端口、前缀）；隔离 E2E 环境；PostgreSQL 数据分离 |
+| 文档 | 新增 .docs/details/ 系统详细文档（21 篇）；部署与排障指南扩展 |
+| 测试 | TA 边界用例、OG 卡片渲染测试、递归 Schema 测试、Prompt 容错测试 |
+
+** 具体调整（按时间顺序）
+
+*** 2026-04-16
+
+**** 新功能（feat）
+- =(cli)= 新增 =bralectl init= 交互式向导与 =prepare-stack= 命令，替代废弃的 Web Onboarding 面板 (6def7c6)
+- =(notify)= 简化 Notice 类型体系，改善管线可观测性 (4802428)
+- 渲染关机（Shutdown）与错误（Error）通知 OG 卡片 (af1ca4b)
+- ETHUSDT 示例配置启用三层记忆系统 (ae6e0ce)
+
+**** 修复（fix）
+- River Decide 调度对齐 Bar Close 时间 (0ed04bf)
+- 修复 LLM Probe 加载模型配置时引入无关环境变量 (25ca73b)
+- 调优 LLM 节流默认值与 River Job 预算 (881ecbf)
+- 加固运行时启动、Round 持久化与异步通知投递 (6692ed9)
+- 加固启动代理加载与启动诊断 (01198db)
+- 为错误通知设置显式 severity (5c2eb63)
+- =(card)= OG 卡片术语翻译移至 Go Payload Builder (bc47840)
+- =(card)= 翻译 Gate Stop 步骤名称 (34b1851)
+- =(card)= 使用动态 Section Label (583ece3)
+- =(card)= 清理 Sieve 显示格式 (6a74a0a)
+- =(translate)= 修复反向句子扫描的 UTF-8 Rune 处理 (247ec47)
+
+**** 重构 / 杂项
+- 删除废弃的 Web Onboarding 服务与 UI (50152dd)
+- 从 Makefile 与 Docker 移除 Web Onboarding (749545c)
+- 分离 PostgreSQL 数据存储路径，改进 Docker 迁移工作流 (f13fa94)
+- 添加本地构建输出目录与 TA 默认 Symbol 配置 (0aba316)
+
+**** 测试
+- 新增所有非 Decision 类型通知卡片渲染测试 (95ac784)
+
+**** 文档
+- 新增子系统指南，对齐通知文档 (0714a21)
+- 扩展字段翻译参考覆盖范围 (2329020)
+- 新增 EMA Distance、TD Sequential、Slope Amplitude 翻译 (c3c5815)
+
+*** 2026-04-17
+
+**** 新功能（feat）
+- LLM 熔断器（Circuit Breaker）：按模型隔离，失败 5 次后自动断开，1 分钟后半开探测 (a71856f)
+- 对账关闭恢复配置（Reconcile Close Recovery）(3fe894e)
+- Latest Decision API 返回结构化载荷 (4e44ce4)
+- CLI Setup 与 MCP Bootstrap 工作流重构 (1b7f109)
+
+**** 修复（fix）
+- 拒绝过期价格与不安全清算计划 (7f5a668)
+- 加固运行时启动与健康检查 (02702d9)
+- 规范化关仓通知，去重成功发送 (8befc68)
+- 运维通知改为纯文本发送 (7d66d1d)
+
+**** 测试
+- TA 引擎边界用例覆盖 (69ff206)
+
+**** 文档
+- 扩展部署与运行时排障指南 (d890163)
+
+*** 2026-04-18
+
+**** 新功能（feat）
+- MCP 传输切换为 Streamable HTTP，保留 stdio 模式 (3fa6d80)
+- E2E Suite Runner 与运行时市场健康检查 (3f074f9)
+- 运行时风控令牌预算守卫（Token Budget Guard）(b5485a7)
+- MCP 集成改进与 =bralectl install= 流程优化 (6abc12f)
+
+**** 修复（fix）
+- 对齐 Tighten Schema（新增 =action= / =reason= 字段）与持仓风控上下文 (7fa6036)
+- 暴露已执行 Tighten 状态到 Dashboard 合约 (469d232)
+- 明确 Tighten 执行状态与被拒绝风控更新 (e33618b)
+- 加固运行时重试与恢复路径 (3b9e305)
+
+**** 构建 / 杂项
+- Docker Compose 参数化（端口、服务前缀），支持隔离 E2E 环境 (e71c154)
+- 收窄默认 Symbol Index (f6a8694)
+- 刷新 SOLUSDT / ETHUSDT 管理的 Symbol 默认值 (846bbd6)
+- 加固本地 Bootstrap 与启动检查 (a6a8221)
+
+**** 文档
+- 完成 .docs/details/ 文档任务 13–18（transport、mcp-otel、backtest、pkg、supporting、persistence）(5003277)
+- 同步 MCP、E2E 与 Tighten 状态指南 (cd7431f)
+
+*** 2026-04-19
+
+**** 修复（fix）
+- 新增 Gate Plan 通知 (203372a)
+- 加固 LLM 运行时与市场安全护栏 (9105551)
+- .gitignore 排除 =data/*= 与 =.bin/*= (8c24746)
+
+** 调整优势
+
+1. *LLM 韧性大幅提升* — 熔断器按模型隔离故障半径；令牌预算防止单轮失控；递归 Schema 保护杜绝无限展开；重试日志从 =nil= 升级为结构化 Logger，故障排查有据可查。
+
+2. *CLI-first 工作流* — 废弃浏览器依赖的 Web Onboarding，所有初始化、配置生成和 MCP 安装均通过 =bralectl= 命令完成。服务器环境无需桌面即可全流程部署。
+
+3. *MCP Streamable HTTP* — 替代 SSE 单向流，支持双向通信；Docker 探针保障容器间连通性；=bralectl mcp install= 自动配置客户端。
+
+4. *通知系统精简* — Notice 类型体系统一；术语翻译全部在 Go Payload Builder 层完成，OG 卡片渲染层仅负责排版；新增关机 / 错误 / Gate Plan 三类卡片，覆盖运维场景。
+
+5. *Tighten 风控增强* — 新增 =action= (adjust/hold) 与 =reason= 字段，LLM 可选择"维持现状"而非强制调整；Dashboard 合约同步更新，前端可展示拒绝原因。
+
+6. *Docker 栈可隔离* — Compose 参数化后，主栈与 E2E 栈可在同一宿主机共存，端口和容器名互不冲突。PostgreSQL 数据独立挂载，备份更清晰。
+
+7. *文档体系补全* — .docs/details/ 新增 21 篇系统详细文档，覆盖全部内部包；部署与排障指南扩展，降低新用户上手门槛。
+
+8. *测试覆盖扩展* — TA 边界用例、OG 卡片渲染、递归 Schema、Prompt 容错等新增测试，加固回归安全网。
