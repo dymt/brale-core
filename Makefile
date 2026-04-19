@@ -83,7 +83,7 @@ COMPOSE = $(STACK_EXPORTS) $(STACK_PROXY_SOURCE) docker compose -f "$(COMPOSE_FI
 # PREPARE_STACK runs the prepare-stack logic locally (via Go) or in Docker.
 PREPARE_STACK_ARGS = -env-file .env -config-in "$(FREQTRADE_CONFIG_ROOT)/config.base.json" -config-out "$(FREQTRADE_CONFIG_FILE)" -proxy-env-out "$(STACK_PROXY_ENV_FILE)" -system-in "$(BRALE_SYSTEM_IN)"
 
-.PHONY: help env-init setup init check prepare start apply-config start-freqtrade wait-freqtrade wait-brale ctl-smoke post-start-verify start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs build bralectl-build install-bralectl bralectl-builder-image add-symbol llm-probe migrate-up migrate-down e2e-start e2e-stop e2e-reset e2e-status e2e-test e2e-logs
+.PHONY: help env-init setup init check prepare start apply-config start-freqtrade wait-freqtrade wait-brale ctl-smoke post-start-verify start-brale mcp-start mcp-stop mcp-logs stop-freqtrade stop-brale stop restart rebuild down status logs logs-all build bralectl-build install-bralectl bralectl-builder-image add-symbol llm-probe migrate-up migrate-down e2e-start e2e-stop e2e-reset e2e-status e2e-test e2e-logs
 
 help: ## Show the main make targets and optional component switches
 	@printf '%-22s %s\n' "env-init" "Create .env from .env.example if missing"; \
@@ -95,7 +95,8 @@ help: ## Show the main make targets and optional component switches
 	printf '%-22s %s\n' "mcp-start" "Start only the MCP service (dependencies auto-start)"; \
 	printf '%-22s %s\n' "rebuild" "Rebuild brale (and mcp when ENABLE_MCP=1), then run ctl smoke verification"; \
 	printf '%-22s %s\n' "stop / down" "Stop services / remove the full compose stack"; \
-	printf '%-22s %s\n' "logs / mcp-logs" "Tail core logs / tail MCP logs"; \
+	printf '%-22s %s\n' "logs / logs-all" "Tail brale logs / tail brale + freqtrade logs"; \
+	printf '%-22s %s\n' "mcp-logs" "Tail MCP logs"; \
 	echo ""; \
 	echo "Optional switches:"; \
 	printf '  %-18s %s\n' "ENABLE_MCP=1" "Include the mcp service"; \
@@ -297,7 +298,10 @@ down: ## Remove the compose stack and orphans
 status: ## Show compose service status
 	@$(COMPOSE) ps
 
-logs: ## Tail the core stack logs
+logs: ## Tail brale logs only
+	@$(COMPOSE) logs -f --tail=200 brale
+
+logs-all: ## Tail brale + freqtrade logs
 	@$(COMPOSE) logs -f --tail=200 freqtrade brale
 
 build: ## Build bralectl into _output/bralectl

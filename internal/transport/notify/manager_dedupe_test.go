@@ -16,12 +16,14 @@ type countSender struct {
 	mu      sync.Mutex
 	calls   int
 	lastMsg Message
+	msgs    []Message
 }
 
 func (s *countSender) Send(ctx context.Context, msg Message) error {
 	s.mu.Lock()
 	s.calls++
 	s.lastMsg = msg
+	s.msgs = append(s.msgs, msg)
 	s.mu.Unlock()
 	return nil
 }
@@ -36,6 +38,14 @@ func (s *countSender) lastMessage() Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastMsg
+}
+
+func (s *countSender) messages() []Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Message, len(s.msgs))
+	copy(out, s.msgs)
+	return out
 }
 
 type flakySender struct {
@@ -175,6 +185,108 @@ func TestSendGate_DifferentSnapshotNotDeduped(t *testing.T) {
 	}
 	if sender.callCount() != 2 {
 		t.Fatalf("expected two sends for different snapshots, got %d", sender.callCount())
+	}
+}
+
+func TestSendGate_AllowPlanSendsPlanTextAndDedupes(t *testing.T) {
+	sender := &countSender{}
+	mgr := Manager{renderer: staticRenderer{}, senders: []Sender{sender}, dedupe: newDedupeGuard(2 * time.Minute)}
+	report := decisionfmt.DecisionReport{
+		Symbol:     "SOLUSDT",
+		SnapshotID: 1776513610,
+		Gate: decisionfmt.GateReport{
+			Overall: decisionfmt.GateOverall{
+				DecisionAction: "ALLOW",
+				Direction:      "short",
+			},
+			Derived: map[string]any{
+				"current_price": 86.74,
+				"plan": map[string]any{
+					"direction":    "short",
+					"entry":        86.50,
+					"stop_loss":    87.30,
+					"take_profits": []any{85.80, 85.10, 84.40},
+				},
+			},
+		},
+	}
+	input := decisionfmt.DecisionInput{Symbol: report.Symbol, SnapshotID: report.SnapshotID}
+
+	if err := mgr.SendGate(context.Background(), input, report); err != nil {
+		t.Fatalf("first send failed: %v", err)
+	}
+	if err := mgr.SendGate(context.Background(), input, report); err != nil {
+		t.Fatalf("second send failed: %v", err)
+	}
+	if sender.callCount() != 2 {
+		t.Fatalf("expected one image send and one plan text send, got %d", sender.callCount())
+	}
+
+	msgs := sender.messages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected two outbound messages, got %d", len(msgs))
+	}
+	if msgs[0].Image == nil {
+		t.Fatal("expected first gate notification to be the image card")
+	}
+	if msgs[1].Image != nil {
+		t.Fatal("expected second gate notification to be text only")
+	}
+	body := msgs[1].Markdown
+	if !strings.Contains(body, "📋 开仓计划已生成") {
+		t.Fatalf("expected plan header, got %q", body)
+	}
+	if !strings.Contains(body, "▸ 币种：SOLUSDT") {
+		t.Fatalf("expected symbol line, got %q", body)
+	}
+	if !strings.Contains(body, noticeLine("direction", "SHORT")) {
+		t.Fatalf("expected direction line, got %q", body)
+	}
+	if !strings.Contains(body, "▸ 当前价格：86.74") {
+		t.Fatalf("expected current price line, got %q", body)
+	}
+	if !strings.Contains(body, "▸ 开仓价：86.5") {
+		t.Fatalf("expected entry line, got %q", body)
+	}
+	if !strings.Contains(body, noticeLine("stop", "87.3")) {
+		t.Fatalf("expected stop line, got %q", body)
+	}
+	if !strings.Contains(body, noticeLine("take_profits", "TP1 85.8 / TP2 85.1 / TP3 84.4")) {
+		t.Fatalf("expected take profits line, got %q", body)
+	}
+	if !strings.Contains(body, "▸ 说明：当前仅为计划，不代表已经成交") {
+		t.Fatalf("expected plan disclaimer, got %q", body)
+	}
+	if !strings.Contains(body, "▸ 触发条件：只有当价格到达开仓触发点后，系统才会提交开仓动作") {
+		t.Fatalf("expected trigger condition line, got %q", body)
+	}
+}
+
+func TestSendGate_AllowWithoutPlanOnlySendsGateCard(t *testing.T) {
+	sender := &countSender{}
+	mgr := Manager{renderer: staticRenderer{}, senders: []Sender{sender}, dedupe: newDedupeGuard(2 * time.Minute)}
+	report := decisionfmt.DecisionReport{
+		Symbol:     "BTCUSDT",
+		SnapshotID: 20260418,
+		Gate: decisionfmt.GateReport{
+			Overall: decisionfmt.GateOverall{
+				DecisionAction: "ALLOW",
+				Direction:      "long",
+			},
+			Derived: map[string]any{
+				"current_price": 85000.0,
+			},
+		},
+	}
+
+	if err := mgr.SendGate(context.Background(), decisionfmt.DecisionInput{Symbol: report.Symbol, SnapshotID: report.SnapshotID}, report); err != nil {
+		t.Fatalf("send gate failed: %v", err)
+	}
+	if sender.callCount() != 1 {
+		t.Fatalf("expected only the gate card when plan is missing, got %d sends", sender.callCount())
+	}
+	if sender.lastMessage().Image == nil {
+		t.Fatal("expected gate card image when plan text is skipped")
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"brale-core/internal/cardimage"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/pkg/logging"
+	"brale-core/internal/pkg/parseutil"
 
 	"go.uber.org/zap"
 )
@@ -237,7 +238,151 @@ func (m Manager) SendGate(ctx context.Context, input decisionfmt.DecisionInput, 
 		},
 	}
 	key := fmt.Sprintf("gate:%s:%d:%s:%s", strings.TrimSpace(report.Symbol), report.SnapshotID, strings.TrimSpace(report.Gate.Overall.DecisionAction), strings.TrimSpace(report.Gate.Overall.ReasonCode))
+	if err := m.sendWithKey(ctx, msg, key); err != nil {
+		return err
+	}
+	return m.sendGatePlanNotice(ctx, report)
+}
+
+func (m Manager) sendGatePlanNotice(ctx context.Context, report decisionfmt.DecisionReport) error {
+	msg, key, ok := buildGatePlanNotice(report)
+	if !ok {
+		return nil
+	}
 	return m.sendWithKey(ctx, msg, key)
+}
+
+type gatePlanNotice struct {
+	symbol       string
+	direction    string
+	currentPrice float64
+	entry        float64
+	stopLoss     float64
+	takeProfits  []float64
+}
+
+func buildGatePlanNotice(report decisionfmt.DecisionReport) (Message, string, bool) {
+	plan, ok := extractGatePlanNotice(report)
+	if !ok {
+		return Message{}, "", false
+	}
+	direction := strings.ToUpper(strings.TrimSpace(plan.direction))
+	if direction == "" {
+		direction = "-"
+	}
+	currentPriceText := "-"
+	if plan.currentPrice > 0 {
+		currentPriceText = formatFloat(plan.currentPrice)
+	}
+	takeProfitText := formatPlanTakeProfits(plan.takeProfits)
+	lines := []string{
+		fmt.Sprintf("▸ 币种：%s", plan.symbol),
+		noticeLine("direction", direction),
+		fmt.Sprintf("▸ 当前价格：%s", currentPriceText),
+		fmt.Sprintf("▸ 开仓价：%s", formatFloat(plan.entry)),
+		noticeLine("stop", formatFloat(plan.stopLoss)),
+		noticeLine("take_profits", takeProfitText),
+		"▸ 说明：当前仅为计划，不代表已经成交",
+		"▸ 触发条件：只有当价格到达开仓触发点后，系统才会提交开仓动作",
+	}
+	body := buildNoticeBody("📋 开仓计划已生成", lines)
+	title := fmt.Sprintf("[PLAN][%s][snapshot:%d] %s", plan.symbol, report.SnapshotID, direction)
+	key := fmt.Sprintf("gate_plan:%s:%d:%s:%s:%s", plan.symbol, report.SnapshotID, direction, formatFloat(plan.entry), formatFloat(plan.stopLoss))
+	return Message{Title: title, Markdown: body, Plain: body}, key, true
+}
+
+func extractGatePlanNotice(report decisionfmt.DecisionReport) (*gatePlanNotice, bool) {
+	if !strings.EqualFold(strings.TrimSpace(report.Gate.Overall.DecisionAction), "ALLOW") {
+		return nil, false
+	}
+	if len(report.Gate.Derived) == 0 {
+		return nil, false
+	}
+	planRaw, ok := report.Gate.Derived["plan"]
+	if !ok || planRaw == nil {
+		return nil, false
+	}
+	planMap, ok := planRaw.(map[string]any)
+	if !ok || len(planMap) == 0 {
+		return nil, false
+	}
+	symbol := strings.TrimSpace(report.Symbol)
+	if symbol == "" {
+		return nil, false
+	}
+	direction := strings.TrimSpace(report.Gate.Overall.Direction)
+	if planDirection, ok := planMap["direction"].(string); ok && strings.TrimSpace(planDirection) != "" {
+		direction = strings.TrimSpace(planDirection)
+	}
+	entry, ok := positiveFloatValue(planMap["entry"])
+	if !ok {
+		return nil, false
+	}
+	stopLoss, ok := positiveFloatValue(planMap["stop_loss"])
+	if !ok {
+		return nil, false
+	}
+	takeProfits := positiveFloatSlice(planMap["take_profits"])
+	if len(takeProfits) == 0 {
+		return nil, false
+	}
+	currentPrice, _ := positiveFloatValue(report.Gate.Derived["current_price"])
+	return &gatePlanNotice{
+		symbol:       symbol,
+		direction:    direction,
+		currentPrice: currentPrice,
+		entry:        entry,
+		stopLoss:     stopLoss,
+		takeProfits:  takeProfits,
+	}, true
+}
+
+func positiveFloatValue(value any) (float64, bool) {
+	parsed, ok := parseutil.FloatOK(value)
+	if !ok || parsed <= 0 {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func positiveFloatSlice(value any) []float64 {
+	switch raw := value.(type) {
+	case []float64:
+		out := make([]float64, 0, len(raw))
+		for _, item := range raw {
+			if item > 0 {
+				out = append(out, item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]float64, 0, len(raw))
+		for _, item := range raw {
+			if parsed, ok := positiveFloatValue(item); ok {
+				out = append(out, parsed)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func formatPlanTakeProfits(values []float64) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(values))
+	for idx, value := range values {
+		if value <= 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("TP%d %s", idx+1, formatFloat(value)))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " / ")
 }
 
 func (m Manager) SendStartup(ctx context.Context, info StartupInfo) error {
