@@ -1,6 +1,7 @@
 .cache/
 .gomodcache/
 .vscode/
+/.docs/
 
 running_log/
 log.txt
