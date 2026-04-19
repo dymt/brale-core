@@ -110,7 +110,7 @@ func (r *Runner) JudgeMechanicsInPosition(ctx context.Context, system, user stri
 func runAndParse[T any](ctx context.Context, r *Runner, stage, system, user string, decode func(string) (T, error)) (T, error) {
 	logger := logging.FromContext(ctx).Named("provider")
 	return decisionutil.RunAndParse(ctx, r.providerFor, stage, system, user, func(raw string) (T, error) {
-		logger.Info("provider raw output",
+		logger.Debug("provider raw output",
 			zap.String("stage", stage),
 			zap.String("output", trimForLog(raw, 1200)),
 		)

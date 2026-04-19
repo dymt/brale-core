@@ -77,7 +77,7 @@ func (p *Pipeline) runObserveWithDecisionCtx(ctx context.Context, symbols []stri
 	ctx, recorder := p.attachRoundRecorder(ctx, roundID, "observe", symbols)
 	roundOutcome := "ok"
 	defer func() {
-		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
+		if err := p.finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
 			logger.Error("save llm round failed", zap.Error(err), zap.String("round_id", roundID.String()))
 			p.notifyError(ctx, fmt.Errorf("llm round save failed (round=%s): %w", roundID.String(), err))
 		}
@@ -185,7 +185,7 @@ func (p *Pipeline) RunOnceObserveWithInjectedPosition(ctx context.Context, symbo
 	ctx, recorder := p.attachRoundRecorder(ctx, roundID, "observe", []string{symbol})
 	roundOutcome := "ok"
 	defer func() {
-		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
+		if err := p.finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
 			logger.Warn("save llm round failed", zap.Error(err))
 		}
 	}()

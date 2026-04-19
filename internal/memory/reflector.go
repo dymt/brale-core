@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"brale-core/internal/config"
 	"brale-core/internal/llm"
 	"brale-core/internal/pkg/logging"
 	"brale-core/internal/store"
@@ -15,10 +17,12 @@ import (
 )
 
 type Reflector struct {
-	LLM      llm.Provider
-	Episodic *EpisodicMemory
-	Semantic *SemanticMemory
-	Store    store.Store
+	LLM           llm.Provider
+	Episodic      *EpisodicMemory
+	Semantic      *SemanticMemory
+	Store         store.Store
+	SystemPrompt  string
+	PromptVersion string
 }
 
 type ReflectionInput struct {
@@ -38,13 +42,6 @@ type reflectionOutput struct {
 	MarketContext string   `json:"market_context"`
 }
 
-const reflectorSystemPrompt = "你是一个量化交易回顾分析师。基于提供的交易数据，提取关键经验教训。\n" +
-	"硬性输出规则：\n" +
-	"- 只输出一个 JSON 对象\n" +
-	"- 字段：reflection (string, 2-3句交易总结), key_lessons (string array, 3-5条可操作经验), market_context (string, 当时市场环境简述)\n" +
-	"- 禁止输出 markdown、代码块、注释\n" +
-	"- 经验教训应具有可操作性和泛化性"
-
 func (r *Reflector) Reflect(ctx context.Context, input ReflectionInput) error {
 	if r.LLM == nil || r.Episodic == nil {
 		return nil
@@ -61,7 +58,7 @@ func (r *Reflector) Reflect(ctx context.Context, input ReflectionInput) error {
 	}
 
 	userPrompt := formatReflectionUserPrompt(input)
-	raw, err := r.LLM.Call(ctx, reflectorSystemPrompt, userPrompt)
+	raw, err := r.LLM.Call(ctx, r.resolveSystemPrompt(), userPrompt)
 	if err != nil {
 		return fmt.Errorf("reflector llm call: %w", err)
 	}
@@ -95,12 +92,12 @@ func (r *Reflector) Reflect(ctx context.Context, input ReflectionInput) error {
 	)
 
 	if r.Semantic != nil {
-		r.autoCreateRules(ctx, input.Symbol, output.KeyLessons, logger)
+		r.autoCreateRules(input.Symbol, output.KeyLessons, logger)
 	}
 	return nil
 }
 
-func (r *Reflector) autoCreateRules(ctx context.Context, symbol string, lessons []string, logger *zap.Logger) {
+func (r *Reflector) autoCreateRules(symbol string, lessons []string, logger *zap.Logger) {
 	for _, lesson := range lessons {
 		lesson = strings.TrimSpace(lesson)
 		if lesson == "" {
@@ -110,7 +107,7 @@ func (r *Reflector) autoCreateRules(ctx context.Context, symbol string, lessons 
 			Symbol:     symbol,
 			RuleText:   lesson,
 			Source:     "reflector",
-			Confidence: 0.5,
+			Confidence: reflectionRuleConfidence(lesson),
 			Active:     true,
 		}
 		if err := r.Semantic.SaveRule(rule); err != nil {
@@ -125,4 +122,59 @@ func formatReflectionUserPrompt(input ReflectionInput) string {
 		input.Symbol, input.Direction, input.EntryPrice, input.ExitPrice,
 		input.PnLPercent, input.Duration, input.GateReason,
 	)
+}
+
+func (r *Reflector) resolveSystemPrompt() string {
+	if prompt := strings.TrimSpace(r.SystemPrompt); prompt != "" {
+		return prompt
+	}
+	return config.DefaultPromptDefaults().ReflectorAnalysis
+}
+
+func reflectionRuleConfidence(lesson string) float64 {
+	text := strings.ToLower(strings.TrimSpace(lesson))
+	if text == "" {
+		return 0.3
+	}
+
+	score := 0.45
+	if utf8.RuneCountInString(text) >= 16 {
+		score += 0.05
+	}
+	if strings.ContainsAny(text, "0123456789") {
+		score += 0.05
+	}
+	if containsAny(text, "如果", "当", "若", "一旦", "避免", "不要", "必须", "应当", "需要") {
+		score += 0.05
+	}
+	if containsAny(text, "止损", "止盈", "入场", "出场", "仓位", "回踩", "突破", "趋势", "风险", "确认", "失效", "结构") {
+		score += 0.05
+	}
+	if containsAny(text, "保持纪律", "控制情绪", "顺势而为", "注意风险", "关注市场", "耐心等待") {
+		score -= 0.10
+	}
+	if utf8.RuneCountInString(text) < 10 {
+		score -= 0.05
+	}
+	return clampReflectionConfidence(score)
+}
+
+func containsAny(text string, markers ...string) bool {
+	for _, marker := range markers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func clampReflectionConfidence(score float64) float64 {
+	switch {
+	case score < 0.3:
+		return 0.3
+	case score > 0.7:
+		return 0.7
+	default:
+		return score
+	}
 }

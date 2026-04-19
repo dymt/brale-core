@@ -142,7 +142,7 @@ func (s *SentimentService) Calculate(ctx context.Context, symbol, interval strin
 	fundingScore := decimal.Zero
 	if data, ok := s.metrics.Get(symbol); ok && data.Error == "" {
 		curOI := decimal.NewFromFloat(data.OI)
-		fundingScore = normalize(decFromFloat(data.FundingRate), dec("-0.02"), dec("0.02"))
+		fundingScore = normalize(fundingRateDecimal(data), dec("-0.02"), dec("0.02"))
 		if hist := s.getOIHistory(ctx, symbol, "1h", 10, now); len(hist) > 0 {
 			minOI, maxOI := minMaxOI(hist)
 			if maxOI.Equal(minOI) {
@@ -383,4 +383,14 @@ func dec(value string) decimal.Decimal {
 
 func decFromFloat(val float64) decimal.Decimal {
 	return decimal.NewFromFloat(val)
+}
+
+func fundingRateDecimal(data DerivativesData) decimal.Decimal {
+	raw := strings.TrimSpace(data.FundingRateRaw)
+	if raw != "" {
+		if out, err := decimal.NewFromString(raw); err == nil {
+			return out
+		}
+	}
+	return decFromFloat(data.FundingRate)
 }

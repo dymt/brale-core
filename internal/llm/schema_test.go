@@ -57,3 +57,17 @@ func TestSchemaFromTypeOmitsIgnoredFieldsAndOptionalRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaFromTypeHandlesRecursiveTypes(t *testing.T) {
+	type node struct {
+		Name  string `json:"name"`
+		Child *node  `json:"child,omitempty"`
+	}
+
+	schema := llm.SchemaFromType[node]()
+	properties, _ := schema.Schema["properties"].(map[string]any)
+	child, _ := properties["child"].(map[string]any)
+	if child["type"] != "object" {
+		t.Fatalf("child.type=%v want object", child["type"])
+	}
+}

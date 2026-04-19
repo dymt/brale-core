@@ -2,6 +2,7 @@ package decision
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +15,10 @@ import (
 	"go.uber.org/zap"
 )
 
-const detachedRoundRecorderTimeout = 5 * time.Second
+const (
+	defaultRoundRecorderTimeout = 5 * time.Second
+	defaultRoundRecorderRetries = 1
+)
 
 func (p *Pipeline) attachRoundRecorder(ctx context.Context, roundID llm.RoundID, roundType string, symbols []string) (context.Context, *llmround.Recorder) {
 	if p == nil || p.store() == nil || len(symbols) == 0 {
@@ -74,17 +78,63 @@ func applyRoundSummary(recorder *llmround.Recorder, snapID uint, results []Symbo
 	recorder.SetRoundSummary(countAgentPrompts(results), countProviderPrompts(results), summarizeGateActions(results))
 }
 
-func finishRoundRecorder(ctx context.Context, recorder *llmround.Recorder, outcome string) error {
+func (p *Pipeline) finishRoundRecorder(ctx context.Context, recorder *llmround.Recorder, outcome string) error {
 	if recorder == nil {
+		return nil
+	}
+	return finishRoundRecorderWith(ctx, outcome, p.roundRecorderTimeout(), p.roundRecorderRetries(), func(callCtx context.Context, outcome string) error {
+		return recorder.Finish(callCtx, outcome)
+	})
+}
+
+func finishRoundRecorderWith(ctx context.Context, outcome string, timeout time.Duration, retries int, finish func(context.Context, string) error) error {
+	if finish == nil {
 		return nil
 	}
 	baseCtx := context.Background()
 	if ctx != nil {
 		baseCtx = context.WithoutCancel(ctx)
 	}
-	finishCtx, cancel := context.WithTimeout(baseCtx, detachedRoundRecorderTimeout)
-	defer cancel()
-	return recorder.Finish(finishCtx, outcome)
+	if timeout <= 0 {
+		timeout = defaultRoundRecorderTimeout
+	}
+	if retries < 0 {
+		retries = 0
+	}
+	attempts := retries + 1
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		finishCtx, cancel := context.WithTimeout(baseCtx, timeout)
+		err := finish(finishCtx, outcome)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt < attempts {
+			logging.FromContext(ctx).Named("pipeline").Warn("llm round finish retrying",
+				zap.Int("attempt", attempt),
+				zap.Int("max_attempts", attempts),
+				zap.Duration("timeout", timeout),
+				zap.Error(err),
+			)
+		}
+	}
+	return fmt.Errorf("finish round recorder after %d attempts: %w", attempts, lastErr)
+}
+
+func (p *Pipeline) roundRecorderTimeout() time.Duration {
+	if p != nil && p.RoundRecorderTimeout > 0 {
+		return p.RoundRecorderTimeout
+	}
+	return defaultRoundRecorderTimeout
+}
+
+func (p *Pipeline) roundRecorderRetries() int {
+	if p != nil && p.RoundRecorderRetries > 0 {
+		return p.RoundRecorderRetries
+	}
+	return defaultRoundRecorderRetries
 }
 
 func countAgentPrompts(results []SymbolResult) int {

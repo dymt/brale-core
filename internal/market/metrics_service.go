@@ -9,18 +9,20 @@ import (
 
 	"brale-core/internal/interval"
 	"brale-core/internal/pkg/logging"
+	"brale-core/internal/pkg/parseutil"
 	symbolpkg "brale-core/internal/pkg/symbol"
 
 	"go.uber.org/zap"
 )
 
 type DerivativesData struct {
-	Symbol      string
-	OI          float64
-	OIHistory   map[string]float64
-	FundingRate float64
-	LastUpdate  time.Time
-	Error       string
+	Symbol         string
+	OI             float64
+	OIHistory      map[string]float64
+	FundingRate    float64
+	FundingRateRaw string
+	LastUpdate     time.Time
+	Error          string
 }
 
 type MetricsService struct {
@@ -212,6 +214,7 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 	}
 	type fundingResult struct {
 		rate float64
+		raw  string
 		err  error
 	}
 
@@ -230,12 +233,12 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 
 	fundCh := make(chan fundingResult, 1)
 	go func() {
-		rate, err := s.source.GetFundingRate(ctx, symbol)
+		rate, raw, err := fetchFundingRate(s.source, ctx, symbol)
 		if err != nil {
 			err = fmt.Errorf("get funding rate for %s: %w", symbol, err)
 			logger.Warn("metrics funding failed", zap.Error(err))
 		}
-		fundCh <- fundingResult{rate: rate, err: err}
+		fundCh <- fundingResult{rate: rate, raw: raw, err: err}
 	}()
 
 	var oiHist []OpenInterestPoint
@@ -304,6 +307,7 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 		_, _ = fmt.Fprintf(&allErrors, "funding error: %v", errFund)
 	} else {
 		newData.FundingRate = funding
+		newData.FundingRateRaw = fundRes.raw
 	}
 
 	newData.Error = allErrors.String()
@@ -311,6 +315,27 @@ func (s *MetricsService) updateSymbol(ctx context.Context, symbol string) {
 	s.mu.Lock()
 	s.cache[symbol] = newData
 	s.mu.Unlock()
+}
+
+func fetchFundingRate(source Source, ctx context.Context, symbol string) (float64, string, error) {
+	if rawProvider, ok := source.(FundingRateRawProvider); ok {
+		raw, err := rawProvider.GetFundingRateRaw(ctx, symbol)
+		if err != nil {
+			return 0, "", err
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return 0, "", fmt.Errorf("empty funding rate")
+		}
+		rate, err := parseutil.ParseFloatString(raw)
+		if err != nil {
+			return 0, raw, fmt.Errorf("parse funding rate: %w", err)
+		}
+		return rate, raw, nil
+	}
+
+	rate, err := source.GetFundingRate(ctx, symbol)
+	return rate, "", err
 }
 
 func normalizeTimeframes(items []string) []string {

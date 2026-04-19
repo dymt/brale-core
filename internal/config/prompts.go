@@ -234,6 +234,15 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"- action=\"adjust\" 时：direction=long：stop_loss 必须 > current_stop_loss 且 < mark_price；take_profits 必须严格递增。\n" +
 	"- action=\"adjust\" 时：direction=short：stop_loss 必须 < current_stop_loss 且 > mark_price；take_profits 必须严格递减。\n"
 
+const defaultReflectorAnalysisPrompt = "" +
+	"你是 brale-core AI 驱动量化交易系统中的交易复盘分析器。\n" +
+	"你的输出会被程序直接解析，并用于写入 episodic / semantic memory。\n" +
+	"硬性输出规则：\n" +
+	"- 只输出一个 JSON 对象\n" +
+	"- 字段：reflection (string, 2-3句交易总结), key_lessons (string array, 3-5条可操作经验), market_context (string, 当时市场环境简述)\n" +
+	"- 禁止输出 markdown、代码块、注释、解释文字\n" +
+	"- 经验教训必须具有可操作性和可迁移性，只能基于输入信息总结，禁止编造额外行情与事实\n"
+
 type PromptDefaults struct {
 	AgentIndicator              string
 	AgentStructure              string
@@ -246,6 +255,7 @@ type PromptDefaults struct {
 	ProviderInPositionMechanics string
 	RiskFlatInit                string
 	RiskTightenUpdate           string
+	ReflectorAnalysis           string
 }
 
 func DefaultPromptDefaults() PromptDefaults {
@@ -261,22 +271,24 @@ func DefaultPromptDefaults() PromptDefaults {
 		ProviderInPositionMechanics: defaultInPosMechanicsPrompt,
 		RiskFlatInit:                defaultRiskFlatInitPrompt,
 		RiskTightenUpdate:           defaultRiskTightenUpdatePrompt,
+		ReflectorAnalysis:           defaultReflectorAnalysisPrompt,
 	}
 }
 
 func PromptRegistryDefaults() map[string]string {
 	defaults := DefaultPromptDefaults()
 	return map[string]string{
-		"agent/indicator":               defaults.AgentIndicator,
-		"agent/structure":               defaults.AgentStructure,
-		"agent/mechanics":               defaults.AgentMechanics,
-		"provider/indicator":            defaults.ProviderIndicator,
-		"provider/structure":            defaults.ProviderStructure,
-		"provider/mechanics":            defaults.ProviderMechanics,
+		"agent/indicator":                defaults.AgentIndicator,
+		"agent/structure":                defaults.AgentStructure,
+		"agent/mechanics":                defaults.AgentMechanics,
+		"provider/indicator":             defaults.ProviderIndicator,
+		"provider/structure":             defaults.ProviderStructure,
+		"provider/mechanics":             defaults.ProviderMechanics,
 		"provider_in_position/indicator": defaults.ProviderInPositionIndicator,
 		"provider_in_position/structure": defaults.ProviderInPositionStructure,
 		"provider_in_position/mechanics": defaults.ProviderInPositionMechanics,
-		"risk/flat_init":                defaults.RiskFlatInit,
-		"risk/tighten_update":           defaults.RiskTightenUpdate,
+		"risk/flat_init":                 defaults.RiskFlatInit,
+		"risk/tighten_update":            defaults.RiskTightenUpdate,
+		"reflector/analysis":             defaults.ReflectorAnalysis,
 	}
 }

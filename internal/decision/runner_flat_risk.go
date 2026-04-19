@@ -37,7 +37,7 @@ func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.
 		return nil, nil
 	}
 	if r.FlatRiskInitLLM == nil {
-		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, fmt.Errorf("flat risk init llm callback is required"))
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonTransportFailure, fmt.Errorf("flat risk init llm callback is required"))
 	}
 	resolved := *plan
 	patch, err := r.FlatRiskInitLLM(ctx, FlatRiskInitInput{
@@ -50,7 +50,7 @@ func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.
 		StructureAnchors: structureAnchors,
 	})
 	if err != nil {
-		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonTransportFailure, err)
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonTransportFailure, err)
 	}
 	if err := applyFlatRiskInitPatch(&resolved, patch); err != nil {
 		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, classifyFlatRiskInitPatchError(err), err)
@@ -60,7 +60,7 @@ func (r *Runner) buildFlatLLMPlan(ctx context.Context, symbol string, gate fund.
 		stopReason = strings.TrimSpace(*patch.Reason)
 	}
 	if err := rescaleFlatPlan(&resolved, bind, acct, stopReason); err != nil {
-		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonSchemaFailure, err)
+		return nil, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonSchemaFailure, err)
 	}
 	resolved.LLMRiskTrace = cloneLLMRiskTrace(patch.Trace)
 	return &resolved, nil

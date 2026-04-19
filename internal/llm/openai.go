@@ -129,7 +129,7 @@ func (c *OpenAIClient) doCall(ctx context.Context, messages []ChatMessage, respo
 	}
 	defer release()
 
-	logger.Info("llm request started", zap.Int("messages", len(messages)))
+	logger.Debug("llm request started", zap.Int("messages", len(messages)))
 	url := endpoint + "/chat/completions"
 	payload := chatRequest{
 		Model:          c.Model,
@@ -167,7 +167,7 @@ func (c *OpenAIClient) doCall(ctx context.Context, messages []ChatMessage, respo
 				TokenOut:      result.TokenOut,
 			})
 			breaker.RecordSuccess()
-			logger.Info("llm request completed", zap.Duration("latency", time.Since(start)), zap.Int("token_in", result.TokenIn), zap.Int("token_out", result.TokenOut))
+			logger.Debug("llm request completed", zap.Duration("latency", time.Since(start)), zap.Int("token_in", result.TokenIn), zap.Int("token_out", result.TokenOut))
 			return result.Content, nil
 		}
 		lastErr = err

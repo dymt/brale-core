@@ -49,6 +49,8 @@ type Pipeline struct {
 	EpisodicMemory          memory.EpisodicStore
 	SemanticMemory          memory.SemanticStore
 	LLMTokenBudget          int
+	RoundRecorderTimeout    time.Duration
+	RoundRecorderRetries    int
 }
 
 type PipelineCoreDeps struct {

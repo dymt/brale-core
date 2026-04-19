@@ -54,6 +54,7 @@ func (m *FuturesMarket) Klines(ctx context.Context, symbol, interval string, lim
 	}
 	ctx, cancel := m.requestContext(ctx)
 	defer cancel()
+	logger := logging.FromContext(ctx).Named("market").With(zap.String("symbol", symbol), zap.String("interval", interval))
 	svc := m.Client.NewKlinesService().Symbol(symbol).Interval(interval)
 	if limit > 0 {
 		svc.Limit(limit)
@@ -106,6 +107,12 @@ func (m *FuturesMarket) Klines(ctx context.Context, symbol, interval string, lim
 		}
 		takerSell := vol - takerBuy
 		if takerSell < 0 {
+			logger.Warn("binance taker sell volume negative, clamping to zero",
+				zap.Int("index", i),
+				zap.Int64("open_time", k.OpenTime),
+				zap.Float64("volume", vol),
+				zap.Float64("taker_buy_volume", takerBuy),
+			)
 			takerSell = 0
 		}
 		out = append(out, snapshot.Candle{
@@ -656,38 +663,38 @@ func liqBinIndex(bps float64, priceBins []int) int {
 }
 
 func (m *FuturesMarket) GetFundingRate(ctx context.Context, symbol string) (float64, error) {
-	if err := m.validateClient(); err != nil {
+	raw, err := m.GetFundingRateRaw(ctx, symbol)
+	if err != nil {
 		return 0, err
+	}
+	return parseFloat(raw)
+}
+
+func (m *FuturesMarket) GetFundingRateRaw(ctx context.Context, symbol string) (string, error) {
+	if err := m.validateClient(); err != nil {
+		return "", err
 	}
 	ctx, cancel := m.requestContext(ctx)
 	defer cancel()
 	if strings.TrimSpace(symbol) == "" {
-		return 0, market.ValidationErrorf("symbol is required")
+		return "", market.ValidationErrorf("symbol is required")
 	}
 	res, err := m.Client.NewPremiumIndexService().Symbol(symbol).Do(ctx)
 	if err != nil {
-		return 0, market.ExternalError(err, "binance_premium_index_failed")
+		return "", market.ExternalError(err, "binance_premium_index_failed")
 	}
 	for _, entry := range res {
 		if entry == nil {
 			continue
 		}
 		if strings.EqualFold(entry.Symbol, symbol) {
-			val, err := parseFloat(entry.LastFundingRate)
-			if err != nil {
-				return 0, err
-			}
-			return val, nil
+			return strings.TrimSpace(entry.LastFundingRate), nil
 		}
 	}
 	if len(res) > 0 && res[0] != nil {
-		val, err := parseFloat(res[0].LastFundingRate)
-		if err != nil {
-			return 0, err
-		}
-		return val, nil
+		return strings.TrimSpace(res[0].LastFundingRate), nil
 	}
-	return 0, market.UnavailableErrorf("funding rate not available for %s", symbol)
+	return "", market.UnavailableErrorf("funding rate not available for %s", symbol)
 }
 
 func (m *FuturesMarket) GetOpenInterestHistory(ctx context.Context, symbol, period string, limit int) ([]market.OpenInterestPoint, error) {

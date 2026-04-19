@@ -61,6 +61,10 @@ type systemHashInput struct {
 	SchedulerBackend           string          `json:"scheduler_backend,omitempty"`
 	ReconcileCloseRecoverAfter string          `json:"reconcile_close_recover_after,omitempty"`
 	EnableScheduledDecision    bool            `json:"enable_scheduled_decision,omitempty"`
+	TokenBudgetPerRound        int             `json:"token_budget_per_round,omitempty"`
+	TokenBudgetWarnPct         int             `json:"token_budget_warn_pct,omitempty"`
+	RoundRecorderTimeoutSec    int             `json:"round_recorder_timeout_sec,omitempty"`
+	RoundRecorderRetries       int             `json:"round_recorder_retries,omitempty"`
 }
 
 type llmModelEntry struct {
@@ -142,6 +146,10 @@ func buildSystemHashInput(cfg SystemConfig) systemHashInput {
 		SchedulerBackend:           cfg.Scheduler.Backend,
 		ReconcileCloseRecoverAfter: cfg.Reconcile.CloseRecoverAfter,
 		EnableScheduledDecision:    cfg.EnableScheduledDecision != nil && *cfg.EnableScheduledDecision,
+		TokenBudgetPerRound:        cfg.LLM.TokenBudgetPerRound,
+		TokenBudgetWarnPct:         cfg.LLM.TokenBudgetWarnPct,
+		RoundRecorderTimeoutSec:    cfg.LLM.RoundRecorderTimeoutSec,
+		RoundRecorderRetries:       cfg.LLM.RoundRecorderRetries,
 	}
 }
 

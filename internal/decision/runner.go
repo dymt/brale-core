@@ -133,13 +133,7 @@ func appendPlanDerived(gate *fund.GateDecision, plan *execution.ExecutionPlan) {
 }
 
 const (
-	llmRiskStageFlatInit          = "flat_init"
-	llmRiskReasonModeMissing      = "LLM_RISK_INIT_MODE_MISSING"
-	llmRiskReasonModeMismatch     = "LLM_RISK_INIT_MODE_MISMATCH"
-	llmRiskReasonTransportFailure = "LLM_RISK_INIT_TRANSPORT_FAILURE"
-	llmRiskReasonSchemaFailure    = "LLM_RISK_INIT_SCHEMA_FAILURE"
-	llmRiskReasonRatioFailure     = "LLM_RISK_INIT_RATIO_FAILURE"
-	llmRiskReasonDirectionFailure = "LLM_RISK_INIT_DIRECTION_FAILURE"
+	llmRiskStageFlatInit = "flat_init"
 )
 
 var (
@@ -156,7 +150,7 @@ var (
 type llmRiskFailure struct {
 	Symbol string
 	Stage  string
-	Reason string
+	Reason LLMRiskReasonCode
 	Err    error
 }
 
@@ -165,9 +159,9 @@ func (e *llmRiskFailure) Error() string {
 		return ""
 	}
 	if e.Err == nil {
-		return fmt.Sprintf("llm risk failed: symbol=%s stage=%s reason=%s", strings.TrimSpace(e.Symbol), strings.TrimSpace(e.Stage), strings.TrimSpace(e.Reason))
+		return fmt.Sprintf("llm risk failed: symbol=%s stage=%s reason=%s", strings.TrimSpace(e.Symbol), strings.TrimSpace(e.Stage), e.Reason.String())
 	}
-	return fmt.Sprintf("llm risk failed: symbol=%s stage=%s reason=%s: %v", strings.TrimSpace(e.Symbol), strings.TrimSpace(e.Stage), strings.TrimSpace(e.Reason), e.Err)
+	return fmt.Sprintf("llm risk failed: symbol=%s stage=%s reason=%s: %v", strings.TrimSpace(e.Symbol), strings.TrimSpace(e.Stage), e.Reason.String(), e.Err)
 }
 
 func (e *llmRiskFailure) Unwrap() error {
@@ -177,10 +171,10 @@ func (e *llmRiskFailure) Unwrap() error {
 	return e.Err
 }
 
-func wrapLLMRiskFailure(symbol, stage, reason string, err error) error {
-	r := strings.TrimSpace(reason)
-	if r == "" {
-		r = llmRiskReasonSchemaFailure
+func wrapLLMRiskFailure(symbol, stage string, reason LLMRiskReasonCode, err error) error {
+	r := reason
+	if strings.TrimSpace(r.String()) == "" {
+		r = LLMRiskReasonSchemaFailure
 	}
 	return &llmRiskFailure{Symbol: strings.TrimSpace(symbol), Stage: strings.TrimSpace(stage), Reason: r, Err: err}
 }
@@ -190,21 +184,21 @@ func llmRiskFailureReasonCode(err error) (string, bool) {
 	if !errors.As(err, &target) || target == nil {
 		return "", false
 	}
-	r := strings.TrimSpace(target.Reason)
+	r := strings.TrimSpace(target.Reason.String())
 	if r == "" {
 		return "", false
 	}
 	return r, true
 }
 
-func classifyFlatRiskInitPatchError(err error) string {
+func classifyFlatRiskInitPatchError(err error) LLMRiskReasonCode {
 	switch {
 	case errors.Is(err, errFlatRiskRatioInvalid):
-		return llmRiskReasonRatioFailure
+		return LLMRiskReasonRatioFailure
 	case errors.Is(err, errFlatRiskDirectionInvalid):
-		return llmRiskReasonDirectionFailure
+		return LLMRiskReasonDirectionFailure
 	default:
-		return llmRiskReasonSchemaFailure
+		return LLMRiskReasonSchemaFailure
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"brale-core/internal/decision"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/store"
 )
@@ -564,12 +565,12 @@ func summarizeTerminalReason(gate store.GateEventRecord, tighten *TightenInfo) s
 	if !gate.GlobalTradeable {
 		reason := strings.TrimSpace(gate.GateReason)
 		if reason == "" {
-			return "gate_blocked"
+			return decision.FlowTerminalReasonGateBlocked.String()
 		}
 		return reason
 	}
 	if shouldRenderPlanNode(gate, tighten) {
-		return "plan_emitted"
+		return decision.FlowTerminalReasonPlanEmitted.String()
 	}
 	return "gate_pass_no_plan"
 }

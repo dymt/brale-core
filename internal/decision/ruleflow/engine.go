@@ -22,31 +22,35 @@ func NewEngine() *Engine {
 }
 
 func (e *Engine) EnsureRegistered() error {
-	if err := rulego.Registry.Register(&DeriveTradeableNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
+	for _, component := range []ruletypes.Node{
+		&DeriveTradeableNode{},
+		&filter.JsSwitchNode{},
+		&GateEntryNode{},
+		&GateDecisionNode{},
+		&HardGuardNode{},
+		&MonitorFusionNode{},
+		&PlanBuilderNode{},
+		&FSMDecisionNode{},
+	} {
+		if err := registerComponent(component); err != nil {
+			return err
+		}
 	}
-	if err := rulego.Registry.Register(&filter.JsSwitchNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&GateEntryNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&GateDecisionNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&HardGuardNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&MonitorFusionNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&PlanBuilderNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
-		return err
-	}
-	if err := rulego.Registry.Register(&FSMDecisionNode{}); err != nil && !strings.Contains(err.Error(), "component already exists") {
+	return nil
+}
+
+func registerComponent(component ruletypes.Node) error {
+	if err := rulego.Registry.Register(component); err != nil && !isComponentAlreadyExistsError(err) {
 		return err
 	}
 	return nil
+}
+
+func isComponentAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(err.Error())), "component already exists")
 }
 
 func (e *Engine) Evaluate(ctx context.Context, ruleChainPath string, input Input) (Result, error) {

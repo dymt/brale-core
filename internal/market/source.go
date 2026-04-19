@@ -22,6 +22,10 @@ type LongShortRatioProvider interface {
 	GlobalAccountRatio(ctx context.Context, symbol, period string, limit int) ([]LongShortRatioPoint, error)
 }
 
+type FundingRateRawProvider interface {
+	GetFundingRateRaw(ctx context.Context, symbol string) (string, error)
+}
+
 type Source interface {
 	GetFundingRate(ctx context.Context, symbol string) (float64, error)
 	GetOpenInterestHistory(ctx context.Context, symbol, period string, limit int) ([]OpenInterestPoint, error)

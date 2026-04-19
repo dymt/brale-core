@@ -108,7 +108,7 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 	}
 	ctx, recorder = p.attachRoundRecorder(ctx, roundID, "decide", runnableSymbols)
 	defer func() {
-		if err := finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
+		if err := p.finishRoundRecorder(ctx, recorder, roundOutcome); err != nil {
 			logger.Error("save llm round failed", zap.Error(err), zap.String("round_id", roundID.String()))
 			p.notifyError(ctx, fmt.Errorf("llm round save failed (round=%s): %w", roundID.String(), err))
 		}

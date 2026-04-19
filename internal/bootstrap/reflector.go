@@ -7,10 +7,13 @@ import (
 	"strings"
 
 	"brale-core/internal/config"
+	"brale-core/internal/llm/promptreg"
 	"brale-core/internal/memory"
 	"brale-core/internal/reconcile"
 	"brale-core/internal/runtime"
 	"brale-core/internal/store"
+
+	"go.uber.org/zap"
 )
 
 type symbolPositionReflector struct {
@@ -30,6 +33,11 @@ func (r *symbolPositionReflector) ReflectOnClose(ctx context.Context, pos store.
 
 func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig, st store.Store) (reconcile.PositionReflector, error) {
 	bySymbol := make(map[string]*memory.ReconcileReflectorAdapter)
+	loader := promptreg.NewLoader(st, config.PromptRegistryDefaults(), zap.NewNop())
+	systemPrompt, promptVersion, err := loader.Resolve(context.Background(), "reflector", "analysis")
+	if err != nil {
+		return nil, fmt.Errorf("resolve reflector prompt: %w", err)
+	}
 	for _, item := range index.Symbols {
 		symbolKey := canonicalSymbolFromIndexEntry(item)
 		if symbolKey == "" {
@@ -52,10 +60,12 @@ func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, ind
 		}
 		bySymbol[symbolKey] = &memory.ReconcileReflectorAdapter{
 			Reflector: &memory.Reflector{
-				LLM:      runtime.NewLLMClient(sys, role),
-				Episodic: episodic,
-				Semantic: buildReflectorSemanticMemory(symbolCfg, st),
-				Store:    st,
+				LLM:           runtime.NewLLMClient(sys, role),
+				Episodic:      episodic,
+				Semantic:      buildReflectorSemanticMemory(symbolCfg, st),
+				Store:         st,
+				SystemPrompt:  systemPrompt,
+				PromptVersion: promptVersion,
 			},
 		}
 	}

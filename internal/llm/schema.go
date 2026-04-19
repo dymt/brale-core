@@ -32,12 +32,17 @@ func SchemaFromType[T any]() *JSONSchema {
 	if cached, ok := schemaCache.Load(typ); ok {
 		return cached.(*JSONSchema)
 	}
+	builder := schemaBuilder{stack: make(map[reflect.Type]bool)}
 	schema := &JSONSchema{
 		Name:   schemaName(typ),
-		Schema: schemaForType(typ),
+		Schema: builder.schemaForType(typ),
 	}
 	actual, _ := schemaCache.LoadOrStore(typ, schema)
 	return actual.(*JSONSchema)
+}
+
+type schemaBuilder struct {
+	stack map[reflect.Type]bool
 }
 
 func schemaName(typ reflect.Type) string {
@@ -53,13 +58,16 @@ func schemaName(typ reflect.Type) string {
 	return strings.ToLower(typ.Name())
 }
 
-func schemaForType(typ reflect.Type) map[string]any {
-	for typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+func (b *schemaBuilder) schemaForType(typ reflect.Type) map[string]any {
+	typ = baseSchemaType(typ)
 	if typ.Kind() != reflect.Struct {
 		return scalarSchema(typ)
 	}
+	if b.stack[typ] {
+		return map[string]any{"type": "object"}
+	}
+	b.stack[typ] = true
+	defer delete(b.stack, typ)
 
 	properties := make(map[string]any)
 	required := make([]string, 0, typ.NumField())
@@ -72,7 +80,7 @@ func schemaForType(typ reflect.Type) map[string]any {
 		if !ok {
 			continue
 		}
-		properties[name] = fieldSchema(field.Type)
+		properties[name] = b.fieldSchema(field.Type)
 		if !optional {
 			required = append(required, name)
 		}
@@ -89,10 +97,8 @@ func schemaForType(typ reflect.Type) map[string]any {
 	return schema
 }
 
-func fieldSchema(typ reflect.Type) map[string]any {
-	for typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+func (b *schemaBuilder) fieldSchema(typ reflect.Type) map[string]any {
+	typ = baseSchemaType(typ)
 	if enum, ok := loadEnum(typ); ok {
 		return map[string]any{
 			"type": "string",
@@ -101,7 +107,7 @@ func fieldSchema(typ reflect.Type) map[string]any {
 	}
 	switch typ.Kind() {
 	case reflect.Struct:
-		return schemaForType(typ)
+		return b.schemaForType(typ)
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -113,11 +119,18 @@ func fieldSchema(typ reflect.Type) map[string]any {
 	case reflect.Slice, reflect.Array:
 		return map[string]any{
 			"type":  "array",
-			"items": fieldSchema(typ.Elem()),
+			"items": b.fieldSchema(typ.Elem()),
 		}
 	default:
 		return scalarSchema(typ)
 	}
+}
+
+func baseSchemaType(typ reflect.Type) reflect.Type {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	return typ
 }
 
 func scalarSchema(typ reflect.Type) map[string]any {

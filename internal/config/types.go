@@ -46,8 +46,10 @@ type ReconcileConfig struct {
 }
 
 type SystemLLMConfig struct {
-	TokenBudgetPerRound int `mapstructure:"token_budget_per_round"`
-	TokenBudgetWarnPct  int `mapstructure:"token_budget_warn_pct"`
+	TokenBudgetPerRound     int `mapstructure:"token_budget_per_round"`
+	TokenBudgetWarnPct      int `mapstructure:"token_budget_warn_pct"`
+	RoundRecorderTimeoutSec int `mapstructure:"round_recorder_timeout_sec"`
+	RoundRecorderRetries    int `mapstructure:"round_recorder_retries"`
 }
 
 type RiskGuardConfig struct {

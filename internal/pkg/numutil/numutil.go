@@ -12,17 +12,3 @@ func AbsInt(v int) int {
 func AbsFloat(v float64) float64 {
 	return math.Abs(v)
 }
-
-func MaxFloat(a, b float64) float64 {
-	if a >= b {
-		return a
-	}
-	return b
-}
-
-func MinFloat(a, b float64) float64 {
-	if a <= b {
-		return a
-	}
-	return b
-}

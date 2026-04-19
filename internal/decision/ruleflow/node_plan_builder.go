@@ -191,11 +191,11 @@ func resolveEntryPrice(direction string, closePrice, atr, prevHigh, prevLow, ent
 		case "long":
 			base := closePrice
 			if prevLow > 0 {
-				base = numutil.MinFloat(prevLow, closePrice)
+				base = min(prevLow, closePrice)
 			}
 			entry = base - (atr * entryOffsetATR)
 		case "short":
-			entry = numutil.MaxFloat(prevHigh, closePrice) + (atr * entryOffsetATR)
+			entry = max(prevHigh, closePrice) + (atr * entryOffsetATR)
 		}
 		return entry
 	}

@@ -110,7 +110,7 @@ func (r *Runner) loadRunnerSymbolInputs(ctx context.Context, symbol string, opts
 		logger.Error("llm risk mode resolution failed", zap.Error(modeErr))
 		code, ok := llmRiskFailureReasonCode(modeErr)
 		if !ok {
-			code = llmRiskReasonModeMismatch
+			code = LLMRiskReasonModeMismatch.String()
 		}
 		result := symbolError(symbol, modeErr, code)
 		return nil, &result
@@ -228,20 +228,20 @@ func resolveRunnerLLMRiskMode(bind strategy.StrategyBinding, opts RunOptions, sy
 	bindingLLMMode := strings.EqualFold(strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), execution.PlanSourceLLM)
 	if opts.RiskStrategyModeBySymbol == nil {
 		if bindingLLMMode {
-			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMissing, fmt.Errorf("llm risk mode is required for symbol %s", strings.TrimSpace(symbol)))
+			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonModeMissing, fmt.Errorf("llm risk mode is required for symbol %s", strings.TrimSpace(symbol)))
 		}
 		return false, nil
 	}
 	mode, ok := opts.RiskStrategyModeBySymbol[symbol]
 	if !ok {
 		if bindingLLMMode {
-			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMissing, fmt.Errorf("llm risk mode is missing for symbol %s", strings.TrimSpace(symbol)))
+			return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonModeMissing, fmt.Errorf("llm risk mode is missing for symbol %s", strings.TrimSpace(symbol)))
 		}
 		return false, nil
 	}
 	explicitLLMMode := strings.EqualFold(strings.TrimSpace(mode), execution.PlanSourceLLM)
 	if explicitLLMMode != bindingLLMMode {
-		return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, llmRiskReasonModeMismatch, fmt.Errorf("risk mode mismatch for symbol %s: binding=%q runner=%q", strings.TrimSpace(symbol), strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), strings.TrimSpace(mode)))
+		return false, wrapLLMRiskFailure(symbol, llmRiskStageFlatInit, LLMRiskReasonModeMismatch, fmt.Errorf("risk mode mismatch for symbol %s: binding=%q runner=%q", strings.TrimSpace(symbol), strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), strings.TrimSpace(mode)))
 	}
 	return explicitLLMMode, nil
 }

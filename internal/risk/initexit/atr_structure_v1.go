@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-
-	"brale-core/internal/pkg/numutil"
 )
 
 const atrStructureV1Name = "atr_structure_v1"
@@ -70,8 +68,8 @@ func resolveATRStructureStopDistance(in BuildInput, useStructure bool) (float64,
 	if stopMinDistancePct > 0 {
 		minStopDist = in.Entry * stopMinDistancePct
 	}
-	stopDist := numutil.MaxFloat(atrDist, structureDist)
-	stopDist = numutil.MaxFloat(stopDist, minStopDist)
+	stopDist := max(atrDist, structureDist)
+	stopDist = max(stopDist, minStopDist)
 	if stopDist <= 0 {
 		return 0, fmt.Errorf("stop distance invalid")
 	}
