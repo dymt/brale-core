@@ -70,6 +70,13 @@ func (p *Pipeline) handleInPosition(ctx context.Context, logger *zap.Logger, out
 		logger.Debug("fsm rule hit", zap.String("rule", fsmHit.Name))
 	}
 	if hasFSMAction(fsmActions, fsm.ActionClose) {
+		if err := p.executeInPositionClose(ctx, res, posID); err != nil {
+			recordMemory = false
+			logger.Error("decision close failed", zap.Error(err))
+			p.notifyError(ctx, err)
+			out.Err = err
+			return out, err
+		}
 		p.armEntryCooldownOnExitSignal(res, logger)
 		return out, nil
 	}
@@ -89,6 +96,46 @@ func riskPlanUpdateLogFields(err error) []zap.Field {
 		)
 	}
 	return fields
+}
+
+func (p *Pipeline) executeInPositionClose(ctx context.Context, res SymbolResult, posID string) error {
+	if p == nil || p.positioner() == nil {
+		return fmt.Errorf("position service is required")
+	}
+	pos, err := p.loadPositionRecord(ctx, res.Symbol, posID)
+	if err != nil {
+		return fmt.Errorf("load position for decision close %s: %w", strings.TrimSpace(res.Symbol), err)
+	}
+	if p.positioner().Cache != nil {
+		pos = p.positioner().Cache.HydratePosition(pos)
+	}
+	triggerPrice := deriveCurrentPrice(res.Gate.Derived)
+	if triggerPrice <= 0 && p.priceSource() != nil {
+		if quote, quoteErr := p.priceSource().MarkPrice(ctx, res.Symbol); quoteErr == nil && quote.Price > 0 {
+			triggerPrice = quote.Price
+		}
+	}
+	if triggerPrice <= 0 {
+		if pos.LastPrice > 0 {
+			triggerPrice = pos.LastPrice
+		} else if pos.AvgEntry > 0 {
+			triggerPrice = pos.AvgEntry
+		}
+	}
+	reason := strings.TrimSpace(res.Gate.GateReason)
+	if reason == "" {
+		reason = "decision_exit"
+	}
+	request := position.CloseRequest{
+		RequestedCloseQty: pos.Qty,
+		EffectiveCloseQty: pos.Qty,
+		PositionQty:       pos.Qty,
+		BaseQty:           pos.Qty,
+	}
+	if _, err := p.positioner().ArmClose(ctx, pos, reason, triggerPrice, request); err != nil {
+		return fmt.Errorf("arm decision close for %s: %w", strings.TrimSpace(res.Symbol), err)
+	}
+	return nil
 }
 
 func (p *Pipeline) applyExitConfirmFromTighten(res *SymbolResult, posID string, exec tightenExecution, logger *zap.Logger) {

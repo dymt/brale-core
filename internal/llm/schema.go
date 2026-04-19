@@ -13,7 +13,7 @@ type JSONSchema struct {
 
 var (
 	enumRegistry sync.Map
-	schemaCache  sync.Map
+	schemaCache  = newSchemaStore(256)
 )
 
 func RegisterEnum[T ~string](values ...string) {
@@ -29,16 +29,80 @@ func RegisterEnum[T ~string](values ...string) {
 
 func SchemaFromType[T any]() *JSONSchema {
 	typ := reflect.TypeFor[T]()
-	if cached, ok := schemaCache.Load(typ); ok {
-		return cached.(*JSONSchema)
+	if cached, ok := schemaCache.load(typ); ok {
+		return cached
 	}
 	builder := schemaBuilder{stack: make(map[reflect.Type]bool)}
 	schema := &JSONSchema{
 		Name:   schemaName(typ),
 		Schema: builder.schemaForType(typ),
 	}
-	actual, _ := schemaCache.LoadOrStore(typ, schema)
-	return actual.(*JSONSchema)
+	return schemaCache.loadOrStore(typ, schema)
+}
+
+type schemaStore struct {
+	mu         sync.RWMutex
+	entries    map[reflect.Type]*JSONSchema
+	order      []reflect.Type
+	maxEntries int
+	evicted    int64
+}
+
+func newSchemaStore(maxEntries int) *schemaStore {
+	if maxEntries <= 0 {
+		maxEntries = 256
+	}
+	return &schemaStore{
+		entries:    make(map[reflect.Type]*JSONSchema, maxEntries),
+		order:      make([]reflect.Type, 0, maxEntries),
+		maxEntries: maxEntries,
+	}
+}
+
+func (c *schemaStore) load(typ reflect.Type) (*JSONSchema, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	schema, ok := c.entries[typ]
+	return schema, ok
+}
+
+func (c *schemaStore) store(typ reflect.Type, schema *JSONSchema) *JSONSchema {
+	if c == nil {
+		return schema
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.entries[typ]; ok {
+		return existing
+	}
+	if len(c.entries) >= c.maxEntries && len(c.order) > 0 {
+		oldest := c.order[0]
+		delete(c.entries, oldest)
+		c.order = c.order[1:]
+		c.evicted++
+	}
+	c.entries[typ] = schema
+	c.order = append(c.order, typ)
+	return schema
+}
+
+func (c *schemaStore) loadOrStore(typ reflect.Type, schema *JSONSchema) *JSONSchema {
+	if existing, ok := c.load(typ); ok {
+		return existing
+	}
+	return c.store(typ, schema)
+}
+
+func (c *schemaStore) evictions() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.evicted
 }
 
 type schemaBuilder struct {

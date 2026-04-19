@@ -530,7 +530,7 @@ func (b *Bot) executeObserveFlat(parent context.Context, chatID int64, symbol st
 }
 
 func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp ObserveResponse) {
-	if len(resp.Agent) == 0 || len(resp.Gate) == 0 {
+	if !resp.Agent.HasData() || !resp.Gate.HasData() {
 		text := strings.TrimSpace(resp.Summary)
 		if text == "" {
 			text = "观察结果缺少渲染数据"
@@ -539,8 +539,8 @@ func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp Observ
 			zap.String("symbol", strings.TrimSpace(resp.Symbol)),
 			zap.String("status", strings.TrimSpace(resp.Status)),
 			zap.String("request_id", strings.TrimSpace(resp.RequestID)),
-			zap.Bool("has_agent", len(resp.Agent) > 0),
-			zap.Bool("has_gate", len(resp.Gate) > 0),
+			zap.Bool("has_agent", resp.Agent.HasData()),
+			zap.Bool("has_gate", resp.Gate.HasData()),
 		)
 		b.sendText(ctx, chatID, text)
 		return
@@ -551,7 +551,7 @@ func (b *Bot) sendObserveResponse(ctx context.Context, chatID int64, resp Observ
 			return cardimage.NewOGRenderer().RenderRuntimePayload(ctx, symbol, snapshotID, gate, agent, title)
 		}
 	}
-	asset, err := render(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
+	asset, err := render(ctx, resp.Symbol, 0, resp.Gate.Map(), resp.Agent.Map(), "Observe Snapshot")
 	if err != nil {
 		b.logger.Warn("telegram observe image render failed", zap.String("symbol", resp.Symbol), zap.Error(err))
 		b.sendText(ctx, chatID, fmt.Sprintf("观察图片生成失败：%s", err.Error()))
@@ -613,7 +613,7 @@ func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (
 }
 
 func hasObserveReport(resp ObserveResponse) bool {
-	return len(resp.Agent) > 0 || len(resp.Gate) > 0 || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
+	return resp.Agent.HasData() || resp.Gate.HasData() || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
 }
 
 func (b *Bot) answerCallback(ctx context.Context, id string) {

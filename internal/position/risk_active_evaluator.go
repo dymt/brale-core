@@ -35,7 +35,12 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 			zap.Float64("max_drawdown_pct", m.maxDrawdownPct()),
 			zap.String("side", pos.Side),
 		)
-		if err := m.submitCloseIntent(ctx, pos, quote, pos.Qty, pos.Qty, "max_drawdown_breach", logger); err != nil {
+		if err := m.submitCloseIntent(ctx, pos, quote, CloseRequest{
+			RequestedCloseQty: pos.Qty,
+			EffectiveCloseQty: pos.Qty,
+			PositionQty:       pos.Qty,
+			BaseQty:           pos.Qty,
+		}, "max_drawdown_breach", logger); err != nil {
 			return &riskMonitorOpError{Op: "max drawdown force close", Symbol: pos.Symbol, Err: err}
 		}
 		return nil
@@ -50,8 +55,8 @@ func (m *RiskMonitor) handleActivePosition(ctx context.Context, pos store.Positi
 	if err != nil {
 		return &riskMonitorOpError{Op: "refresh risk plan on tp hit", Symbol: pos.Symbol, Err: err}
 	}
-	closeQty, positionQty, reason := m.resolveCloseIntent(ctx, pos, plan, trigger, logger)
-	if err := m.submitCloseIntent(ctx, pos, quote, closeQty, positionQty, reason, logger); err != nil {
+	request, reason := m.resolveCloseIntent(ctx, pos, plan, trigger, logger)
+	if err := m.submitCloseIntent(ctx, pos, quote, request, reason, logger); err != nil {
 		return &riskMonitorOpError{Op: "submit close intent", Symbol: pos.Symbol, Err: err}
 	}
 	return nil

@@ -140,13 +140,50 @@ func (c *PositionCache) DeleteByID(positionID string) {
 	if c == nil {
 		return
 	}
+	positionID = strings.TrimSpace(positionID)
+	if positionID == "" {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	snap, ok := c.byID[positionID]
 	if ok {
-		delete(c.bySymbol, normalizeSymbol(snap.Symbol))
+		symbol := normalizeSymbol(snap.Symbol)
+		if symbol != "" {
+			if mappedID, mapped := c.bySymbol[symbol]; mapped && mappedID == positionID {
+				delete(c.bySymbol, symbol)
+				for id, candidate := range c.byID {
+					if id == positionID || normalizeSymbol(candidate.Symbol) != symbol {
+						continue
+					}
+					c.bySymbol[symbol] = id
+					break
+				}
+			}
+		}
 	}
 	delete(c.byID, positionID)
+	delete(c.closeReasonByExt, positionID)
+}
+
+func (c *PositionCache) DeleteBySymbol(symbol string) {
+	if c == nil {
+		return
+	}
+	symbol = normalizeSymbol(symbol)
+	if symbol == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, snap := range c.byID {
+		if normalizeSymbol(snap.Symbol) != symbol {
+			continue
+		}
+		delete(c.byID, id)
+		delete(c.closeReasonByExt, id)
+	}
+	delete(c.bySymbol, symbol)
 }
 
 func (c *PositionCache) SetCloseReason(externalID string, reason string) {

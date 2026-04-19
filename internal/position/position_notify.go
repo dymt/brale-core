@@ -17,7 +17,7 @@ type closeSummary struct {
 	entryPrice float64
 }
 
-func (s *PositionService) buildCloseSummary(pos store.PositionRecord, triggerPrice float64, closeQty float64) closeSummary {
+func (s *PositionService) buildCloseSummary(pos store.PositionRecord, triggerPrice float64, request CloseRequest) closeSummary {
 	stopPrice := float64(0)
 	tpPrices := []float64{}
 	if len(pos.RiskJSON) > 0 {
@@ -32,7 +32,7 @@ func (s *PositionService) buildCloseSummary(pos store.PositionRecord, triggerPri
 	}
 	qty := pos.Qty
 	if qty <= 0 {
-		qty = closeQty
+		qty = request.EffectiveCloseQty
 	}
 	if qty <= 0 && pos.InitialStake > 0 && pos.AvgEntry > 0 {
 		qty = pos.InitialStake / pos.AvgEntry
@@ -52,13 +52,16 @@ func (s *PositionService) buildCloseSummary(pos store.PositionRecord, triggerPri
 	}
 }
 
-func (s *PositionService) logAndNotifyClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, closeQty float64) {
-	summary := s.buildCloseSummary(pos, triggerPrice, closeQty)
+func (s *PositionService) logAndNotifyClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, request CloseRequest, intentKind string) {
+	summary := s.buildCloseSummary(pos, triggerPrice, request)
 	logging.FromContext(ctx).Named("execution").Info("position close detail",
 		zap.String("symbol", pos.Symbol),
 		zap.String("direction", strings.TrimSpace(pos.Side)),
 		zap.Float64("qty", summary.qty),
-		zap.Float64("close_qty", closeQty),
+		zap.Float64("requested_close_qty", request.RequestedCloseQty),
+		zap.Float64("effective_close_qty", request.EffectiveCloseQty),
+		zap.Bool("forced_full_close", request.ForcedFullClose),
+		zap.String("intent_kind", intentKind),
 		zap.Float64("entry", summary.entryPrice),
 		zap.Float64("trigger_price", triggerPrice),
 		zap.Float64("stop", summary.stopPrice),
@@ -74,7 +77,10 @@ func (s *PositionService) logAndNotifyClose(ctx context.Context, pos store.Posit
 		Symbol:             pos.Symbol,
 		Direction:          strings.TrimSpace(pos.Side),
 		Qty:                summary.qty,
-		CloseQty:           closeQty,
+		CloseQty:           request.EffectiveCloseQty,
+		RequestedCloseQty:  request.RequestedCloseQty,
+		ForcedFullClose:    request.ForcedFullClose,
+		IntentKind:         intentKind,
 		EntryPrice:         summary.entryPrice,
 		TriggerPrice:       triggerPrice,
 		StopPrice:          summary.stopPrice,

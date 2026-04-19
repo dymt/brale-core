@@ -249,12 +249,12 @@ func (b *Bot) handleObserve(ctx context.Context, chatID, symbol string) {
 		b.sendReply(ctx, chatID, "observe failed: "+err.Error())
 		return
 	}
-	if (len(resp.Agent) == 0 || len(resp.Gate) == 0) && strings.EqualFold(strings.TrimSpace(resp.Status), "ok") {
+	if (!resp.Agent.HasData() || !resp.Gate.HasData()) && strings.EqualFold(strings.TrimSpace(resp.Status), "ok") {
 		if fallback, ok := b.waitObserveReport(ctx, symbol, resp.RequestID); ok {
 			resp = fallback
 		}
 	}
-	if len(resp.Agent) == 0 || len(resp.Gate) == 0 {
+	if !resp.Agent.HasData() || !resp.Gate.HasData() {
 		text := strings.TrimSpace(resp.Summary)
 		if text == "" {
 			text = "observe completed"
@@ -262,7 +262,7 @@ func (b *Bot) handleObserve(ctx context.Context, chatID, symbol string) {
 		b.sendReply(ctx, chatID, text)
 		return
 	}
-	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, 0, resp.Gate, resp.Agent, "Observe Snapshot")
+	asset, err := cardimage.NewOGRenderer().RenderRuntimePayload(ctx, resp.Symbol, 0, resp.Gate.Map(), resp.Agent.Map(), "Observe Snapshot")
 	if err != nil {
 		b.logger.Warn("feishu observe image render failed", zap.String("chat_id", chatID), zap.String("symbol", resp.Symbol), zap.Error(err))
 		b.sendReply(ctx, chatID, "observe image render failed: "+err.Error())
@@ -303,7 +303,7 @@ func (b *Bot) waitObserveReport(ctx context.Context, symbol, requestID string) (
 }
 
 func hasObserveReport(resp botruntime.ObserveResponse) bool {
-	return len(resp.Agent) > 0 || len(resp.Gate) > 0 || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
+	return resp.Agent.HasData() || resp.Gate.HasData() || strings.TrimSpace(resp.ReportHTML) != "" || strings.TrimSpace(resp.ReportMarkdown) != "" || strings.TrimSpace(resp.Report) != ""
 }
 
 func (b *Bot) handleSchedule(ctx context.Context, chatID string, enable bool) {

@@ -13,6 +13,7 @@ import (
 
 	"brale-core/internal/cardimage"
 	"brale-core/internal/transport/botruntime"
+	"brale-core/internal/transport/runtimeapi"
 
 	"go.uber.org/zap"
 )
@@ -44,12 +45,12 @@ func TestExecuteObserveFlatSendsImageAfterAsyncReport(t *testing.T) {
 				Status:    "ok",
 				RequestID: "job-1",
 				Summary:   "观察完成：方向不明",
-				Agent: map[string]any{
-					"indicator": map[string]any{"alignment": "false"},
+				Agent: runtimeapi.ObserveAgentPayload{
+					Indicator: map[string]any{"alignment": "false"},
 				},
-				Gate: map[string]any{
-					"decision_action": "WAIT",
-					"reason":          "DIRECTION_UNCLEAR",
+				Gate: runtimeapi.ObserveGatePayload{
+					DecisionAction: "WAIT",
+					Reason:         "DIRECTION_UNCLEAR",
 				},
 			})
 		default:
@@ -132,8 +133,8 @@ func TestSendObserveResponseFallsBackWhenRenderFails(t *testing.T) {
 	bot.sendObserveResponse(context.Background(), 42, ObserveResponse{
 		Symbol: "ETHUSDT",
 		Status: "ok",
-		Agent:  map[string]any{"indicator": map[string]any{"alignment": "false"}},
-		Gate:   map[string]any{"decision_action": "WAIT", "reason": "DIRECTION_UNCLEAR"},
+		Agent:  runtimeapi.ObserveAgentPayload{Indicator: map[string]any{"alignment": "false"}},
+		Gate:   runtimeapi.ObserveGatePayload{DecisionAction: "WAIT", Reason: "DIRECTION_UNCLEAR"},
 	})
 
 	state := srv.State()

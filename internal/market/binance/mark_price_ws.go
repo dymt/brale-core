@@ -4,6 +4,7 @@ package binance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"strings"
@@ -45,20 +46,37 @@ type MarkPriceStream struct {
 	connected atomic.Bool
 }
 
-func NewMarkPriceStream(opts MarkPriceStreamOptions) *MarkPriceStream {
+func NewMarkPriceStream(opts MarkPriceStreamOptions) (*MarkPriceStream, error) {
 	symbols := normalizeSymbols(opts.Symbols)
-	rate := opts.Rate
-	if rate == 0 {
-		rate = time.Second
-	} else if rate != time.Second && rate != 3*time.Second {
-		rate = time.Second
+	rate, err := normalizeMarkPriceRate(opts.Rate)
+	if err != nil {
+		return nil, err
 	}
 	return &MarkPriceStream{
 		symbols: symbols,
 		rate:    rate,
 		quotes:  make(map[string]market.PriceQuote),
 		stopCh:  make(chan struct{}),
+	}, nil
+}
+
+func validateMarkPriceRate(rate time.Duration) error {
+	switch rate {
+	case 0, time.Second, 3 * time.Second:
+		return nil
+	default:
+		return fmt.Errorf("invalid mark price rate %s: allowed values are 0, 1s, 3s", rate)
 	}
+}
+
+func normalizeMarkPriceRate(rate time.Duration) (time.Duration, error) {
+	if err := validateMarkPriceRate(rate); err != nil {
+		return 0, err
+	}
+	if rate == 0 {
+		return time.Second, nil
+	}
+	return rate, nil
 }
 
 func (s *MarkPriceStream) Start(ctx context.Context) error {

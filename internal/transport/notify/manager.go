@@ -540,6 +540,10 @@ func (m Manager) SendPositionClose(ctx context.Context, notice PositionCloseNoti
 	if notice.CloseQty > 0 {
 		closeQtyText = formatFloat(notice.CloseQty)
 	}
+	requestedCloseQtyText := "-"
+	if notice.RequestedCloseQty > 0 {
+		requestedCloseQtyText = formatFloat(notice.RequestedCloseQty)
+	}
 	entryText := "-"
 	if notice.EntryPrice > 0 {
 		entryText = formatFloat(notice.EntryPrice)
@@ -568,11 +572,22 @@ func (m Manager) SendPositionClose(ctx context.Context, notice PositionCloseNoti
 	if notice.Leverage > 0 {
 		leverageText = formatFloat(notice.Leverage)
 	}
+	intentKindText := strings.TrimSpace(notice.IntentKind)
+	if intentKindText == "" {
+		intentKindText = "-"
+	}
+	forcedFullCloseText := "no"
+	if notice.ForcedFullClose {
+		forcedFullCloseText = "yes"
+	}
 	lines := []string{
 		noticeLine("symbol", symbol),
 		noticeLine("direction", direction),
 		noticeLine("qty", qtyText),
 		noticeLine("close_qty", closeQtyText),
+		noticeLine("requested_close_qty", requestedCloseQtyText),
+		noticeLine("forced_full_close", forcedFullCloseText),
+		noticeLine("intent_kind", intentKindText),
 		noticeLine("entry", entryText),
 		noticeLine("trigger_price", triggerText),
 		noticeLine("stop", stopText),

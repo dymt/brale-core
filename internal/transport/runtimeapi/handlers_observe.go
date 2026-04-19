@@ -32,7 +32,7 @@ func (s *Server) handleObserveRun(w http.ResponseWriter, r *http.Request) {
 
 func buildObserveResponse(res ObserveSymbolResult, requestID, traceID string) observeResponse {
 	gate := res.Gate
-	var inPosition map[string]any
+	var inPosition *ObserveInPositionPayload
 	providerPayload := buildProviderPayload(res)
 	if res.InPositionEvaluated {
 		inPosition = buildInPositionPayload(res)

@@ -18,6 +18,9 @@ type PositionCloseNotice struct {
 	Direction          string
 	Qty                float64
 	CloseQty           float64
+	RequestedCloseQty  float64
+	ForcedFullClose    bool
+	IntentKind         string
 	EntryPrice         float64
 	TriggerPrice       float64
 	StopPrice          float64

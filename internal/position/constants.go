@@ -14,3 +14,8 @@ const (
 // negligible ("dust") when deciding whether to close the entire
 // remaining position. 0.1% of position size.
 const DustThresholdRatio = 0.001
+
+// ResidualFullCloseRatio is the business threshold for forcing a full close
+// when the remaining position would be only a tiny runner relative to the
+// original position size.
+const ResidualFullCloseRatio = 0.03

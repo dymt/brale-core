@@ -23,53 +23,43 @@ const (
 	ThreatLevelCritical ThreatLevel = "critical"
 )
 
-var confidenceSet = map[string]struct{}{
-	string(ConfidenceLow):  {},
-	string(ConfidenceHigh): {},
-}
-
-var threatLevelSet = map[string]struct{}{
-	string(ThreatLevelNone):     {},
-	string(ThreatLevelLow):      {},
-	string(ThreatLevelMedium):   {},
-	string(ThreatLevelHigh):     {},
-	string(ThreatLevelCritical): {},
-}
+var (
+	confidenceValues = []ConfidenceLevel{
+		ConfidenceLow,
+		ConfidenceHigh,
+	}
+	threatLevelValues = []ThreatLevel{
+		ThreatLevelNone,
+		ThreatLevelLow,
+		ThreatLevelMedium,
+		ThreatLevelHigh,
+		ThreatLevelCritical,
+	}
+	confidenceSet  = decisionutil.BuildEnumSet(confidenceValues)
+	threatLevelSet = decisionutil.BuildEnumSet(threatLevelValues)
+)
 
 func init() {
-	llm.RegisterEnum[ConfidenceLevel](
-		string(ConfidenceLow),
-		string(ConfidenceHigh),
-	)
-	llm.RegisterEnum[ThreatLevel](
-		string(ThreatLevelNone),
-		string(ThreatLevelLow),
-		string(ThreatLevelMedium),
-		string(ThreatLevelHigh),
-		string(ThreatLevelCritical),
-	)
+	llm.RegisterEnum[ConfidenceLevel](decisionutil.EnumStrings(confidenceValues)...)
+	llm.RegisterEnum[ThreatLevel](decisionutil.EnumStrings(threatLevelValues)...)
 }
 
 func (c *ConfidenceLevel) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, confidenceSet, "confidence")
+	value, err := decisionutil.UnmarshalEnumJSON[ConfidenceLevel](data, confidenceSet, "confidence")
 	if err != nil {
 		return err
 	}
-	*c = ConfidenceLevel(value)
+	*c = value
 	return nil
 }
 
 func (t *ThreatLevel) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, threatLevelSet, "threat_level")
+	value, err := decisionutil.UnmarshalEnumJSON[ThreatLevel](data, threatLevelSet, "threat_level")
 	if err != nil {
 		return err
 	}
-	*t = ThreatLevel(value)
+	*t = value
 	return nil
-}
-
-func parseEnum(data []byte, allowed map[string]struct{}, name string) (string, error) {
-	return decisionutil.ParseEnumJSON(data, allowed, name)
 }
 
 type SemanticSignal struct {

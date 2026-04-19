@@ -189,9 +189,6 @@ func (s service) handleAnalyzeMarket(ctx context.Context, _ *sdkmcp.CallToolRequ
 		out["observe_error"] = fmt.Sprintf("observe report unavailable: %v", observeErr)
 		return nil, out, nil
 	}
-	if observe.Gate == nil {
-		observe.Gate = map[string]any{}
-	}
 	observeMap, err := asObject(observe)
 	if err != nil {
 		return nil, nil, err

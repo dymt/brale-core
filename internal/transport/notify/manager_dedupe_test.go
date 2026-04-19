@@ -527,6 +527,42 @@ func TestCloseAggregation_MergesCloseNoticesByExecutorTradeID(t *testing.T) {
 	}
 }
 
+func TestSendPositionCloseIncludesResidualAuditFields(t *testing.T) {
+	sender := &countSender{}
+	mgr := Manager{
+		senders: []Sender{sender},
+		dedupe:  newDedupeGuard(2 * time.Minute),
+	}
+
+	if err := mgr.SendPositionClose(context.Background(), PositionCloseNotice{
+		Symbol:             "ETHUSDT",
+		Direction:          "long",
+		Qty:                100,
+		CloseQty:           100,
+		RequestedCloseQty:  98,
+		ForcedFullClose:    true,
+		IntentKind:         "CLOSE",
+		EntryPrice:         3200,
+		TriggerPrice:       3300,
+		Reason:             "tp1_hit",
+		PositionID:         "pos-1",
+		ExecutorPositionID: "42",
+	}); err != nil {
+		t.Fatalf("send position close: %v", err)
+	}
+
+	msg := sender.lastMessage()
+	if !strings.Contains(msg.Markdown, noticeLine("requested_close_qty", "98")) {
+		t.Fatalf("expected requested close qty in text body, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, noticeLine("forced_full_close", "yes")) {
+		t.Fatalf("expected forced full close flag in text body, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, noticeLine("intent_kind", "CLOSE")) {
+		t.Fatalf("expected intent kind in text body, got %q", msg.Markdown)
+	}
+}
+
 func TestCloseAggregation_PrefersTradeExecutionMetrics(t *testing.T) {
 	sender := &countSender{}
 	mgr := Manager{

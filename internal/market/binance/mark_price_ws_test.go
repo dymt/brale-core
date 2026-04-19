@@ -10,6 +10,32 @@ import (
 	"github.com/adshao/go-binance/v2/futures"
 )
 
+func mustNewMarkPriceStream(t *testing.T, opts MarkPriceStreamOptions) *MarkPriceStream {
+	t.Helper()
+	stream, err := NewMarkPriceStream(opts)
+	if err != nil {
+		t.Fatalf("NewMarkPriceStream() error = %v", err)
+	}
+	return stream
+}
+
+func TestNewMarkPriceStreamRejectsInvalidRate(t *testing.T) {
+	t.Parallel()
+
+	tests := []time.Duration{
+		2 * time.Second,
+		-time.Second,
+	}
+	for _, rate := range tests {
+		rate := rate
+		t.Run(rate.String(), func(t *testing.T) {
+			if _, err := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}, Rate: rate}); err == nil {
+				t.Fatalf("expected error for invalid rate %v", rate)
+			}
+		})
+	}
+}
+
 func TestSignalMarkPriceStopReturnsWhenDoneClosed(t *testing.T) {
 	t.Parallel()
 
@@ -71,7 +97,7 @@ func TestSignalMarkPriceStopDoesNotBlockWithoutReceiver(t *testing.T) {
 func TestMarkPriceRejectsStaleQuote(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
 		Symbol:    "BTCUSDT",
@@ -90,7 +116,7 @@ func TestMarkPriceRejectsStaleQuote(t *testing.T) {
 func TestMarkPriceAcceptsFreshQuote(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
 		Symbol:    "BTCUSDT",
@@ -112,7 +138,7 @@ func TestMarkPriceAcceptsFreshQuote(t *testing.T) {
 func TestHandleEventRejectsSpike(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
 		Symbol:    "BTCUSDT",
@@ -140,7 +166,7 @@ func TestHandleEventRejectsSpike(t *testing.T) {
 func TestHandleEventAcceptsNormalMove(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
 		Symbol:    "BTCUSDT",
@@ -168,7 +194,7 @@ func TestHandleEventAcceptsNormalMove(t *testing.T) {
 func TestHandleEventAcceptsLargeMoveWhenPreviousQuoteIsStale(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
 		Symbol:    "BTCUSDT",
@@ -196,7 +222,7 @@ func TestHandleEventAcceptsLargeMoveWhenPreviousQuoteIsStale(t *testing.T) {
 func TestStreamStatusReturnsNotFoundWithoutQuote(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	if _, found := stream.StreamStatus("BTCUSDT"); found {
 		t.Fatal("StreamStatus() found=true, want false when no quote has been cached")
 	}
@@ -205,7 +231,7 @@ func TestStreamStatusReturnsNotFoundWithoutQuote(t *testing.T) {
 func TestStreamStatusSeparatesRunningFromConnection(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.running.Store(true)
 	stream.mu.Lock()
 	stream.quotes["BTCUSDT"] = market.PriceQuote{
@@ -228,7 +254,7 @@ func TestStreamStatusSeparatesRunningFromConnection(t *testing.T) {
 func TestStreamStatusReportsConnectedFreshQuote(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stream.running.Store(true)
 	stream.connected.Store(true)
 	stream.mu.Lock()
@@ -258,7 +284,7 @@ func TestStreamStatusReportsConnectedFreshQuote(t *testing.T) {
 func TestSetConnectedIgnoresStaleRun(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	staleRunID := stream.nextRunID()
 	freshRunID := stream.nextRunID()
 
@@ -281,7 +307,7 @@ func TestSetConnectedIgnoresStaleRun(t *testing.T) {
 func TestWaitRetryUsesRunStopChannel(t *testing.T) {
 	t.Parallel()
 
-	stream := NewMarkPriceStream(MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
+	stream := mustNewMarkPriceStream(t, MarkPriceStreamOptions{Symbols: []string{"BTCUSDT"}})
 	stopCh := make(chan struct{})
 	close(stopCh)
 

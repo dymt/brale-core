@@ -112,223 +112,159 @@ const (
 	RiskLevelUnknown RiskLevel = "unknown"
 )
 
-var expansionSet = map[string]struct{}{
-	string(ExpansionExpanding):   {},
-	string(ExpansionContracting): {},
-	string(ExpansionStable):      {},
-	string(ExpansionMixed):       {},
-	string(ExpansionUnknown):     {},
-}
-
-var alignmentSet = map[string]struct{}{
-	string(AlignmentAligned):   {},
-	string(AlignmentMixed):     {},
-	string(AlignmentDivergent): {},
-	string(AlignmentUnknown):   {},
-}
-
-var noiseSet = map[string]struct{}{
-	string(NoiseLow):     {},
-	string(NoiseMedium):  {},
-	string(NoiseHigh):    {},
-	string(NoiseMixed):   {},
-	string(NoiseUnknown): {},
-}
-
-var regimeSet = map[string]struct{}{
-	string(RegimeTrendUp):   {},
-	string(RegimeTrendDown): {},
-	string(RegimeRange):     {},
-	string(RegimeMixed):     {},
-	string(RegimeUnclear):   {},
-}
-
-var lastBreakSet = map[string]struct{}{
-	string(LastBreakBosUp):     {},
-	string(LastBreakBosDown):   {},
-	string(LastBreakChochUp):   {},
-	string(LastBreakChochDown): {},
-	string(LastBreakNone):      {},
-	string(LastBreakUnknown):   {},
-}
-
-var qualitySet = map[string]struct{}{
-	string(QualityClean):   {},
-	string(QualityMessy):   {},
-	string(QualityMixed):   {},
-	string(QualityUnclear): {},
-}
-
-var patternSet = map[string]struct{}{
-	string(PatternDoubleTop):        {},
-	string(PatternDoubleBottom):     {},
-	string(PatternHeadShoulders):    {},
-	string(PatternInvHeadShoulders): {},
-	string(PatternTriangleSym):      {},
-	string(PatternTriangleAsc):      {},
-	string(PatternTriangleDesc):     {},
-	string(PatternWedgeRising):      {},
-	string(PatternWedgeFalling):     {},
-	string(PatternFlag):             {},
-	string(PatternPennant):          {},
-	string(PatternChannelUp):        {},
-	string(PatternChannelDown):      {},
-	string(PatternNone):             {},
-	string(PatternUnknown):          {},
-}
-
-var leverageStateSet = map[string]struct{}{
-	string(LeverageStateIncreasing): {},
-	string(LeverageStateStable):     {},
-	string(LeverageStateOverheated): {},
-	string(LeverageStateUnknown):    {},
-}
-
-var crowdingSet = map[string]struct{}{
-	string(CrowdingLong):     {},
-	string(CrowdingShort):    {},
-	string(CrowdingBalanced): {},
-	string(CrowdingUnknown):  {},
-}
-
-var riskLevelSet = map[string]struct{}{
-	string(RiskLevelLow):     {},
-	string(RiskLevelMedium):  {},
-	string(RiskLevelHigh):    {},
-	string(RiskLevelUnknown): {},
-}
+var (
+	expansionValues = []Expansion{
+		ExpansionExpanding,
+		ExpansionContracting,
+		ExpansionStable,
+		ExpansionMixed,
+		ExpansionUnknown,
+	}
+	alignmentValues = []Alignment{
+		AlignmentAligned,
+		AlignmentMixed,
+		AlignmentDivergent,
+		AlignmentUnknown,
+	}
+	noiseValues = []Noise{
+		NoiseLow,
+		NoiseMedium,
+		NoiseHigh,
+		NoiseMixed,
+		NoiseUnknown,
+	}
+	regimeValues = []Regime{
+		RegimeTrendUp,
+		RegimeTrendDown,
+		RegimeRange,
+		RegimeMixed,
+		RegimeUnclear,
+	}
+	lastBreakValues = []LastBreak{
+		LastBreakBosUp,
+		LastBreakBosDown,
+		LastBreakChochUp,
+		LastBreakChochDown,
+		LastBreakNone,
+		LastBreakUnknown,
+	}
+	qualityValues = []Quality{
+		QualityClean,
+		QualityMessy,
+		QualityMixed,
+		QualityUnclear,
+	}
+	patternValues = []Pattern{
+		PatternDoubleTop,
+		PatternDoubleBottom,
+		PatternHeadShoulders,
+		PatternInvHeadShoulders,
+		PatternTriangleSym,
+		PatternTriangleAsc,
+		PatternTriangleDesc,
+		PatternWedgeRising,
+		PatternWedgeFalling,
+		PatternFlag,
+		PatternPennant,
+		PatternChannelUp,
+		PatternChannelDown,
+		PatternNone,
+		PatternUnknown,
+	}
+	leverageStateValues = []LeverageState{
+		LeverageStateIncreasing,
+		LeverageStateStable,
+		LeverageStateOverheated,
+		LeverageStateUnknown,
+	}
+	crowdingValues = []Crowding{
+		CrowdingLong,
+		CrowdingShort,
+		CrowdingBalanced,
+		CrowdingUnknown,
+	}
+	riskLevelValues = []RiskLevel{
+		RiskLevelLow,
+		RiskLevelMedium,
+		RiskLevelHigh,
+		RiskLevelUnknown,
+	}
+	expansionSet     = decisionutil.BuildEnumSet(expansionValues)
+	alignmentSet     = decisionutil.BuildEnumSet(alignmentValues)
+	noiseSet         = decisionutil.BuildEnumSet(noiseValues)
+	regimeSet        = decisionutil.BuildEnumSet(regimeValues)
+	lastBreakSet     = decisionutil.BuildEnumSet(lastBreakValues)
+	qualitySet       = decisionutil.BuildEnumSet(qualityValues)
+	patternSet       = decisionutil.BuildEnumSet(patternValues)
+	leverageStateSet = decisionutil.BuildEnumSet(leverageStateValues)
+	crowdingSet      = decisionutil.BuildEnumSet(crowdingValues)
+	riskLevelSet     = decisionutil.BuildEnumSet(riskLevelValues)
+	lastBreakAliasSet = map[string]struct{}{
+		"break_up":   {},
+		"break_down": {},
+	}
+)
 
 func init() {
-	llm.RegisterEnum[Expansion](
-		string(ExpansionExpanding),
-		string(ExpansionContracting),
-		string(ExpansionStable),
-		string(ExpansionMixed),
-		string(ExpansionUnknown),
-	)
-	llm.RegisterEnum[Alignment](
-		string(AlignmentAligned),
-		string(AlignmentMixed),
-		string(AlignmentDivergent),
-		string(AlignmentUnknown),
-	)
-	llm.RegisterEnum[Noise](
-		string(NoiseLow),
-		string(NoiseMedium),
-		string(NoiseHigh),
-		string(NoiseMixed),
-		string(NoiseUnknown),
-	)
-	llm.RegisterEnum[Regime](
-		string(RegimeTrendUp),
-		string(RegimeTrendDown),
-		string(RegimeRange),
-		string(RegimeMixed),
-		string(RegimeUnclear),
-	)
-	llm.RegisterEnum[LastBreak](
-		string(LastBreakBosUp),
-		string(LastBreakBosDown),
-		string(LastBreakChochUp),
-		string(LastBreakChochDown),
-		string(LastBreakNone),
-		string(LastBreakUnknown),
-	)
-	llm.RegisterEnum[Quality](
-		string(QualityClean),
-		string(QualityMessy),
-		string(QualityMixed),
-		string(QualityUnclear),
-	)
-	llm.RegisterEnum[Pattern](
-		string(PatternDoubleTop),
-		string(PatternDoubleBottom),
-		string(PatternHeadShoulders),
-		string(PatternInvHeadShoulders),
-		string(PatternTriangleSym),
-		string(PatternTriangleAsc),
-		string(PatternTriangleDesc),
-		string(PatternWedgeRising),
-		string(PatternWedgeFalling),
-		string(PatternFlag),
-		string(PatternPennant),
-		string(PatternChannelUp),
-		string(PatternChannelDown),
-		string(PatternNone),
-		string(PatternUnknown),
-	)
-	llm.RegisterEnum[LeverageState](
-		string(LeverageStateIncreasing),
-		string(LeverageStateStable),
-		string(LeverageStateOverheated),
-		string(LeverageStateUnknown),
-	)
-	llm.RegisterEnum[Crowding](
-		string(CrowdingLong),
-		string(CrowdingShort),
-		string(CrowdingBalanced),
-		string(CrowdingUnknown),
-	)
-	llm.RegisterEnum[RiskLevel](
-		string(RiskLevelLow),
-		string(RiskLevelMedium),
-		string(RiskLevelHigh),
-		string(RiskLevelUnknown),
-	)
+	llm.RegisterEnum[Expansion](decisionutil.EnumStrings(expansionValues)...)
+	llm.RegisterEnum[Alignment](decisionutil.EnumStrings(alignmentValues)...)
+	llm.RegisterEnum[Noise](decisionutil.EnumStrings(noiseValues)...)
+	llm.RegisterEnum[Regime](decisionutil.EnumStrings(regimeValues)...)
+	llm.RegisterEnum[LastBreak](decisionutil.EnumStrings(lastBreakValues)...)
+	llm.RegisterEnum[Quality](decisionutil.EnumStrings(qualityValues)...)
+	llm.RegisterEnum[Pattern](decisionutil.EnumStrings(patternValues)...)
+	llm.RegisterEnum[LeverageState](decisionutil.EnumStrings(leverageStateValues)...)
+	llm.RegisterEnum[Crowding](decisionutil.EnumStrings(crowdingValues)...)
+	llm.RegisterEnum[RiskLevel](decisionutil.EnumStrings(riskLevelValues)...)
 }
 
 func (e *Expansion) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, expansionSet, "expansion")
+	value, err := decisionutil.UnmarshalEnumJSON[Expansion](data, expansionSet, "expansion")
 	if err != nil {
 		return err
 	}
-	*e = Expansion(value)
+	*e = value
 	return nil
 }
 
 func (a *Alignment) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, alignmentSet, "alignment")
+	value, err := decisionutil.UnmarshalEnumJSON[Alignment](data, alignmentSet, "alignment")
 	if err != nil {
 		return err
 	}
-	*a = Alignment(value)
+	*a = value
 	return nil
 }
 
 func (n *Noise) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, noiseSet, "noise")
+	value, err := decisionutil.UnmarshalEnumJSON[Noise](data, noiseSet, "noise")
 	if err != nil {
 		return err
 	}
-	*n = Noise(value)
+	*n = value
 	return nil
 }
 
 func (r *Regime) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, regimeSet, "regime")
+	value, err := decisionutil.UnmarshalEnumJSON[Regime](data, regimeSet, "regime")
 	if err != nil {
 		return err
 	}
-	*r = Regime(value)
+	*r = value
 	return nil
 }
 
 func (b *LastBreak) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, lastBreakSet, "last_break")
+	value, err := decisionutil.UnmarshalEnumJSON[LastBreak](data, lastBreakSet, "last_break")
 	if err != nil {
-		value, err = parseEnum(data, lastBreakAliasSet, "last_break")
-		if err != nil {
+		aliasValue, aliasErr := decisionutil.ParseEnumJSON(data, lastBreakAliasSet, "last_break")
+		if aliasErr != nil {
 			return err
 		}
+		value = LastBreak(normalizeLastBreak(aliasValue))
 	}
-	value = normalizeLastBreak(value)
-	*b = LastBreak(value)
+	*b = value
 	return nil
-}
-
-var lastBreakAliasSet = map[string]struct{}{
-	"break_up":   {},
-	"break_down": {},
 }
 
 func normalizeLastBreak(value string) string {
@@ -343,52 +279,48 @@ func normalizeLastBreak(value string) string {
 }
 
 func (q *Quality) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, qualitySet, "quality")
+	value, err := decisionutil.UnmarshalEnumJSON[Quality](data, qualitySet, "quality")
 	if err != nil {
 		return err
 	}
-	*q = Quality(value)
+	*q = value
 	return nil
 }
 
 func (p *Pattern) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, patternSet, "pattern")
+	value, err := decisionutil.UnmarshalEnumJSON[Pattern](data, patternSet, "pattern")
 	if err != nil {
 		return err
 	}
-	*p = Pattern(value)
+	*p = value
 	return nil
 }
 
 func (s *LeverageState) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, leverageStateSet, "leverage_state")
+	value, err := decisionutil.UnmarshalEnumJSON[LeverageState](data, leverageStateSet, "leverage_state")
 	if err != nil {
 		return err
 	}
-	*s = LeverageState(value)
+	*s = value
 	return nil
 }
 
 func (c *Crowding) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, crowdingSet, "crowding")
+	value, err := decisionutil.UnmarshalEnumJSON[Crowding](data, crowdingSet, "crowding")
 	if err != nil {
 		return err
 	}
-	*c = Crowding(value)
+	*c = value
 	return nil
 }
 
 func (r *RiskLevel) UnmarshalJSON(data []byte) error {
-	value, err := parseEnum(data, riskLevelSet, "risk_level")
+	value, err := decisionutil.UnmarshalEnumJSON[RiskLevel](data, riskLevelSet, "risk_level")
 	if err != nil {
 		return err
 	}
-	*r = RiskLevel(value)
+	*r = value
 	return nil
-}
-
-func parseEnum(data []byte, allowed map[string]struct{}, name string) (string, error) {
-	return decisionutil.ParseEnumJSON(data, allowed, name)
 }
 
 type IndicatorSummary struct {

@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"brale-core/internal/runtime"
 	"brale-core/internal/transport"
 	"brale-core/internal/transport/notify"
+	"brale-core/internal/transport/runtimeapi"
 	dashboard "brale-core/webui/dashboard"
 	decisionview "brale-core/webui/decision-view"
 
@@ -29,8 +31,155 @@ type Options struct {
 	SymbolIndexPath string
 }
 
+type appRuntime struct {
+	startedAt      time.Time
+	env            appEnv
+	deps           coreDeps
+	asyncNotifier  *notify.AsyncManager
+	runtimes       map[string]runtime.SymbolRuntime
+	viewerHandler  http.Handler
+	dashboardHandler http.Handler
+	resolver       *runtimeapi.RuntimeSymbolResolver
+	symbolConfigs  map[string]runtimeapi.ConfigBundle
+	cleanup        cleanupStack
+}
+
 func Run(baseCtx context.Context, opts Options) error {
-	startedAt := time.Now()
+	state, err := prepareApp(baseCtx, time.Now(), opts)
+	if err != nil {
+		return err
+	}
+	if err := prepareRuntime(&state); err != nil {
+		state.cleanup.Run(context.Background())
+		return err
+	}
+	if err := startBackgroundServices(&state); err != nil {
+		state.cleanup.Run(context.Background())
+		return err
+	}
+	return waitForShutdown(&state)
+}
+
+func prepareApp(baseCtx context.Context, startedAt time.Time, opts Options) (appRuntime, error) {
+	systemPath, symbolIndexPath := resolveRunPaths(opts)
+	env, err := bootstrapAppEnv(baseCtx, systemPath, symbolIndexPath)
+	if err != nil {
+		return appRuntime{}, err
+	}
+	deps, err := buildCoreDeps(env.ctx, env.logger, env)
+	if err != nil {
+		return appRuntime{}, err
+	}
+	state := appRuntime{
+		startedAt: startedAt,
+		env:       env,
+		deps:      deps,
+	}
+	if deps.closeDB != nil {
+		state.cleanup.Add(func(context.Context) { deps.closeDB() })
+	}
+	state.asyncNotifier = notify.NewAsyncManager(nil, env.notifier, env.logger.Named("notify-async"))
+	wireAsyncNotifier(&state)
+	otelShutdown, otelErr := braleOtel.Init(env.ctx, env.sys.Telemetry, env.logger)
+	if otelErr != nil {
+		env.logger.Error("otel init failed, continuing without telemetry", zap.Error(otelErr))
+	} else {
+		state.cleanup.Add(func(context.Context) {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelShutdown(shutdownCtx); err != nil {
+				env.logger.Error("otel shutdown error", zap.Error(err))
+			}
+		})
+	}
+	return state, nil
+}
+
+func prepareRuntime(state *appRuntime) error {
+	runScheduledWarmup(state.env.ctx, state.env.logger, state.deps)
+	state.viewerHandler = decisionview.StartDecisionViewer(state.env.logger, state.env.sys, state.env.symbolIndexPath, state.env.index, state.deps.persistence.store)
+	state.dashboardHandler = dashboard.Start()
+	state.runtimes = buildRuntimeMap(state.env.ctx, state.env.logger, state.env.sys, state.env.symbolIndexPath, state.env.index, state.deps)
+	state.resolver = buildRuntimeResolver(state.env.ctx, state.env.logger, state.env.sys, state.env.symbolIndexPath, state.env.index, state.deps, state.runtimes)
+	state.symbolConfigs = loadSymbolConfigs(state.env.logger, state.env.sys, state.env.symbolIndexPath, state.env.index)
+	return nil
+}
+
+func startBackgroundServices(state *appRuntime) error {
+	runFreqtradeBalanceCheck(state.env.ctx, state.env.logger, state.deps)
+	scheduler, err := startScheduler(state.env.ctx, state.env.logger, state.env.sys, state.deps, state.runtimes)
+	if err != nil {
+		return err
+	}
+	state.cleanup.Add(func(context.Context) { scheduler.Stop() })
+	if migrateErr := jobs.RunMigrations(state.env.ctx, state.deps.persistence.pool); migrateErr != nil {
+		return fmt.Errorf("river migration failed: %w", migrateErr)
+	}
+	riverWorkers := jobs.RegisterWorkers(
+		func(ctx context.Context, symbol string) error { return runtime.RunObserveOnce(ctx, scheduler, symbol) },
+		func(ctx context.Context, symbol string) error { return runtime.RunDecideOnce(ctx, scheduler, symbol) },
+		func(ctx context.Context, symbol string) error { return runtime.RunReconcileOnce(ctx, scheduler, symbol) },
+		func(ctx context.Context, symbol string) error { return runtime.RunRiskMonitorOnce(ctx, scheduler, symbol) },
+		state.asyncNotifier.Render,
+		state.asyncNotifier.EnqueueRendered,
+		state.asyncNotifier.Deliver,
+	)
+	periodicJobs := jobs.BuildPeriodicJobs(buildRiverPeriodicSchedules(state.env.sys, state.runtimes))
+	riverClient, err := jobs.NewClient(state.env.ctx, state.deps.persistence.pool, riverWorkers, periodicJobs, maxLLMJobTimeout(state.env.sys), state.env.logger)
+	if err != nil {
+		return fmt.Errorf("river client init failed: %w", err)
+	}
+	state.asyncNotifier.SetClient(riverClient.Inner())
+	if startErr := riverClient.Start(state.env.ctx); startErr != nil {
+		return fmt.Errorf("river client start failed: %w", startErr)
+	}
+	state.cleanup.Add(func(context.Context) {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		riverClient.Stop(stopCtx)
+	})
+	runtimeHandler, err := buildRuntimeHandler(state.env.sys, state.deps, scheduler, state.resolver, state.symbolConfigs)
+	if err != nil {
+		return fmt.Errorf("runtime api init failed: %w", err)
+	}
+	topMux := buildTopMux(state.viewerHandler, state.dashboardHandler, runtimeHandler)
+	attachWebhookRoutes(state.env.ctx, state.env.logger, state.env.sys, state.deps, scheduler, topMux)
+	addr := strings.TrimSpace(state.env.sys.Webhook.Addr)
+	if addr == "" {
+		return fmt.Errorf("http addr missing")
+	}
+	startFeishuBot(state.env.ctx, state.env.logger, state.env.sys, addr, topMux)
+	if _, err := transport.StartHTTPServer(state.env.ctx, addr, topMux, state.env.logger); err != nil {
+		return fmt.Errorf("start http server: %w", err)
+	}
+	startTelegramBot(state.env.ctx, state.env.logger, state.env.sys, addr)
+	sendStartupNotify(state.env.ctx, state.env.logger, state.env.sys, state.env.index, state.runtimes, scheduler, state.deps, state.env.notifier)
+	return nil
+}
+
+func waitForShutdown(state *appRuntime) error {
+	<-state.env.ctx.Done()
+	state.env.logger.Info("shutdown signal received")
+	sendShutdownNotify(state.env.logger, state.env.notifier, state.startedAt)
+	state.cleanup.Run(context.Background())
+	state.env.logger.Info("shutdown flow completed")
+	return nil
+}
+
+func wireAsyncNotifier(state *appRuntime) {
+	state.deps.execution.notifier = state.asyncNotifier
+	if state.deps.position.positioner != nil {
+		state.deps.position.positioner.Notifier = state.asyncNotifier
+	}
+	if state.deps.reconcile.reconciler != nil {
+		state.deps.reconcile.reconciler.Notifier = state.asyncNotifier
+	}
+	if state.deps.reconcile.recovery != nil {
+		state.deps.reconcile.recovery.Notifier = state.asyncNotifier
+	}
+}
+
+func resolveRunPaths(opts Options) (string, string) {
 	systemPath := strings.TrimSpace(opts.SystemPath)
 	if systemPath == "" {
 		systemPath = "configs/system.toml"
@@ -39,111 +188,7 @@ func Run(baseCtx context.Context, opts Options) error {
 	if symbolIndexPath == "" {
 		symbolIndexPath = "configs/symbols-index.toml"
 	}
-
-	env, err := bootstrapAppEnv(baseCtx, systemPath, symbolIndexPath)
-	if err != nil {
-		return err
-	}
-	deps, err := buildCoreDeps(env.ctx, env.logger, env)
-	if err != nil {
-		return err
-	}
-	if deps.closeDB != nil {
-		defer deps.closeDB()
-	}
-	asyncNotifier := notify.NewAsyncManager(nil, env.notifier, env.logger.Named("notify-async"))
-	deps.execution.notifier = asyncNotifier
-	if deps.position.positioner != nil {
-		deps.position.positioner.Notifier = asyncNotifier
-	}
-	if deps.reconcile.reconciler != nil {
-		deps.reconcile.reconciler.Notifier = asyncNotifier
-	}
-	if deps.reconcile.recovery != nil {
-		deps.reconcile.recovery.Notifier = asyncNotifier
-	}
-
-	otelShutdown, otelErr := braleOtel.Init(env.ctx, env.sys.Telemetry, env.logger)
-	if otelErr != nil {
-		env.logger.Error("otel init failed, continuing without telemetry", zap.Error(otelErr))
-	} else {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelShutdown(shutdownCtx); err != nil {
-				env.logger.Error("otel shutdown error", zap.Error(err))
-			}
-		}()
-	}
-
-	runScheduledWarmup(env.ctx, env.logger, deps)
-
-	viewerHandler := decisionview.StartDecisionViewer(env.logger, env.sys, symbolIndexPath, env.index, deps.persistence.store)
-	dashboardHandler := dashboard.Start()
-	runtimes := buildRuntimeMap(env.ctx, env.logger, env.sys, symbolIndexPath, env.index, deps)
-	runFreqtradeBalanceCheck(env.ctx, env.logger, deps)
-	scheduler, err := startScheduler(env.ctx, env.logger, env.sys, deps, runtimes)
-	if err != nil {
-		return err
-	}
-	defer scheduler.Stop()
-	if migrateErr := jobs.RunMigrations(env.ctx, deps.persistence.pool); migrateErr != nil {
-		return fmt.Errorf("river migration failed: %w", migrateErr)
-	}
-	riverWorkers := jobs.RegisterWorkers(
-		func(ctx context.Context, symbol string) error { return runtime.RunObserveOnce(ctx, scheduler, symbol) },
-		func(ctx context.Context, symbol string) error { return runtime.RunDecideOnce(ctx, scheduler, symbol) },
-		func(ctx context.Context, symbol string) error {
-			return runtime.RunReconcileOnce(ctx, scheduler, symbol)
-		},
-		func(ctx context.Context, symbol string) error {
-			return runtime.RunRiskMonitorOnce(ctx, scheduler, symbol)
-		},
-		asyncNotifier.Render,
-		asyncNotifier.EnqueueRendered,
-		asyncNotifier.Deliver,
-	)
-	periodicJobs := jobs.BuildPeriodicJobs(buildRiverPeriodicSchedules(env.sys, runtimes))
-	riverJobTimeout := maxLLMJobTimeout(env.sys)
-	riverClient, err := jobs.NewClient(env.ctx, deps.persistence.pool, riverWorkers, periodicJobs, riverJobTimeout, env.logger)
-	if err != nil {
-		return fmt.Errorf("river client init failed: %w", err)
-	}
-	asyncNotifier.SetClient(riverClient.Inner())
-	if startErr := riverClient.Start(env.ctx); startErr != nil {
-		return fmt.Errorf("river client start failed: %w", startErr)
-	}
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		riverClient.Stop(stopCtx)
-	}()
-
-	resolver := buildRuntimeResolver(env.ctx, env.logger, env.sys, symbolIndexPath, env.index, deps, runtimes)
-	symbolConfigs := loadSymbolConfigs(env.logger, env.sys, symbolIndexPath, env.index)
-	runtimeHandler, err := buildRuntimeHandler(env.sys, deps, scheduler, resolver, symbolConfigs)
-	if err != nil {
-		return fmt.Errorf("runtime api init failed: %w", err)
-	}
-	topMux := buildTopMux(viewerHandler, dashboardHandler, runtimeHandler)
-	attachWebhookRoutes(env.ctx, env.logger, env.sys, deps, scheduler, topMux)
-
-	addr := strings.TrimSpace(env.sys.Webhook.Addr)
-	if addr == "" {
-		return fmt.Errorf("http addr missing")
-	}
-	startFeishuBot(env.ctx, env.logger, env.sys, addr, topMux)
-	if _, err := transport.StartHTTPServer(env.ctx, addr, topMux, env.logger); err != nil {
-		return fmt.Errorf("start http server: %w", err)
-	}
-	startTelegramBot(env.ctx, env.logger, env.sys, addr)
-	sendStartupNotify(env.ctx, env.logger, env.sys, env.index, runtimes, scheduler, deps, env.notifier)
-
-	<-env.ctx.Done()
-	env.logger.Info("shutdown signal received")
-	sendShutdownNotify(env.logger, env.notifier, startedAt)
-	env.logger.Info("shutdown flow completed")
-	return nil
+	return systemPath, symbolIndexPath
 }
 
 func buildRiverPeriodicSchedules(sys config.SystemConfig, runtimes map[string]runtime.SymbolRuntime) []jobs.PeriodicSchedule {

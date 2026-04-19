@@ -57,6 +57,14 @@ func (s *RecoveryService) RunOnce(ctx context.Context, symbol string) error {
 			if s.AllowSymbol != nil && !s.AllowSymbol(extPos.Symbol) {
 				continue
 			}
+			keepInCache, err := s.shouldCacheRecoveredExternalPosition(ctx, positions, extPos)
+			if err != nil {
+				return s.reportError(ctx, logger, "decide recovery cache refresh failed", err)
+			}
+			if !keepInCache {
+				s.Cache.DeleteBySymbol(extPos.Symbol)
+				continue
+			}
 			s.Cache.UpdateFromExternal(extPos)
 		}
 	}
@@ -98,9 +106,9 @@ func matchSymbol(filter string, symbol string) bool {
 
 func (s *RecoveryService) reconcilePosition(ctx context.Context, logger *zap.Logger, pos store.PositionRecord, byID map[string]execution.ExternalPosition, bySymbol map[string][]execution.ExternalPosition) error {
 	extPos, ok := resolveRecoveryPosition(pos, byID, bySymbol)
-	if !ok || extPos.Quantity <= 0 {
+	if !ok || !isMeaningfulCloseFlowExternalQty(pos, extPos) {
 		if s.Cache != nil {
-			s.Cache.DeleteByID(pos.PositionID)
+			s.Cache.DeleteBySymbol(pos.Symbol)
 		}
 		return s.handleMissingExternal(ctx, logger, pos)
 	}
@@ -207,6 +215,18 @@ func (s *RecoveryService) restoreMissingPositions(ctx context.Context, logger *z
 		if _, ok := existingSymbols[symKey]; ok {
 			continue
 		}
+		skipRestore, err := s.shouldSkipResidualRestore(ctx, extPos)
+		if err != nil {
+			return s.reportError(ctx, logger, "residual restore lookup failed", err)
+		}
+		if skipRestore {
+			logger.Info("skip residual close-flow restore",
+				zap.String("symbol", extPos.Symbol),
+				zap.String("executor_position_id", extPos.PositionID),
+				zap.Float64("qty", extPos.Quantity),
+			)
+			continue
+		}
 		pos := store.PositionRecord{
 			PositionID:         fmt.Sprintf("restore-%s", extPos.PositionID),
 			Symbol:             extPos.Symbol,
@@ -230,6 +250,39 @@ func (s *RecoveryService) restoreMissingPositions(ctx context.Context, logger *z
 		s.logRecoveryPosition(logger, pos, extPos, map[string]any{"source": pos.Source}, "external_restore")
 	}
 	return nil
+}
+
+func (s *RecoveryService) shouldCacheRecoveredExternalPosition(ctx context.Context, existing []store.PositionRecord, extPos execution.ExternalPosition) (bool, error) {
+	if extPos.Quantity <= 0 {
+		return false, nil
+	}
+	for _, pos := range existing {
+		if !matchesExternalPosition(pos, extPos) {
+			continue
+		}
+		if isCloseFlowStatus(pos.Status) && position.IsResidualCloseFlowQty(pos, extPos.Quantity) {
+			return false, nil
+		}
+	}
+	skipRestore, err := s.shouldSkipResidualRestore(ctx, extPos)
+	if err != nil {
+		return false, err
+	}
+	return !skipRestore, nil
+}
+
+func (s *RecoveryService) shouldSkipResidualRestore(ctx context.Context, extPos execution.ExternalPosition) (bool, error) {
+	if s == nil || s.Store == nil || extPos.Quantity <= 0 {
+		return false, nil
+	}
+	latestPos, ok, err := s.Store.FindPositionBySymbol(ctx, extPos.Symbol, nil)
+	if err != nil {
+		return false, fmt.Errorf("find latest position for residual restore %s: %w", strings.TrimSpace(extPos.Symbol), err)
+	}
+	if !ok {
+		return false, nil
+	}
+	return isClosedResidualExternalPosition(latestPos, extPos), nil
 }
 
 func (s *RecoveryService) logRecoveryPosition(logger *zap.Logger, pos store.PositionRecord, extPos execution.ExternalPosition, updates map[string]any, reason string) {

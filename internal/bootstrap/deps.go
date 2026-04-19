@@ -88,13 +88,22 @@ func buildCoreDeps(ctx context.Context, logger *zap.Logger, env appEnv) (coreDep
 	if err != nil {
 		return coreDeps{}, err
 	}
+	success := false
+	defer func() {
+		if !success && closeDB != nil {
+			closeDB()
+		}
+	}()
 
 	stateProvider := reconcile.NewFSMStateProvider(st)
 	executor := buildExecutionAdapter(env.sys)
 	allowSymbol := buildAllowSymbol(env.index)
 
 	positionCache, riskPlanSvc, positioner := buildPositionServices(positionServiceBuildDeps{store: st, executor: executor, notifier: env.notifier})
-	priceSource := buildPriceSource(env.index)
+	priceSource, err := buildPriceSource(env.index)
+	if err != nil {
+		return coreDeps{}, fmt.Errorf("build price source: %w", err)
+	}
 
 	recovery, reconciler, err := buildReconcileServices(reconcileServiceBuildDeps{
 		sys:             env.sys,
@@ -116,7 +125,7 @@ func buildCoreDeps(ctx context.Context, logger *zap.Logger, env appEnv) (coreDep
 	freqtradeAccount := newFreqtradeAccountFetcher(executor)
 	riskMonitor := buildRiskMonitor(riskMonitorBuildDeps{store: st, priceSource: priceSource, positioner: positioner, accountFetcher: freqtradeAccount, sys: env.sys})
 
-	return coreDeps{
+	deps := coreDeps{
 		persistence: persistenceDeps{store: st, pool: pool, stateProvider: stateProvider},
 		execution: executionDeps{
 			executor:      executor,
@@ -134,7 +143,9 @@ func buildCoreDeps(ctx context.Context, logger *zap.Logger, env appEnv) (coreDep
 		},
 		reconcile: reconcileDeps{recovery: recovery, reconciler: reconciler},
 		closeDB:   closeDB,
-	}, nil
+	}
+	success = true
+	return deps, nil
 }
 
 func buildPersistence(ctx context.Context, sys config.SystemConfig, logger *zap.Logger) (store.Store, *pgxpool.Pool, func(), error) {
@@ -213,7 +224,7 @@ func buildPositionServices(deps positionServiceBuildDeps) (*position.PositionCac
 	return positionCache, riskPlanSvc, positioner
 }
 
-func buildPriceSource(index config.SymbolIndexConfig) *binance.MarkPriceStream {
+func buildPriceSource(index config.SymbolIndexConfig) (*binance.MarkPriceStream, error) {
 	return binance.NewMarkPriceStream(binance.MarkPriceStreamOptions{
 		Symbols: config.SymbolsFromIndex(index),
 		Rate:    time.Second,

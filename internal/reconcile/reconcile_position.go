@@ -20,10 +20,10 @@ func (s *ReconcileService) reconcilePosition(ctx context.Context, pos store.Posi
 		zap.String("position_id", pos.PositionID),
 	)
 	extPos, ok := resolveExternalPosition(pos, byID, bySymbol)
-	hasExternal := ok && extPos.Quantity > 0
+	hasExternal := ok && isMeaningfulCloseFlowExternalQty(pos, extPos)
 	if !hasExternal {
 		if s.Cache != nil {
-			s.Cache.DeleteByID(pos.PositionID)
+			s.Cache.DeleteBySymbol(pos.Symbol)
 		}
 		return s.handleExternalMissing(ctx, pos, logger)
 	}
@@ -108,7 +108,7 @@ func (s *ReconcileService) recheckExternalPosition(ctx context.Context, pos stor
 		return false
 	}
 	byID, _ := indexExternalPositions(ext)
-	if extPos, ok := byID[tradeID]; ok && extPos.Quantity > 0 {
+	if extPos, ok := byID[tradeID]; ok && isMeaningfulCloseFlowExternalQty(pos, extPos) {
 		logger.Info("reconcile external position still open", zap.String("external_position_id", tradeID), zap.Float64("qty", extPos.Quantity))
 		return true
 	}
@@ -117,7 +117,7 @@ func (s *ReconcileService) recheckExternalPosition(ctx context.Context, pos stor
 
 func (s *ReconcileService) finalizeExternalMissing(ctx context.Context, pos store.PositionRecord, logger *zap.Logger) (store.PositionRecord, error) {
 	if s.Cache != nil {
-		s.Cache.DeleteByID(pos.PositionID)
+		s.Cache.DeleteBySymbol(pos.Symbol)
 	}
 	if _, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
 		PositionID:       pos.PositionID,
@@ -328,6 +328,33 @@ func isCloseFlowStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func isMeaningfulCloseFlowExternalQty(pos store.PositionRecord, extPos execution.ExternalPosition) bool {
+	if extPos.Quantity <= 0 {
+		return false
+	}
+	if !isCloseFlowStatus(pos.Status) {
+		return true
+	}
+	return !position.IsResidualCloseFlowQty(pos, extPos.Quantity)
+}
+
+func matchesExternalPosition(pos store.PositionRecord, extPos execution.ExternalPosition) bool {
+	if strings.TrimSpace(pos.ExecutorPositionID) != "" {
+		return strings.TrimSpace(pos.ExecutorPositionID) == strings.TrimSpace(extPos.PositionID)
+	}
+	return strings.EqualFold(strings.TrimSpace(pos.Symbol), strings.TrimSpace(extPos.Symbol))
+}
+
+func isClosedResidualExternalPosition(pos store.PositionRecord, extPos execution.ExternalPosition) bool {
+	if pos.Status != position.PositionClosed {
+		return false
+	}
+	if !matchesExternalPosition(pos, extPos) {
+		return false
+	}
+	return position.IsResidualCloseFlowQty(pos, extPos.Quantity)
 }
 
 func (s *ReconcileService) shouldRecoverCloseTimeout(pos store.PositionRecord, now time.Time) bool {

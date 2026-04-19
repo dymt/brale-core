@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"brale-core/internal/config"
+	"brale-core/internal/decision/provider"
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/execution"
 	"brale-core/internal/runtime"
@@ -187,20 +188,85 @@ type debugPlanClearResponse struct {
 	RequestID string `json:"request_id"`
 }
 
-type observeResponse struct {
-	Symbol         string         `json:"symbol"`
-	Status         string         `json:"status"`
-	Agent          map[string]any `json:"agent"`
-	Provider       map[string]any `json:"provider,omitempty"`
-	Gate           map[string]any `json:"gate"`
-	InPosition     map[string]any `json:"in_position,omitempty"`
-	Report         string         `json:"report,omitempty"`
-	ReportMarkdown string         `json:"report_markdown,omitempty"`
-	ReportHTML     string         `json:"report_html,omitempty"`
-	Summary        string         `json:"summary"`
-	RequestID      string         `json:"request_id"`
-	SkippedExec    bool           `json:"skipped_execution"`
-	TraceID        string         `json:"llm_trace_id,omitempty"`
+type ObserveAgentPayload struct {
+	Indicator any `json:"indicator"`
+	Structure any `json:"structure"`
+	Mechanics any `json:"mechanics"`
+}
+
+type ObserveProviderPayload struct {
+	Indicator any `json:"indicator"`
+	Structure any `json:"structure"`
+	Mechanics any `json:"mechanics"`
+}
+
+type ObserveGatePayload struct {
+	Tradeable      bool   `json:"tradeable"`
+	DecisionAction string `json:"decision_action"`
+	DecisionText   string `json:"decision_text"`
+	Grade          int    `json:"grade"`
+	Reason         string `json:"reason"`
+	ReasonCode     string `json:"reason_code"`
+	Direction      string `json:"direction"`
+}
+
+type ObserveInPositionPayload struct {
+	Indicator provider.InPositionIndicatorOut `json:"indicator"`
+	Structure provider.InPositionStructureOut `json:"structure"`
+	Mechanics provider.InPositionMechanicsOut `json:"mechanics"`
+	Summary   string                          `json:"summary"`
+}
+
+type ObserveResponse struct {
+	Symbol         string                   `json:"symbol"`
+	Status         string                   `json:"status"`
+	Agent          ObserveAgentPayload       `json:"agent"`
+	Provider       *ObserveProviderPayload   `json:"provider,omitempty"`
+	Gate           ObserveGatePayload        `json:"gate"`
+	InPosition     *ObserveInPositionPayload `json:"in_position,omitempty"`
+	Report         string                   `json:"report,omitempty"`
+	ReportMarkdown string                   `json:"report_markdown,omitempty"`
+	ReportHTML     string                   `json:"report_html,omitempty"`
+	Summary        string                   `json:"summary"`
+	RequestID      string                   `json:"request_id"`
+	SkippedExec    bool                     `json:"skipped_execution"`
+	TraceID        string                   `json:"llm_trace_id,omitempty"`
+}
+
+type observeResponse = ObserveResponse
+
+func (p ObserveAgentPayload) HasData() bool {
+	return p.Indicator != nil || p.Structure != nil || p.Mechanics != nil
+}
+
+func (p ObserveAgentPayload) Map() map[string]any {
+	if !p.HasData() {
+		return nil
+	}
+	return map[string]any{
+		"indicator": p.Indicator,
+		"structure": p.Structure,
+		"mechanics": p.Mechanics,
+	}
+}
+
+func (p ObserveGatePayload) HasData() bool {
+	return p.Tradeable || p.DecisionAction != "" || p.DecisionText != "" || p.Grade != 0 || p.Reason != "" || p.ReasonCode != "" || p.Direction != ""
+}
+
+func (p ObserveGatePayload) Map() map[string]any {
+	if !p.HasData() {
+		return nil
+	}
+	return map[string]any{
+		"tradeable":       p.Tradeable,
+		"decision_action": p.DecisionAction,
+		"decision_text":   p.DecisionText,
+		"grade":           p.Grade,
+		"reason":          p.Reason,
+		"reason_code":     p.ReasonCode,
+		"direction":       p.Direction,
+	}
 }
 
 type observeJobKey struct {

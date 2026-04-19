@@ -10,21 +10,7 @@ type ObserveRunRequest struct {
 	Symbol string `json:"symbol"`
 }
 
-type ObserveResponse struct {
-	Symbol         string         `json:"symbol"`
-	Status         string         `json:"status"`
-	Agent          map[string]any `json:"agent,omitempty"`
-	Provider       map[string]any `json:"provider,omitempty"`
-	Gate           map[string]any `json:"gate"`
-	InPosition     map[string]any `json:"in_position,omitempty"`
-	Report         string         `json:"report,omitempty"`
-	ReportMarkdown string         `json:"report_markdown,omitempty"`
-	ReportHTML     string         `json:"report_html,omitempty"`
-	Summary        string         `json:"summary"`
-	RequestID      string         `json:"request_id"`
-	SkippedExec    bool           `json:"skipped_execution"`
-	TraceID        string         `json:"llm_trace_id,omitempty"`
-}
+type ObserveResponse = runtimeapi.ObserveResponse
 
 type MonitorStatusResponse struct {
 	Status    string                `json:"status"`

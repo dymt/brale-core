@@ -17,48 +17,48 @@ import (
 	"go.uber.org/zap"
 )
 
-func buildAgentPayload(res ObserveSymbolResult) map[string]any {
-	return map[string]any{
-		"indicator": res.AgentIndicator,
-		"structure": res.AgentStructure,
-		"mechanics": res.AgentMechanics,
+func buildAgentPayload(res ObserveSymbolResult) ObserveAgentPayload {
+	return ObserveAgentPayload{
+		Indicator: res.AgentIndicator,
+		Structure: res.AgentStructure,
+		Mechanics: res.AgentMechanics,
 	}
 }
 
-func buildProviderPayload(res ObserveSymbolResult) map[string]any {
+func buildProviderPayload(res ObserveSymbolResult) *ObserveProviderPayload {
 	return buildProviderPayloadFrom(res.Providers.Indicator, res.Providers.Structure, res.Providers.Mechanics)
 }
 
-func buildInPositionProviderPayload(res ObserveSymbolResult) map[string]any {
+func buildInPositionProviderPayload(res ObserveSymbolResult) *ObserveProviderPayload {
 	return buildProviderPayloadFrom(res.InPositionIndicator, res.InPositionStructure, res.InPositionMechanics)
 }
 
-func buildProviderPayloadFrom(ind any, st any, mech any) map[string]any {
-	return map[string]any{
-		"indicator": ind,
-		"structure": st,
-		"mechanics": mech,
+func buildProviderPayloadFrom(ind any, st any, mech any) *ObserveProviderPayload {
+	return &ObserveProviderPayload{
+		Indicator: ind,
+		Structure: st,
+		Mechanics: mech,
 	}
 }
 
-func buildInPositionPayload(res ObserveSymbolResult) map[string]any {
-	return map[string]any{
-		"indicator": res.InPositionIndicator,
-		"structure": res.InPositionStructure,
-		"mechanics": res.InPositionMechanics,
-		"summary":   buildInPositionSummary(res.InPositionIndicator, res.InPositionStructure, res.InPositionMechanics),
+func buildInPositionPayload(res ObserveSymbolResult) *ObserveInPositionPayload {
+	return &ObserveInPositionPayload{
+		Indicator: res.InPositionIndicator,
+		Structure: res.InPositionStructure,
+		Mechanics: res.InPositionMechanics,
+		Summary:   buildInPositionSummary(res.InPositionIndicator, res.InPositionStructure, res.InPositionMechanics),
 	}
 }
 
-func buildGatePayload(gate fund.GateDecision) map[string]any {
-	return map[string]any{
-		"tradeable":       gate.GlobalTradeable,
-		"decision_action": gate.DecisionAction,
-		"decision_text":   decisionfmt.GateDecisionText(gate.DecisionAction, gate.GateReason),
-		"grade":           gate.Grade,
-		"reason":          gate.GateReason,
-		"reason_code":     gate.GateReason,
-		"direction":       gate.Direction,
+func buildGatePayload(gate fund.GateDecision) ObserveGatePayload {
+	return ObserveGatePayload{
+		Tradeable:      gate.GlobalTradeable,
+		DecisionAction: gate.DecisionAction,
+		DecisionText:   decisionfmt.GateDecisionText(gate.DecisionAction, gate.GateReason),
+		Grade:          gate.Grade,
+		Reason:         gate.GateReason,
+		ReasonCode:     gate.GateReason,
+		Direction:      gate.Direction,
 	}
 }
 

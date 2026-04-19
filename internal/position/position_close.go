@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, closeQty float64, positionQty float64) (string, error) {
+func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord, reason string, triggerPrice float64, request CloseRequest) (string, error) {
 	if err := s.ensureCloseDeps(); err != nil {
 		return "", err
 	}
@@ -27,14 +27,14 @@ func (s *PositionService) ArmClose(ctx context.Context, pos store.PositionRecord
 		return existingIntentID, err
 	}
 	intentID := uuid.NewString()
-	pos, intentKind, clientOrderID, err := s.prepareCloseOrder(ctx, pos, intentID, reason, triggerPrice, closeQty, positionQty)
+	pos, intentKind, clientOrderID, request, err := s.prepareCloseOrder(ctx, pos, intentID, reason, triggerPrice, request)
 	if err != nil {
 		return "", err
 	}
-	if err := s.submitCloseFlow(ctx, pos, intentKind, closeQty, clientOrderID); err != nil {
+	if err := s.submitCloseFlow(ctx, pos, intentKind, request.EffectiveCloseQty, clientOrderID); err != nil {
 		return intentID, err
 	}
-	s.logAndNotifyClose(ctx, pos, reason, triggerPrice, closeQty)
+	s.logAndNotifyClose(ctx, pos, reason, triggerPrice, request, intentKind)
 	braleOtel.PositionCloseTotal.Add(ctx, 1, otelmetric.WithAttributes(
 		attribute.String("symbol", pos.Symbol),
 		attribute.String("side", pos.Side),
@@ -65,25 +65,26 @@ func (s *PositionService) guardArmClose(ctx context.Context, pos store.PositionR
 	return "", false, nil
 }
 
-func (s *PositionService) prepareCloseOrder(ctx context.Context, pos store.PositionRecord, intentID string, reason string, triggerPrice float64, closeQty float64, positionQty float64) (store.PositionRecord, string, string, error) {
+func (s *PositionService) prepareCloseOrder(ctx context.Context, pos store.PositionRecord, intentID string, reason string, triggerPrice float64, request CloseRequest) (store.PositionRecord, string, string, CloseRequest, error) {
 	pos, err := s.latchClose(ctx, pos, intentID, triggerPrice)
 	if err != nil {
-		return store.PositionRecord{}, "", "", err
+		return store.PositionRecord{}, "", "", CloseRequest{}, err
 	}
 	if s.Cache != nil {
 		pos = s.Cache.HydratePosition(pos)
 	}
-	effectiveQty := resolveClosePositionQty(pos, positionQty)
-	if effectiveQty > 0 {
-		pos.Qty = effectiveQty
+	request.PositionQty = resolveClosePositionQty(pos, request.PositionQty)
+	if request.PositionQty > 0 {
+		pos.Qty = request.PositionQty
 	}
-	intentKind := resolveCloseIntentKind(effectiveQty, closeQty)
+	request.EffectiveCloseQty = clipCloseQty(request.EffectiveCloseQty, request.PositionQty)
+	intentKind := resolveCloseIntentKind(request.PositionQty, request.EffectiveCloseQty)
 	clientOrderID := "brale-" + intentID
 	if s.Cache != nil {
 		s.Cache.SetCloseReason(pos.ExecutorPositionID, reason)
 	}
-	s.logCloseIntent(ctx, pos, intentKind, reason, triggerPrice, closeQty, clientOrderID)
-	return pos, intentKind, clientOrderID, nil
+	s.logCloseIntent(ctx, pos, intentKind, reason, triggerPrice, request, clientOrderID)
+	return pos, intentKind, clientOrderID, request, nil
 }
 
 func (s *PositionService) submitCloseFlow(ctx context.Context, pos store.PositionRecord, intentKind string, closeQty float64, clientOrderID string) error {
@@ -122,7 +123,7 @@ func (s *PositionService) latchClose(ctx context.Context, pos store.PositionReco
 	return pos, nil
 }
 
-func (s *PositionService) logCloseIntent(ctx context.Context, pos store.PositionRecord, intentKind string, reason string, triggerPrice float64, closeQty float64, clientOrderID string) {
+func (s *PositionService) logCloseIntent(ctx context.Context, pos store.PositionRecord, intentKind string, reason string, triggerPrice float64, request CloseRequest, clientOrderID string) {
 	logging.FromContext(ctx).Named("execution").Info("close intent created",
 		zap.String("position_id", pos.PositionID),
 		zap.String("symbol", pos.Symbol),
@@ -130,7 +131,10 @@ func (s *PositionService) logCloseIntent(ctx context.Context, pos store.Position
 		zap.String("intent_kind", intentKind),
 		zap.String("reason", reason),
 		zap.Float64("trigger_price", triggerPrice),
-		zap.Float64("close_qty", closeQty),
+		zap.Float64("requested_close_qty", request.RequestedCloseQty),
+		zap.Float64("effective_close_qty", request.EffectiveCloseQty),
+		zap.Bool("forced_full_close", request.ForcedFullClose),
+		zap.Float64("position_qty", request.PositionQty),
 		zap.String("client_order_id", clientOrderID),
 	)
 }

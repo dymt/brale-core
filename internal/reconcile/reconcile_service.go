@@ -87,6 +87,16 @@ func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {
 			if s.AllowSymbol != nil && !s.AllowSymbol(extPos.Symbol) {
 				continue
 			}
+			keepInCache, err := s.shouldCacheReconciledExternalPosition(ctx, positions, extPos)
+			if err != nil {
+				logger.Error("decide reconcile cache refresh failed", zap.Error(err))
+				s.notifyError(ctx, logger, err)
+				return err
+			}
+			if !keepInCache {
+				s.Cache.DeleteBySymbol(extPos.Symbol)
+				continue
+			}
 			s.Cache.UpdateFromExternal(extPos)
 		}
 	}
@@ -97,6 +107,31 @@ func (s *ReconcileService) RunOnce(ctx context.Context, symbol string) error {
 	}
 	logger.Debug("reconcile completed", zap.String("symbol", symbol))
 	return nil
+}
+
+func (s *ReconcileService) shouldCacheReconciledExternalPosition(ctx context.Context, positions []store.PositionRecord, extPos execution.ExternalPosition) (bool, error) {
+	if extPos.Quantity <= 0 {
+		return false, nil
+	}
+	for _, pos := range positions {
+		if !matchesExternalPosition(pos, extPos) {
+			continue
+		}
+		if isCloseFlowStatus(pos.Status) && position.IsResidualCloseFlowQty(pos, extPos.Quantity) {
+			return false, nil
+		}
+	}
+	if s == nil || s.Store == nil {
+		return true, nil
+	}
+	latestPos, ok, err := s.Store.FindPositionBySymbol(ctx, extPos.Symbol, nil)
+	if err != nil {
+		return false, fmt.Errorf("find latest position for reconcile cache refresh %s: %w", strings.TrimSpace(extPos.Symbol), err)
+	}
+	if ok && isClosedResidualExternalPosition(latestPos, extPos) {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (s *ReconcileService) notifyError(ctx context.Context, logger *zap.Logger, err error) {
