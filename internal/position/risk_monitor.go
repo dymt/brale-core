@@ -15,12 +15,13 @@ import (
 )
 
 type RiskMonitor struct {
-	Store          store.Store
-	PriceSource    market.PriceSource
-	Positions      *PositionService
-	PlanCache      *PlanCache
-	AccountFetcher func(ctx context.Context, symbol string) (execution.AccountState, error)
-	MaxDrawdownPct float64
+	Store                   store.Store
+	PriceSource             market.PriceSource
+	Positions               *PositionService
+	PlanCache               *PlanCache
+	AccountFetcher          func(ctx context.Context, symbol string) (execution.AccountState, error)
+	MaxDrawdownPct          float64
+	BreakevenFeePctBySymbol func(symbol string) float64
 
 	mu              sync.RWMutex
 	accountBySymbol map[string]cachedAccountState

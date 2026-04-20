@@ -33,7 +33,7 @@ type ReflectionInput struct {
 	ExitPrice  string
 	PnLPercent string
 	Duration   string
-	GateReason string
+	Context    reflectionPromptContext
 }
 
 type reflectionOutput struct {
@@ -117,11 +117,15 @@ func (r *Reflector) autoCreateRules(symbol string, lessons []string, logger *zap
 }
 
 func formatReflectionUserPrompt(input ReflectionInput) string {
-	return fmt.Sprintf(
-		"交易对: %s\n方向: %s\n入场价: %s\n出场价: %s\nPnL%%: %s\n持仓时间: %s\n入场原因: %s",
-		input.Symbol, input.Direction, input.EntryPrice, input.ExitPrice,
-		input.PnLPercent, input.Duration, input.GateReason,
-	)
+	return mustFormatReflectionPromptBlock("复盘上下文(JSON)", buildReflectionCompactPrompt(input))
+}
+
+func mustFormatReflectionPromptBlock(label string, payload any) string {
+	raw, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(label) + ":\n" + string(raw)
 }
 
 func (r *Reflector) resolveSystemPrompt() string {

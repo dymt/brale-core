@@ -97,6 +97,16 @@ func buildInputPayload(ctx context.Context, input Input) (string, error) {
 			"gate": map[string]any{
 				"quality_threshold": input.Binding.RiskManagement.Gate.QualityThreshold,
 				"edge_threshold":    input.Binding.RiskManagement.Gate.EdgeThreshold,
+				"hard_stop": map[string]any{
+					"structure_invalidation": input.Binding.RiskManagement.Gate.HardStop.StructureInvalidationEnabled(),
+					"liquidation_cascade":    input.Binding.RiskManagement.Gate.HardStop.LiquidationCascadeEnabled(),
+				},
+			},
+			"hard_guard": map[string]any{
+				"enabled":         input.Binding.RiskManagement.HardGuard.HardGuardEnabled(),
+				"stop_loss":       input.Binding.RiskManagement.HardGuard.StopLossEnabled(),
+				"rsi_extreme":     input.Binding.RiskManagement.HardGuard.RSIExtremeEnabled(),
+				"circuit_breaker": input.Binding.RiskManagement.HardGuard.CircuitBreakerEnabled(),
 			},
 			"sieve": map[string]any{
 				"min_size_factor":     input.Binding.RiskManagement.Sieve.MinSizeFactor,

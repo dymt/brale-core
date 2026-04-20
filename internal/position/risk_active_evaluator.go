@@ -108,9 +108,12 @@ func (m *RiskMonitor) refreshRiskPlanOnTPHit(ctx context.Context, pos store.Posi
 	if !changed {
 		return pos, plan, nil
 	}
-	updatedPlan = applyTP1BreakevenStop(updatedPlan, pos.Side, pos.AvgEntry)
+	updatedPlan = applyTP1BreakevenStop(updatedPlan, pos.Side, pos.AvgEntry, m.breakevenFeePct(pos.Symbol))
 	svc := RiskPlanService{Store: m.Store}
-	if _, err := svc.ApplyUpdate(ctx, pos.PositionID, updatedPlan, "risk-tp-hit"); err != nil {
+	if err := withinStoreTx(ctx, m.Store, func(runCtx context.Context) error {
+		_, err := svc.ApplyUpdate(runCtx, pos.PositionID, updatedPlan, "risk-tp-hit")
+		return err
+	}); err != nil {
 		logger.Error("risk plan tp hit update failed", zap.Error(err))
 	} else {
 		plan = updatedPlan
@@ -132,11 +135,11 @@ func (m *RiskMonitor) refreshRiskPlanOnTPHit(ctx context.Context, pos store.Posi
 	return pos, plan, nil
 }
 
-func applyTP1BreakevenStop(plan risk.RiskPlan, side string, entry float64) risk.RiskPlan {
+func applyTP1BreakevenStop(plan risk.RiskPlan, side string, entry float64, feePct float64) risk.RiskPlan {
 	if !tp1Hit(plan) {
 		return plan
 	}
-	breakevenStop := computeBreakevenStop(entry)
+	breakevenStop := risk.BreakevenStop(side, entry, feePct)
 	if breakevenStop <= 0 {
 		return plan
 	}
@@ -154,13 +157,6 @@ func tp1Hit(plan risk.RiskPlan) bool {
 	return plan.TPLevels[0].Hit
 }
 
-func computeBreakevenStop(entry float64) float64 {
-	if entry <= 0 {
-		return 0
-	}
-	return entry
-}
-
 func shouldMoveStopToBreakeven(side string, currentStop float64, breakevenStop float64) bool {
 	if breakevenStop <= 0 {
 		return false
@@ -172,6 +168,17 @@ func shouldMoveStopToBreakeven(side string, currentStop float64, breakevenStop f
 		return currentStop > breakevenStop
 	}
 	return currentStop < breakevenStop
+}
+
+func (m *RiskMonitor) breakevenFeePct(symbol string) float64 {
+	if m == nil || m.BreakevenFeePctBySymbol == nil {
+		return 0
+	}
+	feePct := m.BreakevenFeePctBySymbol(symbol)
+	if feePct < 0 {
+		return 0
+	}
+	return feePct
 }
 
 const defaultMaxDrawdownPct = 30.0

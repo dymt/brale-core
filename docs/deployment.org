@@ -26,11 +26,40 @@ HTTPS_PROXY=http://proxy.example:7890
 NO_PROXY=localhost,127.0.0.1,brale,freqtrade,timescaledb
 #+end_src
 
+** 首次部署
+
+*** 一键部署（bootstrap.sh）
+
+#+begin_src bash
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
+# 可选：先执行 setup（含 MCP 客户端安装），再进入 init 并自动启动
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash -s -- --setup --setup-lang zh
+#+end_src
+
+=scripts/bootstrap.sh= 会自动执行 clone / update → =make env-init= → （可选）=make setup= → =make init= → =make start=。如果你已经准备好了可用的 =.env=，可改用 =--no-init= 跳过交互式向导。
+
+*** 手动首次部署
+
+#+begin_src bash
+git clone --depth 1 --branch master https://github.com/laukkw/brale-core.git
+cd brale-core
+make env-init                              # 缺失时从 .env.example 创建 .env
+make init                                  # 交互式填写 .env，并生成运行时配置
+make prepare                               # 预生成 Freqtrade 运行时配置与 proxy.env
+make start ENABLE_MCP=1                    # 可选开启 MCP；不需要时去掉 ENABLE_MCP=1
+make status                                # 验证服务健康状态
+#+end_src
+
+- =make setup= 适合在首次部署前安装本地工具与可选 MCP 客户端配置；不替代 =make init=。
+- =make prepare= 会根据 =.env= 和模板生成 Freqtrade 运行时配置；=make start= 也会自动触发它，但首次部署建议显式执行一次便于检查生成结果。
+- 默认 Freqtrade 配置为 =dry_run=true=，启动后仍是模拟盘；真实上线前必须检查生成的 =data/freqtrade/user_data/config.json= 并显式关闭 =dry_run=。
+
 ** 升级流程
 
 #+begin_src bash
 make down
-git pull
+git pull --ff-only
+make prepare
 make rebuild
 make start
 #+end_src
@@ -81,11 +110,40 @@ HTTPS_PROXY=http://proxy.example:7890
 NO_PROXY=localhost,127.0.0.1,brale,freqtrade,timescaledb
 #+end_src
 
+** First Deployment
+
+*** One-click (bootstrap.sh)
+
+#+begin_src bash
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash
+# optional: run setup first (including MCP client installation), then continue with init + start
+curl -fsSL https://raw.githubusercontent.com/laukkw/brale-core/master/scripts/bootstrap.sh | bash -s -- --setup --setup-lang en
+#+end_src
+
+=scripts/bootstrap.sh= performs clone / update → =make env-init= → optional =make setup= → =make init= → =make start=. If you already have a ready =.env=, use =--no-init= to skip the interactive wizard.
+
+*** Manual first deployment
+
+#+begin_src bash
+git clone --depth 1 --branch master https://github.com/laukkw/brale-core.git
+cd brale-core
+make env-init                              # create .env from .env.example when missing
+make init                                  # fill .env interactively and generate runtime configs
+make prepare                               # pre-generate Freqtrade runtime config and proxy.env
+make start ENABLE_MCP=1                    # optionally enable MCP; drop ENABLE_MCP=1 if not needed
+make status                                # verify service health
+#+end_src
+
+- =make setup= is useful before first deployment when you want local tool setup and optional MCP client installation; it does not replace =make init=.
+- =make prepare= renders the runtime Freqtrade config from =.env= and templates. =make start= already depends on it, but running it once explicitly is helpful during first deployment so you can inspect generated output.
+- The default Freqtrade config uses =dry_run=true=. The stack starts in simulated trading mode until you inspect =data/freqtrade/user_data/config.json= and explicitly disable =dry_run= for production.
+
 ** Upgrade Flow
 
 #+begin_src bash
 make down
-git pull
+git pull --ff-only
+make prepare
 make rebuild
 make start
 #+end_src

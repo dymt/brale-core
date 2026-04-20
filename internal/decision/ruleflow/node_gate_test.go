@@ -29,6 +29,45 @@ func TestGateMechanicsCascadeVeto(t *testing.T) {
 	}
 }
 
+func TestGateMechanicsCascadeCanBeDisabledByStrategyConfig(t *testing.T) {
+	disabled := false
+	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
+		mechanics: provider.MechanicsProviderOut{
+			LiquidationStress: provider.SemanticSignal{Value: true, Confidence: provider.ConfidenceHigh, Reason: "cascade"},
+			SignalTag:         "liquidation_cascade",
+		},
+		riskManagement: &config.RiskManagementConfig{
+			RiskPerTradePct: 0.01,
+			MaxInvestPct:    1.0,
+			MaxLeverage:     20,
+			Grade1Factor:    1.0,
+			Grade2Factor:    1.0,
+			Grade3Factor:    1.0,
+			EntryOffsetATR:  0,
+			EntryMode:       "market",
+			RiskStrategy:    config.RiskStrategyConfig{Mode: "native"},
+			Gate: config.GateConfig{
+				QualityThreshold: 0.35,
+				EdgeThreshold:    0.10,
+				HardStop: config.GateHardStopConfig{
+					LiquidationCascade: &disabled,
+				},
+			},
+			InitialExit: config.InitialExitConfig{
+				Policy:            "atr_structure_v1",
+				StructureInterval: "1h",
+				Params:            map[string]any{},
+			},
+		},
+	})
+	if result.Gate.DecisionAction == "VETO" {
+		t.Fatalf("gate action=%s want non-VETO", result.Gate.DecisionAction)
+	}
+	if result.Gate.GateReason != "EDGE_TOO_LOW" {
+		t.Fatalf("gate reason=%s want EDGE_TOO_LOW", result.Gate.GateReason)
+	}
+}
+
 func TestGateMechanicsHighConfidenceStressCanStillAllow(t *testing.T) {
 	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
 		mechanics: provider.MechanicsProviderOut{
@@ -167,6 +206,47 @@ func TestDeriveTradeableIgnoresNonCascadeStress(t *testing.T) {
 	}
 }
 
+func TestGateStructureHardStopCanBeDisabledByStrategyConfig(t *testing.T) {
+	disabled := false
+	result := evaluateFlatRuleflow(t, flatRuleflowOptions{
+		structure: provider.StructureProviderOut{
+			ClearStructure: false,
+			Integrity:      false,
+			Reason:         "broken",
+			SignalTag:      "structure_broken",
+		},
+		riskManagement: &config.RiskManagementConfig{
+			RiskPerTradePct: 0.01,
+			MaxInvestPct:    1.0,
+			MaxLeverage:     20,
+			Grade1Factor:    1.0,
+			Grade2Factor:    1.0,
+			Grade3Factor:    1.0,
+			EntryOffsetATR:  0,
+			EntryMode:       "market",
+			RiskStrategy:    config.RiskStrategyConfig{Mode: "native"},
+			Gate: config.GateConfig{
+				QualityThreshold: 0.35,
+				EdgeThreshold:    0.10,
+				HardStop: config.GateHardStopConfig{
+					StructureInvalidation: &disabled,
+				},
+			},
+			InitialExit: config.InitialExitConfig{
+				Policy:            "atr_structure_v1",
+				StructureInterval: "1h",
+				Params:            map[string]any{},
+			},
+		},
+	})
+	if result.Gate.DecisionAction == "VETO" {
+		t.Fatalf("gate action=%s want non-VETO", result.Gate.DecisionAction)
+	}
+	if result.Gate.GateReason != "QUALITY_TOO_LOW" {
+		t.Fatalf("gate reason=%s want QUALITY_TOO_LOW", result.Gate.GateReason)
+	}
+}
+
 func TestGateIndicatorNoiseAndTagConsistencyFlowIntoQuality(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -281,6 +361,36 @@ func evaluateFlatRuleflow(t *testing.T, opts flatRuleflowOptions) Result {
 		}
 	}
 	sieve := opts.sieve
+	riskManagement := config.RiskManagementConfig{
+		RiskPerTradePct: 0.01,
+		MaxInvestPct:    1.0,
+		MaxLeverage:     20,
+		Grade1Factor:    1.0,
+		Grade2Factor:    1.0,
+		Grade3Factor:    1.0,
+		EntryOffsetATR:  0,
+		EntryMode:       "market",
+		RiskStrategy:    config.RiskStrategyConfig{Mode: "native"},
+		Gate: config.GateConfig{
+			QualityThreshold: 0.35,
+			EdgeThreshold:    0.10,
+		},
+		InitialExit: config.InitialExitConfig{
+			Policy:            "atr_structure_v1",
+			StructureInterval: "1h",
+			Params:            map[string]any{},
+		},
+		Sieve: sieve,
+	}
+	if opts.riskManagement != nil {
+		riskManagement = *opts.riskManagement
+		if len(riskManagement.Sieve.Rows) == 0 &&
+			riskManagement.Sieve.DefaultGateAction == "" &&
+			riskManagement.Sieve.DefaultSizeFactor == 0 &&
+			riskManagement.Sieve.MinSizeFactor == 0 {
+			riskManagement.Sieve = sieve
+		}
+	}
 	result, err := engine.Evaluate(context.Background(), defaultRuleChainPath(t), Input{
 		Symbol: "BTCUSDT",
 		Providers: fund.ProviderBundle{
@@ -305,28 +415,8 @@ func evaluateFlatRuleflow(t *testing.T, opts flatRuleflowOptions) Result {
 		Account:             execution.AccountState{Equity: 10000, Available: 10000},
 		Risk:                execution.RiskParams{RiskPerTradePct: 0.01},
 		Binding: strategy.StrategyBinding{
-			Symbol: "BTCUSDT",
-			RiskManagement: config.RiskManagementConfig{
-				RiskPerTradePct: 0.01,
-				MaxInvestPct:    1.0,
-				MaxLeverage:     20,
-				Grade1Factor:    1.0,
-				Grade2Factor:    1.0,
-				Grade3Factor:    1.0,
-				EntryOffsetATR:  0,
-				EntryMode:       "market",
-				RiskStrategy:    config.RiskStrategyConfig{Mode: "native"},
-				Gate: config.GateConfig{
-					QualityThreshold: 0.35,
-					EdgeThreshold:    0.10,
-				},
-				InitialExit: config.InitialExitConfig{
-					Policy:            "atr_structure_v1",
-					StructureInterval: "1h",
-					Params:            map[string]any{},
-				},
-				Sieve: sieve,
-			},
+			Symbol:         "BTCUSDT",
+			RiskManagement: riskManagement,
 		},
 		Compression: features.CompressionResult{
 			Indicators: map[string]map[string]features.IndicatorJSON{
@@ -352,6 +442,7 @@ type flatRuleflowOptions struct {
 	structure      provider.StructureProviderOut
 	mechanics      provider.MechanicsProviderOut
 	sieve          config.RiskManagementSieveConfig
+	riskManagement *config.RiskManagementConfig
 	consensusScore float64
 	indicatorConf  float64
 	structureConf  float64

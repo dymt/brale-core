@@ -26,13 +26,25 @@ func (p *Pipeline) attachRoundRecorder(ctx context.Context, roundID llm.RoundID,
 	}
 	recorder := llmround.NewRecorder(p.store(), roundID.String(), summarizeRoundSymbols(symbols), roundType)
 	if p.LLMTokenBudget > 0 {
-		recorder.SetTokenBudget(p.LLMTokenBudget, func(roundID string, totalTokens, budget int) {
-			logging.L().Error("LLM token budget exceeded",
-				zap.String("round_id", roundID),
-				zap.Int("total_tokens", totalTokens),
-				zap.Int("budget", budget),
-			)
-		})
+		recorder.SetTokenBudget(
+			p.LLMTokenBudget,
+			p.LLMTokenBudgetWarnPct,
+			func(roundID string, totalTokens, warnThreshold, budget int) {
+				logging.L().Warn("LLM token budget warning",
+					zap.String("round_id", roundID),
+					zap.Int("total_tokens", totalTokens),
+					zap.Int("warn_threshold", warnThreshold),
+					zap.Int("budget", budget),
+				)
+			},
+			func(roundID string, totalTokens, budget int) {
+				logging.L().Warn("LLM token budget exceeded",
+					zap.String("round_id", roundID),
+					zap.Int("total_tokens", totalTokens),
+					zap.Int("budget", budget),
+				)
+			},
+		)
 	}
 	existing, _ := llm.CallObserverFromContext(ctx)
 	return llm.WithCallObserver(ctx, llm.ChainCallObservers(existing, recorder)), recorder

@@ -227,8 +227,8 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"约束（必须满足）：\n" +
 	"- 必须同时参考仓位风控上下文、结构锚点摘要与三个 Agent 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
 	"- 结构锚点摘要中的 nearest_below_entry / nearest_above_entry 是相对 entry 的方向中性锚点：direction=long 时通常分别更接近止损/止盈参考；direction=short 时通常分别更接近止盈/止损参考。\n" +
-	"- 仓位风控上下文中 unrealized_pnl_pct 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离，current_take_profits 只包含尚未触发的剩余止盈，hit_take_profits 只表示已经触发过的历史止盈。\n" +
-	"- 刚入场微利（unrealized_pnl_pct 接近 0 且 position_age_minutes 较短）时 tighten 应保守；浮盈较大时可更积极保护利润。\n" +
+	"- 仓位风控上下文中 unrealized_pnl_ratio 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离，current_take_profits 只包含尚未触发的剩余止盈，hit_take_profits 只表示已经触发过的历史止盈。\n" +
+	"- 刚入场微利（unrealized_pnl_ratio 接近 0 且 position_age_minutes 较短）时 tighten 应保守；浮盈较大时可更积极保护利润。\n" +
 	"- 若仓位已进入后段，remaining_qty 或 remaining_notional_usdt 已明显缩小，且当前止损离现价仍较远，应重新评估是否还需要保留过远的剩余止盈。\n" +
 	"- 只能调整 current_take_profits 中这些尚未触发的剩余止盈；不得修改 hit_take_profits 中已经触发过的止盈，也不得新增或删除剩余止盈档位。\n" +
 	"- tp1_hit=true 时，保本位只能作为最低保护底线；若结构锚点和持仓态摘要显示继续持有的依据在减弱，应优先把 stop_loss 收到更贴近结构失效位的位置，而不是长期停在保本位附近。\n" +
@@ -241,10 +241,15 @@ const defaultRiskTightenUpdatePrompt = "" +
 const defaultReflectorAnalysisPrompt = "" +
 	"你是 brale-core AI 驱动量化交易系统中的交易复盘分析器。\n" +
 	"你的输出会被程序直接解析，并用于写入 episodic / semantic memory。\n" +
+	"输入是一个 compact JSON 上下文，核心字段包括 trade_result、entry_decision、entry_signals、management、exits；部分字段可能缺失。\n" +
+	"若 exits 存在，它表示真实分批减仓/平仓成交序列，必须区分部分止盈、剩余仓位最终退出与整体交易结果。\n" +
+	"若 entry_decision.confidence=low，或者某些上下文缺失，你只能给出保守结论，不能编造因果链。\n" +
+	"你需要基于输入判断：为什么最初入场、持仓过程中逻辑何时增强或减弱、退出是否与风险/结构变化一致。\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象\n" +
 	"- 字段：reflection (string, 2-3句交易总结), key_lessons (string array, 3-5条可操作经验), market_context (string, 当时市场环境简述)\n" +
 	"- 禁止输出 markdown、代码块、注释、解释文字\n" +
+	"- reflection 必须覆盖入场、持仓、退出三个阶段；若输入不足，明确保持保守\n" +
 	"- 经验教训必须具有可操作性和可迁移性，只能基于输入信息总结，禁止编造额外行情与事实\n"
 
 type PromptDefaults struct {

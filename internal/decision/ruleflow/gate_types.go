@@ -33,31 +33,41 @@ const (
 )
 
 type gateInputs struct {
-	State                    string
-	StructureDirection       string
-	IndicatorTag             string
-	StructureTag             string
-	MechanicsTag             string
-	MomentumExpansion        bool
-	Alignment                bool
-	MeanRevNoise             bool
-	StructureClear           bool
-	StructureIntegrity       bool
-	LiquidationStress        bool
-	LiqConfidence            string
-	CrowdingAlign            bool
-	AgentIndicatorConfidence float64
-	AgentStructureConfidence float64
-	AgentMechanicsConfidence float64
-	ConsensusScore           float64
-	ConsensusConfidence      float64
-	ConsensusAgreement       float64
-	ConsensusResonance       float64
-	ConsensusResonant        bool
-	ScoreThreshold           float64
-	ConfidenceThreshold      float64
-	QualityThreshold         float64
-	EdgeThreshold            float64
+	State                         string
+	StructureDirection            string
+	IndicatorTag                  string
+	StructureTag                  string
+	MechanicsTag                  string
+	HardStopStructureInvalidation *bool
+	HardStopLiquidationCascade    *bool
+	MomentumExpansion             bool
+	Alignment                     bool
+	MeanRevNoise                  bool
+	StructureClear                bool
+	StructureIntegrity            bool
+	LiquidationStress             bool
+	LiqConfidence                 string
+	CrowdingAlign                 bool
+	AgentIndicatorConfidence      float64
+	AgentStructureConfidence      float64
+	AgentMechanicsConfidence      float64
+	ConsensusScore                float64
+	ConsensusConfidence           float64
+	ConsensusAgreement            float64
+	ConsensusResonance            float64
+	ConsensusResonant             bool
+	ScoreThreshold                float64
+	ConfidenceThreshold           float64
+	QualityThreshold              float64
+	EdgeThreshold                 float64
+}
+
+func (g gateInputs) structureInvalidationEnabled() bool {
+	return g.HardStopStructureInvalidation == nil || *g.HardStopStructureInvalidation
+}
+
+func (g gateInputs) liquidationCascadeEnabled() bool {
+	return g.HardStopLiquidationCascade == nil || *g.HardStopLiquidationCascade
 }
 
 type gateDecision struct {

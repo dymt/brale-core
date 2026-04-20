@@ -1,6 +1,8 @@
 package config
 
-// HardGuardConfig 定义硬保护默认阈值（当前为内置常量，不走外部配置文件）。
+// HardGuardConfig 定义 Hard Guard 数值阈值默认值。
+// 是否启用整组/单项规则由 strategy 配置中的 risk_management.hard_guard 控制；
+// 这里仍只负责数值阈值本身，当前不走外部配置文件。
 type HardGuardConfig struct {
 	// LongRSIExtreme: 多头持仓时，RSI 高于该值触发极端超买保护。
 	LongRSIExtreme float64

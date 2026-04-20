@@ -71,6 +71,9 @@ func TestPlanBuilderNativeModeKeepsGoInitialExit(t *testing.T) {
 	if result.Plan.PlanSource != execution.PlanSourceGo {
 		t.Fatalf("native mode plan_source=%q, want %q", result.Plan.PlanSource, execution.PlanSourceGo)
 	}
+	if result.Plan.RMultiple <= 0 {
+		t.Fatalf("native mode r_multiple=%v, want > 0", result.Plan.RMultiple)
+	}
 }
 
 func TestParseResultIncludesPlanSource(t *testing.T) {

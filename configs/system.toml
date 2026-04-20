@@ -20,6 +20,19 @@ enable_scheduled_decision = true
 # LLM 调用最小间隔（防止高频调用超限）
 llm_min_interval = "5s"
 
+# LLM 轮次预算与记录器配置（可选）
+# [llm]
+# # 每轮决策的总 Token 预算（所有 Agent / Provider 调用合计），0 = 不限制
+# # 超预算时仅打印 Warning 日志，不会中断已经配置好的后续 LLM 阶段
+# token_budget_per_round = 0
+# # 预算预警阈值（百分比）。达到 budget * warn_pct / 100 时单轮告警一次；0 = 不设置
+# # 该预警同样只打印 Warning 日志，不改变 round outcome
+# token_budget_warn_pct = 0
+# # 持久化 LLM round 记录时的超时秒数；显式 0 仍回退到内置默认 5s
+# round_recorder_timeout_sec = 5
+# # LLM round 持久化失败后的重试次数；留空使用默认 1，设为 0 表示不重试
+# round_recorder_retries = 1
+
 # 数据库配置 — PostgreSQL / TimescaleDB
 [database]
 # 连接字符串（Docker 环境由 DATABASE_DSN 环境变量覆盖）
@@ -44,6 +57,17 @@ service_name = "brale-core"
 [scheduler]
 # 调度引擎：builtin（进程内 Ticker）/ river（PostgreSQL 异步作业）
 backend = "river"
+
+# 对账恢复配置（可选）
+# [reconcile]
+# # 平仓提交后仍未收敛为 closed 时，允许恢复的等待时长
+# # 格式：Go duration，例如 "10m"、"5m"、"30s"
+# close_recover_after = "10m"
+
+# 账户级风险熔断（可选）
+# [risk_guard]
+# # 最大账户回撤百分比（0 = 禁用）。超过阈值后系统拒绝新开仓
+# max_drawdown_pct = 0
 
 # LLM 模型配置 — 每个 Agent 车道独立配置端点、密钥和并发
 [llm_models.'${LLM_MODEL_INDICATOR}']

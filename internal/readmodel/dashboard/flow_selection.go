@@ -29,14 +29,8 @@ func SelectFlowSelection(selectedSnapshotID uint, hasSelectedSnapshot bool, pos 
 
 func ResolveFlowAnchor(pos store.PositionRecord, isOpen bool, gates []store.GateEventRecord) FlowAnchor {
 	if isOpen {
-		if snapID, ok := resolveOpeningSnapshotID(pos, gates); ok {
-			confidence := "medium"
-			reason := "matched_by_position_timeline"
-			if fromOpenIntentID(snapID, pos.OpenIntentID) {
-				confidence = "high"
-				reason = "matched_by_open_intent_id"
-			}
-			return FlowAnchor{Type: "opening_round", SnapshotID: snapID, Confidence: confidence, Reason: reason}
+		if anchor, ok := ResolveOpeningFlowAnchor(pos, gates); ok {
+			return anchor
 		}
 		if latest, ok := latestGateSnapshotID(gates); ok {
 			return FlowAnchor{Type: "latest_round", SnapshotID: latest, Confidence: "low", Reason: "opening_round_unresolved_fallback_latest"}
@@ -47,6 +41,19 @@ func ResolveFlowAnchor(pos store.PositionRecord, isOpen bool, gates []store.Gate
 		return FlowAnchor{Type: "latest_round", SnapshotID: latest, Confidence: "medium", Reason: "flat_use_latest_round"}
 	}
 	return FlowAnchor{Type: "latest_round", SnapshotID: 0, Confidence: "low", Reason: "no_history_available"}
+}
+
+func ResolveOpeningFlowAnchor(pos store.PositionRecord, gates []store.GateEventRecord) (FlowAnchor, bool) {
+	if snapID, ok := resolveOpeningSnapshotID(pos, gates); ok {
+		confidence := "medium"
+		reason := "matched_by_position_timeline"
+		if fromOpenIntentID(snapID, pos.OpenIntentID) {
+			confidence = "high"
+			reason = "matched_by_open_intent_id"
+		}
+		return FlowAnchor{Type: "opening_round", SnapshotID: snapID, Confidence: confidence, Reason: reason}, true
+	}
+	return FlowAnchor{}, false
 }
 
 func selectGateForAnchor(anchor FlowAnchor, gates []store.GateEventRecord) *store.GateEventRecord {

@@ -40,6 +40,49 @@ func TestGateVetoLiquidationCascade(t *testing.T) {
 	}
 }
 
+func TestGateCanDisableStructureInvalidationHardStop(t *testing.T) {
+	disabled := false
+	decision := evaluateGateDecision(gateInputs{
+		StructureDirection:            "long",
+		StructureTag:                  "structure_broken",
+		StructureIntegrity:            false,
+		HardStopStructureInvalidation: &disabled,
+		ConsensusScore:                0.6,
+		QualityThreshold:              0.35,
+		EdgeThreshold:                 0.10,
+	}, false)
+	if decision.Action == "VETO" {
+		t.Fatalf("action=%s want non-VETO", decision.Action)
+	}
+	if decision.Reason != "QUALITY_TOO_LOW" {
+		t.Fatalf("reason=%s want QUALITY_TOO_LOW", decision.Reason)
+	}
+}
+
+func TestGateCanDisableLiquidationCascadeHardStop(t *testing.T) {
+	disabled := false
+	decision := evaluateGateDecision(gateInputs{
+		StructureDirection:         "long",
+		StructureClear:             true,
+		StructureIntegrity:         true,
+		Alignment:                  true,
+		MomentumExpansion:          true,
+		IndicatorTag:               "trend_surge",
+		StructureTag:               "breakout_confirmed",
+		MechanicsTag:               "liquidation_cascade",
+		HardStopLiquidationCascade: &disabled,
+		ConsensusScore:             0.7,
+		QualityThreshold:           0.35,
+		EdgeThreshold:              0.10,
+	}, false)
+	if decision.Action == "VETO" {
+		t.Fatalf("action=%s want non-VETO", decision.Action)
+	}
+	if decision.Reason != "EDGE_TOO_LOW" {
+		t.Fatalf("reason=%s want EDGE_TOO_LOW", decision.Reason)
+	}
+}
+
 func TestGateWaitQualityTooLow(t *testing.T) {
 	decision := evaluateGateDecision(gateInputs{
 		StructureDirection: "long",

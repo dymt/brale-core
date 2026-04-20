@@ -180,7 +180,7 @@ func tp1Hit(plan risk.RiskPlan) bool {
 }
 
 func applyPostTP1StopFloor(plan risk.RiskPlan, side string, entry float64, feePct float64, markPrice float64) (risk.RiskPlan, bool) {
-	stop := computeBreakevenStop(side, entry, feePct)
+	stop := risk.BreakevenStop(side, entry, feePct)
 	if stop <= 0 || !isStopImproved(side, plan.StopPrice, stop, markPrice) {
 		return plan, false
 	}
@@ -329,17 +329,6 @@ func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markP
 		}
 	}
 	return plan, tpTightened, nil
-}
-
-func computeBreakevenStop(side string, entry float64, feePct float64) float64 {
-	if entry <= 0 {
-		return 0
-	}
-	fee := entry * feePct
-	if strings.EqualFold(side, "short") {
-		return entry - fee
-	}
-	return entry + fee
 }
 
 func isStopImproved(side string, prevStop float64, nextStop float64, currentPrice float64) bool {

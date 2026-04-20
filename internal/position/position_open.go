@@ -70,16 +70,24 @@ func (s *PositionService) OpenFromPlan(ctx context.Context, plan execution.Execu
 		return store.PositionRecord{}, err
 	}
 	rec.RiskJSON = raw
-	if err := s.Store.SavePosition(ctx, &rec); err != nil {
-		if isUniqueConstraint(err) {
+	if err := withinStoreTx(ctx, s.Store, func(runCtx context.Context) error {
+		if err := s.Store.SavePosition(runCtx, &rec); err != nil {
+			if isUniqueConstraint(err) {
+				return ErrPositionActive
+			}
+			return err
+		}
+		if s.RiskPlans != nil {
+			if _, err := s.RiskPlans.SaveHistory(runCtx, rec.PositionID, riskPlan, "entry_fill"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		if err == ErrPositionActive {
 			return store.PositionRecord{}, ErrPositionActive
 		}
 		return store.PositionRecord{}, err
-	}
-	if s.RiskPlans != nil {
-		if _, err := s.RiskPlans.SaveHistory(ctx, rec.PositionID, riskPlan, "entry_fill"); err != nil {
-			return store.PositionRecord{}, err
-		}
 	}
 	logging.FromContext(ctx).Named("execution").Info("open filled",
 		zap.String("position_id", rec.PositionID),

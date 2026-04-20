@@ -191,7 +191,7 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 		Entry:              100,
 		MarkPrice:          105,
 		ATR:                2,
-		UnrealizedPnlPct:   0.05,
+		UnrealizedPnlRatio: 0.05,
 		PositionAgeMin:     45,
 		TP1Hit:             true,
 		DistanceToLiqPct:   0.18,
@@ -243,8 +243,8 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 	if got.RemainingNotional != 183.75 {
 		t.Fatalf("remaining_notional=%v", got.RemainingNotional)
 	}
-	if got.UnrealizedPnlPct != 0.05 {
-		t.Fatalf("unrealized_pnl_pct=%v", got.UnrealizedPnlPct)
+	if got.UnrealizedPnlRatio != 0.05 {
+		t.Fatalf("unrealized_pnl_ratio=%v", got.UnrealizedPnlRatio)
 	}
 	if got.PositionAgeMin != 45 {
 		t.Fatalf("position_age_min=%d", got.PositionAgeMin)
@@ -335,7 +335,7 @@ func tightenInputForRiskTests() decision.TightenRiskUpdateInput {
 		Entry:              100,
 		MarkPrice:          105,
 		ATR:                2,
-		UnrealizedPnlPct:   0.05,
+		UnrealizedPnlRatio: 0.05,
 		PositionAgeMin:     45,
 		TP1Hit:             true,
 		DistanceToLiqPct:   0.18,

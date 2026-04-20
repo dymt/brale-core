@@ -78,13 +78,13 @@ close_recover_after = "10m"   # 平仓状态回收超时，默认 10 分钟
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------+------+--------+------|
-| =enabled= | bool | false | 记忆系统总开关 |
+| =enabled= | bool | true | 记忆系统总开关 |
 | =working_memory_size= | int | 5 | 工作记忆保留的最近决策条数 |
-| =episodic_enabled= | bool | false | 情景记忆（交易复盘）开关 |
-| =episodic_ttl_days= | int | 30 | 情景记忆过期天数 |
-| =episodic_max_per_symbol= | int | 50 | 每个币种最多保留的情景记忆条数 |
-| =semantic_enabled= | bool | false | 语义记忆（长期规则）开关 |
-| =semantic_max_rules= | int | 20 | 每个币种最多保留的语义规则条数 |
+| =episodic_enabled= | bool | true | 情景记忆（交易复盘）开关 |
+| =episodic_ttl_days= | int | 90 | 情景记忆过期天数 |
+| =episodic_max_per_symbol= | int | 3 | 每个币种最多保留的情景记忆条数 |
+| =semantic_enabled= | bool | true | 语义记忆（长期规则）开关 |
+| =semantic_max_rules= | int | 10 | 每个币种最多保留的语义规则条数 |
 
 记忆系统在决策周期中提供上下文注入：
 - *工作记忆*：将最近 N 条决策摘要注入 Agent prompt，提供短期趋势延续
@@ -106,21 +106,40 @@ close_recover_after = "10m"   # 平仓状态回收超时，默认 10 分钟
 - 持仓收紧（tighten）参数
 - sieve 二次风控规则
 
-** Sieve / Grade / Gate Quality 配置
+** Sieve / Grade / Gate 配置
 
 策略配置中的 Gate 与 Sieve 系统控制决策信号的过滤与质量评估。
 
 *** Sieve 规则
 
-Sieve 是二次风控筛选层，在 Gate 通过后对信号做额外校验。配置位于 =configs/strategies/*.toml= 的 =[sieve]= 段：
+Sieve 是 Gate 放行后的二次风控与仓位缩放层。配置位于 =configs/strategies/*.toml= 的 =[risk_management.sieve]= 段；匹配规则写在 =[[risk_management.sieve.rows]]= 中：
 
 #+begin_src toml
-[sieve]
-min_consensus = 2            # 最低共识数：至少 N 个 Provider 同方向才放行
-require_indicator = true     # 是否强制要求 indicator Provider 同意
-require_structure = false    # 是否强制要求 structure Provider 同意
-max_counter_signals = 1      # 允许的最大反向信号数
+[risk_management.sieve]
+min_size_factor = 0.35
+default_gate_action = "ALLOW"
+default_size_factor = 1.0
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "fuel_ready"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 1.0
+reason_code = "FUEL_HIGH"
 #+end_src
+
+字段说明：
+
+- =min_size_factor=：允许开仓时的最小仓位比例下限，范围 [0,1]
+- =default_gate_action=：未命中任何规则行时的动作，允许值：=ALLOW= /=WAIT= /=VETO=
+- =default_size_factor=：未命中任何规则行时的默认仓位比例，范围 [0,1]
+- =mechanics_tag=：=fuel_ready= /=neutral= /=crowded_long= /=crowded_short= /=liquidation_cascade=
+- =liq_confidence=：=high= 或 =low=
+- =crowding_align=：可选布尔值；=true= 表示拥挤方向与当前交易方向同向，通常只对 =crowded_long= / =crowded_short= 有意义
+- =gate_action=：该行命中后的动作，允许值：=ALLOW= /=WAIT= /=VETO=
+- =size_factor=：该行命中后的仓位比例，范围 [0,1]
+- =reason_code=：写入决策 / 回放结果的原因标识，便于排查和统计
 
 *** Grade（Agent 置信度映射）
 
@@ -129,23 +148,24 @@ max_counter_signals = 1      # 允许的最大反向信号数
 - =movement_confidence= 越高，该 Agent 对应的 Provider 布尔信号在 Gate Quality 计算中权重越大
 - 低置信度的 Agent 输出会被自动降权，减少噪声对最终判断的影响
 
-*** Gate Quality
+*** Gate 阈值
 
-Gate Quality 是综合评分，决定一轮决策是否达到执行阈值。计算方式：
-
-1. 每个 Provider 输出一个布尔信号（agree / disagree）
-2. 每个信号乘以其对应 Agent 的 =movement_confidence= 作为权重
-3. 加权求和后与 =movement_score_threshold= 比较
-
-相关配置位于 =[gate]= 段：
+Gate 使用连续分数决定一轮决策是否达到执行阈值。当前策略配置暴露两个阈值，均位于 =[risk_management.gate]= 段：
 
 #+begin_src toml
-[gate]
-movement_score_threshold = 30   # Gate Quality 最低通过分数
-consensus_required = 2          # 最低 Provider 共识数
+[risk_management.gate]
+# setup_quality 阈值，范围 [0,1]
+# 参考值：0.20 激进 / 0.35 默认 / 0.55 保守 / 0.75 极保守
+quality_threshold = 0.35
+
+# entry_edge 阈值，范围 [0,1]
+# 参考值：0.05 激进 / 0.10 默认 / 0.20 保守 / 0.30 极保守
+edge_threshold = 0.10
 #+end_src
 
-Gate Quality = Σ(Provider_signal × Agent_movement_confidence × 100)。只有当 Gate Quality ≥ =movement_score_threshold= 且共识数 ≥ =consensus_required= 时，决策才会进入 Plan 阶段。
+- =quality_threshold=：最低建仓质量阈值（=setup_quality=）
+- =edge_threshold=：最低执行价值阈值（=entry_edge=）
+- 两个分数都由当前 Gate / ruleflow 引擎计算，并共同决定是否进入 Plan 阶段
 
 ** 添加新币种
 
@@ -256,13 +276,13 @@ The =[memory]= section in per-symbol config controls the three-layer memory syst
 
 | Parameter | Type | Default | Description |
 |-----------+------+---------+-------------|
-| =enabled= | bool | false | Master switch for the memory system |
+| =enabled= | bool | true | Master switch for the memory system |
 | =working_memory_size= | int | 5 | Number of recent decisions kept in working memory |
-| =episodic_enabled= | bool | false | Episodic memory (trade reflections) toggle |
-| =episodic_ttl_days= | int | 30 | Episodic memory expiration in days |
-| =episodic_max_per_symbol= | int | 50 | Max episodic memories per symbol |
-| =semantic_enabled= | bool | false | Semantic memory (long-term rules) toggle |
-| =semantic_max_rules= | int | 20 | Max semantic rules per symbol |
+| =episodic_enabled= | bool | true | Episodic memory (trade reflections) toggle |
+| =episodic_ttl_days= | int | 90 | Episodic memory expiration in days |
+| =episodic_max_per_symbol= | int | 3 | Max episodic memories per symbol |
+| =semantic_enabled= | bool | true | Semantic memory (long-term rules) toggle |
+| =semantic_max_rules= | int | 10 | Max semantic rules per symbol |
 
 Memory provides context injection during decision cycles:
 - *Working memory*: injects recent N decision summaries into Agent prompts for short-term trend context
@@ -284,21 +304,40 @@ Controls trading and risk-management parameters:
 - in-position tightening parameters
 - sieve secondary risk-control rules
 
-** Sieve / Grade / Gate Quality Configuration
+** Sieve / Grade / Gate Configuration
 
 The Gate and Sieve systems in strategy configs control decision signal filtering and quality assessment.
 
 *** Sieve Rules
 
-Sieve is a secondary risk-control filter that runs after Gate to apply additional validation. Configured in the =[sieve]= section of =configs/strategies/*.toml=:
+Sieve is the post-Gate secondary filter and position-sizing layer. It lives in the =[risk_management.sieve]= section of =configs/strategies/*.toml=, with match rows declared under =[[risk_management.sieve.rows]]=:
 
 #+begin_src toml
-[sieve]
-min_consensus = 2            # minimum consensus: at least N Providers must agree on direction
-require_indicator = true     # require indicator Provider to agree
-require_structure = false    # require structure Provider to agree
-max_counter_signals = 1      # max allowed counter-directional signals
+[risk_management.sieve]
+min_size_factor = 0.35
+default_gate_action = "ALLOW"
+default_size_factor = 1.0
+
+[[risk_management.sieve.rows]]
+mechanics_tag = "fuel_ready"
+liq_confidence = "high"
+crowding_align = false
+gate_action = "ALLOW"
+size_factor = 1.0
+reason_code = "FUEL_HIGH"
 #+end_src
+
+Field notes:
+
+- =min_size_factor=: minimum allowed position-size floor when a trade is still allowed, range [0,1]
+- =default_gate_action=: fallback action when no row matches; allowed values: =ALLOW= /=WAIT= /=VETO=
+- =default_size_factor=: fallback position-size multiplier when no row matches, range [0,1]
+- =mechanics_tag=: =fuel_ready= /=neutral= /=crowded_long= /=crowded_short= /=liquidation_cascade=
+- =liq_confidence=: =high= or =low=
+- =crowding_align=: optional boolean; =true= means crowding is aligned with the current trade direction and is usually only meaningful with =crowded_long= / =crowded_short=
+- =gate_action=: action to apply when the row matches; allowed values: =ALLOW= /=WAIT= /=VETO=
+- =size_factor=: position-size multiplier for the matched row, range [0,1]
+- =reason_code=: diagnostic code written into decision / replay output for debugging and reporting
 
 *** Grade (Agent Confidence Mapping)
 
@@ -307,23 +346,24 @@ Each Agent outputs a =movement_confidence= value (float between 0 and 1) represe
 - Higher =movement_confidence= gives more weight to the corresponding Provider's boolean signal in the Gate Quality calculation
 - Low-confidence Agent outputs are automatically down-weighted, reducing noise impact on the final verdict
 
-*** Gate Quality
+*** Gate Thresholds
 
-Gate Quality is the composite score that determines whether a decision round reaches execution threshold. The computation:
-
-1. Each Provider outputs a boolean signal (agree / disagree)
-2. Each signal is multiplied by its corresponding Agent's =movement_confidence= as a weight
-3. The weighted sum is compared against =movement_score_threshold=
-
-The relevant config lives in the =[gate]= section:
+Gate uses continuous scores to decide whether a round is executable. The exposed thresholds live under =[risk_management.gate]=:
 
 #+begin_src toml
-[gate]
-movement_score_threshold = 30   # minimum gate quality score to pass
-consensus_required = 2          # minimum number of Provider agreements
+[risk_management.gate]
+# setup_quality threshold, range [0,1]
+# reference points: 0.20 aggressive / 0.35 default / 0.55 conservative / 0.75 very conservative
+quality_threshold = 0.35
+
+# entry_edge threshold, range [0,1]
+# reference points: 0.05 aggressive / 0.10 default / 0.20 conservative / 0.30 very conservative
+edge_threshold = 0.10
 #+end_src
 
-Gate Quality = Σ(Provider_signal × Agent_movement_confidence × 100). A decision advances to the Plan stage only when Gate Quality ≥ =movement_score_threshold= and consensus count ≥ =consensus_required=.
+- =quality_threshold=: minimum setup-quality requirement (=setup_quality=)
+- =edge_threshold=: minimum execution-edge requirement (=entry_edge=)
+- Both scores are produced by the current Gate / ruleflow engine and together decide whether the round can proceed to Plan
 
 ** Adding New Symbols
 

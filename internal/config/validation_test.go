@@ -228,8 +228,8 @@ addr = ":9991"
 	if cfg.Webhook.WorkerCount != 4 {
 		t.Fatalf("worker_count=%d, want 4", cfg.Webhook.WorkerCount)
 	}
-	if cfg.Webhook.FallbackOrderPollSec != 180 {
-		t.Fatalf("fallback_order_poll_sec=%d, want 180", cfg.Webhook.FallbackOrderPollSec)
+	if cfg.Webhook.FallbackOrderPollSec != 120 {
+		t.Fatalf("fallback_order_poll_sec=%d, want 120", cfg.Webhook.FallbackOrderPollSec)
 	}
 	if cfg.Webhook.FallbackReconcileSec != 300 {
 		t.Fatalf("fallback_reconcile_sec=%d, want 300", cfg.Webhook.FallbackReconcileSec)

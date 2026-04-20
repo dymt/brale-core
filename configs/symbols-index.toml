@@ -3,13 +3,13 @@
 # - config: 币种配置文件路径
 # - strategy: 币种策略文件路径
 
-[[symbols]]
-symbol = "SOLUSDT"
-config = "symbols/SOLUSDT.toml"
-strategy = "strategies/SOLUSDT.toml"
-
-
 #[[symbols]]
-#symbol = "ETHUSDT"
-#config = "symbols/ETHUSDT.toml"
-#strategy = "strategies/ETHUSDT.toml"
+#symbol = "SOLUSDT"
+#config = "symbols/SOLUSDT.toml"
+#strategy = "strategies/SOLUSDT.toml"
+
+
+[[symbols]]
+symbol = "ETHUSDT"
+config = "symbols/ETHUSDT.toml"
+strategy = "strategies/ETHUSDT.toml"

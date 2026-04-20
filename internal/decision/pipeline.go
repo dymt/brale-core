@@ -49,6 +49,7 @@ type Pipeline struct {
 	EpisodicMemory          memory.EpisodicStore
 	SemanticMemory          memory.SemanticStore
 	LLMTokenBudget          int
+	LLMTokenBudgetWarnPct   int
 	RoundRecorderTimeout    time.Duration
 	RoundRecorderTimeoutSet bool
 	RoundRecorderRetries    int

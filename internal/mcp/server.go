@@ -586,8 +586,21 @@ func buildRiskManagementOutput(cfg config.RiskManagementConfig) map[string]any {
 		"risk_strategy":       map[string]any{"mode": cfg.RiskStrategy.Mode},
 		"initial_exit":        map[string]any{"policy": cfg.InitialExit.Policy, "structure_interval": cfg.InitialExit.StructureInterval, "params": cfg.InitialExit.Params},
 		"tighten_atr":         map[string]any{"structure_threatened": cfg.TightenATR.StructureThreatened, "tp1_atr": cfg.TightenATR.TP1ATR, "tp2_atr": cfg.TightenATR.TP2ATR, "min_tp_distance_pct": cfg.TightenATR.MinTPDistancePct, "min_tp_gap_pct": cfg.TightenATR.MinTPGapPct, "min_update_interval_sec": cfg.TightenATR.MinUpdateIntervalSec},
-		"gate":                map[string]any{"quality_threshold": cfg.Gate.QualityThreshold, "edge_threshold": cfg.Gate.EdgeThreshold},
-		"sieve":               buildSieveOutput(cfg.Sieve),
+		"gate": map[string]any{
+			"quality_threshold": cfg.Gate.QualityThreshold,
+			"edge_threshold":    cfg.Gate.EdgeThreshold,
+			"hard_stop": map[string]any{
+				"structure_invalidation": cfg.Gate.HardStop.StructureInvalidationEnabled(),
+				"liquidation_cascade":    cfg.Gate.HardStop.LiquidationCascadeEnabled(),
+			},
+		},
+		"hard_guard": map[string]any{
+			"enabled":         cfg.HardGuard.HardGuardEnabled(),
+			"stop_loss":       cfg.HardGuard.StopLossEnabled(),
+			"rsi_extreme":     cfg.HardGuard.RSIExtremeEnabled(),
+			"circuit_breaker": cfg.HardGuard.CircuitBreakerEnabled(),
+		},
+		"sieve": buildSieveOutput(cfg.Sieve),
 	}
 }
 

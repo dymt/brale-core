@@ -258,16 +258,22 @@ func (s *MarkPriceStream) handleEvent(event *futures.WsMarkPriceEvent) {
 	if symbol == "" {
 		return
 	}
-	s.mu.RLock()
-	prev, ok := s.quotes[symbol]
-	s.mu.RUnlock()
 	eventTime := time.Now()
 	if event.Time > 0 {
 		eventTime = time.UnixMilli(event.Time)
 	}
+	quote := market.PriceQuote{
+		Symbol:    symbol,
+		Price:     price,
+		Timestamp: event.Time,
+		Source:    "binance_mark_ws",
+	}
+	s.mu.Lock()
+	prev, ok := s.quotes[symbol]
 	if ok && prev.Price > 0 && quoteIsFresh(prev, eventTime) {
 		change := math.Abs(price-prev.Price) / prev.Price
 		if change > defaultMarkPriceSpikePct {
+			s.mu.Unlock()
 			logging.L().Named("market").Warn("mark price spike rejected",
 				zap.String("symbol", symbol),
 				zap.Float64("prev_price", prev.Price),
@@ -277,13 +283,6 @@ func (s *MarkPriceStream) handleEvent(event *futures.WsMarkPriceEvent) {
 			return
 		}
 	}
-	quote := market.PriceQuote{
-		Symbol:    symbol,
-		Price:     price,
-		Timestamp: event.Time,
-		Source:    "binance_mark_ws",
-	}
-	s.mu.Lock()
 	s.quotes[symbol] = quote
 	s.mu.Unlock()
 }

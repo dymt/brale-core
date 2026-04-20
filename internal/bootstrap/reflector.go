@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"brale-core/internal/config"
+	"brale-core/internal/execution"
 	"brale-core/internal/llm/promptreg"
 	"brale-core/internal/memory"
 	"brale-core/internal/reconcile"
@@ -20,7 +21,7 @@ type symbolPositionReflector struct {
 	bySymbol map[string]*memory.ReconcileReflectorAdapter
 }
 
-func (r *symbolPositionReflector) ReflectOnClose(ctx context.Context, pos store.PositionRecord, exitPrice float64) {
+func (r *symbolPositionReflector) ReflectOnClose(ctx context.Context, pos store.PositionRecord) {
 	if r == nil {
 		return
 	}
@@ -28,10 +29,10 @@ func (r *symbolPositionReflector) ReflectOnClose(ctx context.Context, pos store.
 	if adapter == nil {
 		return
 	}
-	adapter.ReflectOnClose(ctx, pos, exitPrice)
+	adapter.ReflectOnClose(ctx, pos)
 }
 
-func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig, st store.Store) (reconcile.PositionReflector, error) {
+func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig, st store.Store, tradeFinder execution.TradeFinder) (reconcile.PositionReflector, error) {
 	bySymbol := make(map[string]*memory.ReconcileReflectorAdapter)
 	loader := promptreg.NewLoader(st, config.PromptRegistryDefaults(), zap.NewNop())
 	systemPrompt, promptVersion, err := loader.Resolve(context.Background(), "reflector", "analysis")
@@ -50,6 +51,9 @@ func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, ind
 		if !symbolCfg.Memory.EpisodicEnabled {
 			continue
 		}
+		if tradeFinder == nil {
+			return nil, fmt.Errorf("symbol %s has episodic memory enabled but no trade finder configured for reflection", item.Symbol)
+		}
 		role, ok := pickReflectorRole(symbolCfg)
 		if !ok {
 			return nil, fmt.Errorf("symbol %s has episodic memory enabled but no LLM role configured for reflection", item.Symbol)
@@ -59,6 +63,7 @@ func buildPositionReflector(sys config.SystemConfig, symbolIndexPath string, ind
 			continue
 		}
 		bySymbol[symbolKey] = &memory.ReconcileReflectorAdapter{
+			TradeFinder: tradeFinder,
 			Reflector: &memory.Reflector{
 				LLM:           runtime.NewLLMClient(sys, role),
 				Episodic:      episodic,

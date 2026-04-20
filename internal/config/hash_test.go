@@ -141,3 +141,49 @@ func TestHashSystemConfigDistinguishesUnsetAndExplicitRoundRecorderZero(t *testi
 		t.Fatalf("hashes should differ when round recorder zero is explicitly configured")
 	}
 }
+
+func TestHashSystemConfigChangesWhenRiskGuardDrawdownChanges(t *testing.T) {
+	base := SystemConfig{
+		Database:        DatabaseConfig{DSN: "postgres://localhost/db"},
+		ExecutionSystem: "freqtrade",
+		ExecEndpoint:    "http://127.0.0.1:8080/api/v1",
+	}
+
+	tighter := base
+	tighter.RiskGuard.MaxDrawdownPct = 0.08
+	looser := base
+	looser.RiskGuard.MaxDrawdownPct = 0.12
+
+	hashTighter, err := HashSystemConfig(tighter)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(tighter): %v", err)
+	}
+	hashLooser, err := HashSystemConfig(looser)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(looser): %v", err)
+	}
+	if hashTighter == hashLooser {
+		t.Fatalf("hashes should differ when risk_guard.max_drawdown_pct changes")
+	}
+}
+
+func TestHashStrategyConfigChangesWhenHardStopToggleChanges(t *testing.T) {
+	base := DefaultStrategyConfig("BTCUSDT")
+
+	hashDefault, err := HashStrategyConfig(base)
+	if err != nil {
+		t.Fatalf("HashStrategyConfig(base): %v", err)
+	}
+
+	disabled := base
+	value := false
+	disabled.RiskManagement.Gate.HardStop.StructureInvalidation = &value
+
+	hashDisabled, err := HashStrategyConfig(disabled)
+	if err != nil {
+		t.Fatalf("HashStrategyConfig(disabled): %v", err)
+	}
+	if hashDefault == hashDisabled {
+		t.Fatalf("hashes should differ when hard stop toggle changes")
+	}
+}

@@ -78,7 +78,7 @@ make start
    #+end_src
 3. 检查策略配置中的风控参数：
    #+begin_src bash
-   grep -A 5 'risk_guard' configs/strategies/*.toml
+   grep -A 5 'risk_guard' configs/system.toml
    #+end_src
 
 *解决方案：*
@@ -225,7 +225,7 @@ If rollback also fails, manually correct the =dirty= flag in =schema_migrations=
    #+end_src
 3. Review risk-guard config:
    #+begin_src bash
-   grep -A 5 'risk_guard' configs/strategies/*.toml
+   grep -A 5 'risk_guard' configs/system.toml
    #+end_src
 
 *Resolution:*

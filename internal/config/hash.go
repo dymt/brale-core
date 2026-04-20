@@ -63,6 +63,7 @@ type systemHashInput struct {
 	EnableScheduledDecision    bool            `json:"enable_scheduled_decision,omitempty"`
 	TokenBudgetPerRound        int             `json:"token_budget_per_round,omitempty"`
 	TokenBudgetWarnPct         int             `json:"token_budget_warn_pct,omitempty"`
+	RiskGuardMaxDrawdownPct    float64         `json:"risk_guard_max_drawdown_pct,omitempty"`
 	RoundRecorderTimeoutSec    *int            `json:"round_recorder_timeout_sec,omitempty"`
 	RoundRecorderRetries       *int            `json:"round_recorder_retries,omitempty"`
 }
@@ -148,6 +149,7 @@ func buildSystemHashInput(cfg SystemConfig) systemHashInput {
 		EnableScheduledDecision:    cfg.EnableScheduledDecision != nil && *cfg.EnableScheduledDecision,
 		TokenBudgetPerRound:        cfg.LLM.TokenBudgetPerRound,
 		TokenBudgetWarnPct:         cfg.LLM.TokenBudgetWarnPct,
+		RiskGuardMaxDrawdownPct:    cfg.RiskGuard.MaxDrawdownPct,
 		RoundRecorderTimeoutSec:    cloneIntPtr(cfg.LLM.RoundRecorderTimeoutSec),
 		RoundRecorderRetries:       cloneIntPtr(cfg.LLM.RoundRecorderRetries),
 	}

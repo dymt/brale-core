@@ -75,6 +75,30 @@ func toBool(v any) bool {
 	return decisionutil.ToBool(v)
 }
 
+func toOptionalBool(v any) *bool {
+	if v == nil {
+		return nil
+	}
+	value := toBool(v)
+	return &value
+}
+
+func toMapOptionalBool(m map[string]any, key string) *bool {
+	raw, ok := m[key]
+	if !ok {
+		return nil
+	}
+	return toOptionalBool(raw)
+}
+
+func toMapBoolDefault(m map[string]any, key string, fallback bool) bool {
+	raw, ok := m[key]
+	if !ok {
+		return fallback
+	}
+	return toBool(raw)
+}
+
 func toInt(v any) int {
 	switch val := v.(type) {
 	case int:

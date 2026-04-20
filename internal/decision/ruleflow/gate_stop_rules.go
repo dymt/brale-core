@@ -44,6 +44,9 @@ var gateStructureStopRules = []gateDecisionRule{
 			StopStep: "structure",
 		},
 		Match: func(ctx gateDecisionContext) bool {
+			if !ctx.Inputs.structureInvalidationEnabled() {
+				return false
+			}
 			if ctx.Inputs.StructureTag == "structure_broken" && allowStructureBreakContinuation(ctx) {
 				return false
 			}

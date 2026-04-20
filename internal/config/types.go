@@ -229,12 +229,57 @@ type RiskManagementConfig struct {
 	InitialExit       InitialExitConfig         `mapstructure:"initial_exit"`
 	TightenATR        TightenATRConfig          `mapstructure:"tighten_atr"`
 	Gate              GateConfig                `mapstructure:"gate"`
+	HardGuard         HardGuardToggleConfig     `mapstructure:"hard_guard"`
 	Sieve             RiskManagementSieveConfig `mapstructure:"sieve"`
 }
 
 type GateConfig struct {
-	QualityThreshold float64 `mapstructure:"quality_threshold"`
-	EdgeThreshold    float64 `mapstructure:"edge_threshold"`
+	QualityThreshold float64            `mapstructure:"quality_threshold"`
+	EdgeThreshold    float64            `mapstructure:"edge_threshold"`
+	HardStop         GateHardStopConfig `mapstructure:"hard_stop"`
+}
+
+type GateHardStopConfig struct {
+	StructureInvalidation *bool `mapstructure:"structure_invalidation"`
+	LiquidationCascade    *bool `mapstructure:"liquidation_cascade"`
+}
+
+func (cfg GateHardStopConfig) StructureInvalidationEnabled() bool {
+	return boolOrDefault(cfg.StructureInvalidation, true)
+}
+
+func (cfg GateHardStopConfig) LiquidationCascadeEnabled() bool {
+	return boolOrDefault(cfg.LiquidationCascade, true)
+}
+
+type HardGuardToggleConfig struct {
+	Enabled        *bool `mapstructure:"enabled"`
+	StopLoss       *bool `mapstructure:"stop_loss"`
+	RSIExtreme     *bool `mapstructure:"rsi_extreme"`
+	CircuitBreaker *bool `mapstructure:"circuit_breaker"`
+}
+
+func (cfg HardGuardToggleConfig) HardGuardEnabled() bool {
+	return boolOrDefault(cfg.Enabled, true)
+}
+
+func (cfg HardGuardToggleConfig) StopLossEnabled() bool {
+	return boolOrDefault(cfg.StopLoss, true)
+}
+
+func (cfg HardGuardToggleConfig) RSIExtremeEnabled() bool {
+	return boolOrDefault(cfg.RSIExtreme, true)
+}
+
+func (cfg HardGuardToggleConfig) CircuitBreakerEnabled() bool {
+	return boolOrDefault(cfg.CircuitBreaker, true)
+}
+
+func boolOrDefault(v *bool, fallback bool) bool {
+	if v == nil {
+		return fallback
+	}
+	return *v
 }
 
 type RiskStrategyConfig struct {

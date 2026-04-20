@@ -58,6 +58,7 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	consensus := toMap(root["consensus"])
 	riskMgmt := toMap(root["risk_management"])
 	gateConfig := toMap(riskMgmt["gate"])
+	hardStopConfig := toMap(gateConfig["hard_stop"])
 	binding := toMap(root["binding"])
 	state := strings.ToUpper(strings.TrimSpace(toString(root["state"])))
 	structureDirection := strings.ToLower(toString(toMap(root["structure"])["direction"]))
@@ -75,31 +76,33 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	liqConfidence := strings.ToLower(toString(toMap(mechanics["liquidation_stress"])["confidence"]))
 	crowdingAlign := (structureDirection == "long" && mechanicsTag == "crowded_long") || (structureDirection == "short" && mechanicsTag == "crowded_short")
 	inputs := gateInputs{
-		State:                    state,
-		StructureDirection:       structureDirection,
-		IndicatorTag:             indicatorTag,
-		StructureTag:             structureTag,
-		MechanicsTag:             mechanicsTag,
-		MomentumExpansion:        momentumExpansion,
-		Alignment:                alignment,
-		MeanRevNoise:             meanRevNoise,
-		StructureClear:           structureClear,
-		StructureIntegrity:       structureIntegrity,
-		LiquidationStress:        liquidationStress,
-		LiqConfidence:            liqConfidence,
-		CrowdingAlign:            crowdingAlign,
-		AgentIndicatorConfidence: toFloat(consensus["agent_indicator_confidence"]),
-		AgentStructureConfidence: toFloat(consensus["agent_structure_confidence"]),
-		AgentMechanicsConfidence: toFloat(consensus["agent_mechanics_confidence"]),
-		ConsensusScore:           toFloat(consensus["score"]),
-		ConsensusConfidence:      toFloat(consensus["confidence"]),
-		ConsensusAgreement:       toFloat(consensus["agreement"]),
-		ConsensusResonance:       toFloat(consensus["resonance_bonus"]),
-		ConsensusResonant:        toBool(consensus["resonance_active"]),
-		ScoreThreshold:           toFloat(consensus["score_threshold"]),
-		ConfidenceThreshold:      toFloat(consensus["confidence_threshold"]),
-		QualityThreshold:         toFloat(gateConfig["quality_threshold"]),
-		EdgeThreshold:            toFloat(gateConfig["edge_threshold"]),
+		State:                         state,
+		StructureDirection:            structureDirection,
+		IndicatorTag:                  indicatorTag,
+		StructureTag:                  structureTag,
+		MechanicsTag:                  mechanicsTag,
+		HardStopStructureInvalidation: toMapOptionalBool(hardStopConfig, "structure_invalidation"),
+		HardStopLiquidationCascade:    toMapOptionalBool(hardStopConfig, "liquidation_cascade"),
+		MomentumExpansion:             momentumExpansion,
+		Alignment:                     alignment,
+		MeanRevNoise:                  meanRevNoise,
+		StructureClear:                structureClear,
+		StructureIntegrity:            structureIntegrity,
+		LiquidationStress:             liquidationStress,
+		LiqConfidence:                 liqConfidence,
+		CrowdingAlign:                 crowdingAlign,
+		AgentIndicatorConfidence:      toFloat(consensus["agent_indicator_confidence"]),
+		AgentStructureConfidence:      toFloat(consensus["agent_structure_confidence"]),
+		AgentMechanicsConfidence:      toFloat(consensus["agent_mechanics_confidence"]),
+		ConsensusScore:                toFloat(consensus["score"]),
+		ConsensusConfidence:           toFloat(consensus["confidence"]),
+		ConsensusAgreement:            toFloat(consensus["agreement"]),
+		ConsensusResonance:            toFloat(consensus["resonance_bonus"]),
+		ConsensusResonant:             toBool(consensus["resonance_active"]),
+		ScoreThreshold:                toFloat(consensus["score_threshold"]),
+		ConfidenceThreshold:           toFloat(consensus["confidence_threshold"]),
+		QualityThreshold:              toFloat(gateConfig["quality_threshold"]),
+		EdgeThreshold:                 toFloat(gateConfig["edge_threshold"]),
 	}
 	missingProviders := resolveMissingProviders(providersEnabled, indicator, structure, mechanics)
 	decision := evaluateGateDecision(inputs, missingProviders)
@@ -154,6 +157,8 @@ func (n *GateEntryNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	derived["script_bonus"] = decision.ScriptBonus
 	derived["quality_threshold"] = inputs.QualityThreshold
 	derived["edge_threshold"] = inputs.EdgeThreshold
+	derived["hard_stop_structure_invalidation_enabled"] = inputs.structureInvalidationEnabled()
+	derived["hard_stop_liquidation_cascade_enabled"] = inputs.liquidationCascadeEnabled()
 	derived["gate_action_before_sieve"] = gateActionBeforeSieve
 	derived["sieve_action"] = sieveDecision.Action
 	derived["sieve_size_factor"] = sieveDecision.SizeFactor

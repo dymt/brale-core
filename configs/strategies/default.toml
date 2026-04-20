@@ -85,16 +85,69 @@ min_update_interval_sec = 300
 # ======================================================================
 # D. Gate 决策阈值
 # ======================================================================
-# Gate 决定"做不做"，通过 setup_quality 和 entry_edge 两个阈值判断。
-# 详见 ETHUSDT.toml 中的完整参数说明。
+# Gate 决定"做不做"。基础逻辑分 3 层：
+# 1. 基础保护：方向不明确 / 数据缺失，始终直接 VETO，不提供配置开关
+# 2. 业务型硬停：结构硬失效 / 连锁清算，可通过 hard_stop 开关控制
+# 3. 连续评分：其余情况由 setup_quality 和 entry_edge 两个连续分数决定
 [risk_management.gate]
-# 建仓质量阈值（0.20 激进 / 0.35 默认 / 0.55 保守）
+
+# 建仓质量阈值
+# setup_quality 公式（范围 [0, 1]）：
+#   +0.30 结构清晰 +0.25 结构完整 +0.20 指标对齐
+#   +0.15 动能扩张 +0.10×脚本加分 -0.20 噪音 -0.25 tag矛盾
+# 调参：0.20 激进 / 0.35 默认 / 0.55 保守 / 0.75 极保守
 quality_threshold = 0.35
-# 执行价值阈值（0.05 激进 / 0.10 默认 / 0.20 保守）
+
+# 执行价值阈值
+# entry_edge = |方向分数| × setup_quality × (1 - risk_penalty)
+# 调参：0.05 激进 / 0.10 默认 / 0.20 保守 / 0.30 极保守
 edge_threshold = 0.10
 
+# Gate 业务型硬停开关
+[risk_management.gate.hard_stop]
+
+# 结构硬失效开关
+# true  = Provider 判断结构已破坏时，直接 VETO
+# false = 不再直接 VETO，继续进入连续评分
+# 注意：关闭后不代表一定放行；structure.integrity=false 仍会显著拉低 quality
+structure_invalidation = true
+
+# 连锁清算硬停开关
+# true  = mechanics.signal_tag = liquidation_cascade 时直接 VETO
+# false = 不再直接 VETO，继续进入连续评分
+# 注意：关闭后 risk_penalty 仍然会很高，很多场景仍会因为 entry_edge 不足而 WAIT
+liquidation_cascade = true
+
 # ======================================================================
-# E. Sieve 仓位缩放
+# E. 持仓 Hard Guard
+# ======================================================================
+# 这组规则只在 IN_POSITION 阶段生效，用于保护已持仓位。
+# 与 Gate 不同，这里命中后是直接 EXIT，不是 WAIT。
+[risk_management.hard_guard]
+
+# 总开关
+# false 时整组 Hard Guard 都失效，下面的单项开关也会被忽略。
+# 建议只在强人工接管或特殊实验阶段关闭。
+enabled = true
+
+# 止损价硬退出
+# true  = 触及/穿越 stop_loss 时直接 EXIT
+# false = 不再由 Hard Guard 因 stop_loss 直接退出
+# 风险最高，不建议常规关闭。
+stop_loss = true
+
+# RSI 极值退出
+# true  = 多头 RSI 过高或空头 RSI 过低时直接 EXIT
+# false = 关闭这一条极值保护
+rsi_extreme = true
+
+# 5 分钟不利方向断路器
+# true  = 短时出现异常不利波动时直接 EXIT
+# false = 关闭这一条短时波动保护
+circuit_breaker = true
+
+# ======================================================================
+# F. Sieve 仓位缩放
 # ======================================================================
 # 默认策略（DEFAULT）为观察模式，所有行 size_factor = 0.0
 # 表示不实际开仓。如需启用交易，请参考 ETHUSDT.toml 配置有意义的 size_factor。

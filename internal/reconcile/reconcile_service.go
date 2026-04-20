@@ -18,7 +18,7 @@ import (
 )
 
 type PositionReflector interface {
-	ReflectOnClose(ctx context.Context, pos store.PositionRecord, exitPrice float64)
+	ReflectOnClose(ctx context.Context, pos store.PositionRecord)
 }
 
 type ReconcileService struct {

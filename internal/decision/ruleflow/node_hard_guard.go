@@ -32,6 +32,8 @@ func (n *HardGuardNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 	position := toMap(root["position"])
 	indicator := toMap(root["indicator"])
+	riskMgmt := toMap(root["risk_management"])
+	hardGuardCfg := toMap(riskMgmt["hard_guard"])
 	structureDirection := strings.ToLower(toString(toMap(root["structure"])["direction"]))
 	side := strings.ToLower(strings.TrimSpace(toString(position["side"])))
 	if side == "" {
@@ -54,15 +56,21 @@ func (n *HardGuardNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	action := monitorActionKeep
 	reason := "HARD_GUARD_OK"
 	priority := 1
-	if hitStopLoss(side, mark, markOK, stopLoss, stopLossOK) {
+	enabled := toMapBoolDefault(hardGuardCfg, "enabled", true)
+	stopLossEnabled := toMapBoolDefault(hardGuardCfg, "stop_loss", true)
+	rsiExtremeEnabled := toMapBoolDefault(hardGuardCfg, "rsi_extreme", true)
+	circuitBreakerEnabled := toMapBoolDefault(hardGuardCfg, "circuit_breaker", true)
+	if !enabled {
+		reason = "HARD_GUARD_DISABLED"
+	} else if stopLossEnabled && hitStopLoss(side, mark, markOK, stopLoss, stopLossOK) {
 		action = monitorActionExit
 		reason = "STOP_LOSS"
 		priority = 10
-	} else if hitRSIExtreme(side, rsi, rsiOK, cfg) {
+	} else if rsiExtremeEnabled && hitRSIExtreme(side, rsi, rsiOK, cfg) {
 		action = monitorActionExit
 		reason = "RSI_EXTREME"
 		priority = 9
-	} else if hitCircuitBreaker(side, percent5m, percent5mOK, cfg) {
+	} else if circuitBreakerEnabled && hitCircuitBreaker(side, percent5m, percent5mOK, cfg) {
 		action = monitorActionExit
 		reason = "CIRCUIT_BREAKER"
 		priority = 8
@@ -82,18 +90,22 @@ func (n *HardGuardNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 			"default":  false,
 		},
 		"derived": map[string]any{
-			"side":              side,
-			"mark_price":        mark,
-			"mark_price_ok":     markOK,
-			"stop_loss":         stopLoss,
-			"stop_loss_ok":      stopLossOK,
-			"rsi":               rsi,
-			"rsi_ok":            rsiOK,
-			"pct_change_5m":     percent5m,
-			"pct_change_5m_ok":  percent5mOK,
-			"long_rsi_extreme":  cfg.LongRSIExtreme,
-			"short_rsi_extreme": cfg.ShortRSIExtreme,
-			"adverse_5m_pct":    cfg.FiveMinAdverseMovePct,
+			"enabled":                 enabled,
+			"stop_loss_enabled":       stopLossEnabled,
+			"rsi_extreme_enabled":     rsiExtremeEnabled,
+			"circuit_breaker_enabled": circuitBreakerEnabled,
+			"side":                    side,
+			"mark_price":              mark,
+			"mark_price_ok":           markOK,
+			"stop_loss":               stopLoss,
+			"stop_loss_ok":            stopLossOK,
+			"rsi":                     rsi,
+			"rsi_ok":                  rsiOK,
+			"pct_change_5m":           percent5m,
+			"pct_change_5m_ok":        percent5mOK,
+			"long_rsi_extreme":        cfg.LongRSIExtreme,
+			"short_rsi_extreme":       cfg.ShortRSIExtreme,
+			"adverse_5m_pct":          cfg.FiveMinAdverseMovePct,
 		},
 	}
 	root["gate"] = gate

@@ -105,6 +105,7 @@ func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeB
 		EpisodicMemory:          episodicMemory,
 		SemanticMemory:          semanticMemory,
 		LLMTokenBudget:          sys.LLM.TokenBudgetPerRound,
+		LLMTokenBudgetWarnPct:   sys.LLM.TokenBudgetWarnPct,
 		RoundRecorderTimeout:    roundRecorderTimeout,
 		RoundRecorderTimeoutSet: roundRecorderTimeoutSet,
 		RoundRecorderRetries:    roundRecorderRetries,

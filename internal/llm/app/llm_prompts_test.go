@@ -79,7 +79,7 @@ func TestTightenRiskUpdatePromptIncludesAgentSummaryBlocks(t *testing.T) {
 		HitTakeProfits:     []float64{108},
 		RemainingQty:       1.75,
 		RemainingNotional:  183.75,
-		UnrealizedPnlPct:   0.05,
+		UnrealizedPnlRatio: 0.05,
 		PositionAgeMin:     45,
 		TP1Hit:             true,
 		DistanceToLiqPct:   0.18,
@@ -127,7 +127,7 @@ func TestTightenRiskUpdatePromptIncludesAgentSummaryBlocks(t *testing.T) {
 	if !strings.Contains(user, "结构锚点摘要(必填):") {
 		t.Fatalf("user prompt missing structure anchor block: %s", user)
 	}
-	if !strings.Contains(user, "- unrealized_pnl_pct: 0.05") {
+	if !strings.Contains(user, "- unrealized_pnl_ratio: 0.05") {
 		t.Fatalf("user prompt missing unrealized pnl metric: %s", user)
 	}
 	if !strings.Contains(user, "- position_age_minutes: 45") {

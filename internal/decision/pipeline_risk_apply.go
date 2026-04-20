@@ -119,7 +119,7 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 			Entry:               pos.AvgEntry,
 			MarkPrice:           updateCtx.MarkPrice,
 			ATR:                 updateCtx.ATR,
-			UnrealizedPnlPct:    computeUnrealizedPnlPct(pos.Side, pos.AvgEntry, updateCtx.MarkPrice),
+			UnrealizedPnlRatio:  computeUnrealizedPnlRatio(pos.Side, pos.AvgEntry, updateCtx.MarkPrice),
 			PositionAgeMin:      computePositionAgeMin(pos.CreatedAt),
 			TP1Hit:              tp1Hit(plan),
 			DistanceToLiqPct:    computeDistanceToLiqPct(updateCtx.Gate, updateCtx.MarkPrice),
@@ -155,7 +155,7 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 	return tightenPlan, tpTightened, nil, nil
 }
 
-func computeUnrealizedPnlPct(side string, entry, markPrice float64) float64 {
+func computeUnrealizedPnlRatio(side string, entry, markPrice float64) float64 {
 	if entry <= 0 || markPrice <= 0 {
 		return 0
 	}

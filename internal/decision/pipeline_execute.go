@@ -178,7 +178,6 @@ func (p *Pipeline) runOnceWithOptions(ctx context.Context, symbols []string, int
 		zap.Int("results", len(out)),
 		zap.Duration("latency", time.Since(start)),
 	)
-	applyRoundSummary(recorder, snapID, results)
 
 	// Record pipeline metrics
 	latencyMs := time.Since(start).Milliseconds()

@@ -624,3 +624,33 @@ func TestCloseAggregation_PrefersTradeExecutionMetrics(t *testing.T) {
 		t.Fatalf("expected close summary stop metadata, got %q", msg.Markdown)
 	}
 }
+
+func TestPositionCloseSummaryExternalMissingLabelsGrossPnL(t *testing.T) {
+	sender := &countSender{}
+	mgr := Manager{
+		senders: []Sender{sender},
+		dedupe:  newDedupeGuard(2 * time.Minute),
+	}
+
+	if err := mgr.SendPositionCloseSummary(context.Background(), PositionCloseSummaryNotice{
+		Symbol:     "ETHUSDT",
+		Direction:  "long",
+		Qty:        0.5,
+		EntryPrice: 3200,
+		ExitPrice:  3310,
+		Reason:     "external_missing",
+		PnLAmount:  55,
+		PnLPct:     0.017,
+		PositionID: "pos-1",
+	}); err != nil {
+		t.Fatalf("send close summary: %v", err)
+	}
+
+	msg := sender.lastMessage()
+	if !strings.Contains(msg.Markdown, noticeLine("gross_pnl", formatFloat(55))) {
+		t.Fatalf("expected gross pnl label, got %q", msg.Markdown)
+	}
+	if !strings.Contains(msg.Markdown, noticeLine("gross_pnl_pct", formatPercent(0.017))) {
+		t.Fatalf("expected gross pnl pct label, got %q", msg.Markdown)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"brale-core/internal/config"
+	"brale-core/internal/execution"
 	"brale-core/internal/memory"
 	"brale-core/internal/transport/feishubot"
 
@@ -223,7 +224,7 @@ func TestBuildPositionReflectorReturnsNilWhenNoEpisodicMemoryEnabled(t *testing.
 		},
 	}
 
-	reflector, err := buildPositionReflector(sys, indexPath, index, nil)
+	reflector, err := buildPositionReflector(sys, indexPath, index, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPositionReflector() error = %v", err)
 	}
@@ -242,7 +243,7 @@ func TestBuildPositionReflectorConfiguresEnabledSymbols(t *testing.T) {
 		},
 	}
 
-	reflector, err := buildPositionReflector(sys, indexPath, index, nil)
+	reflector, err := buildPositionReflector(sys, indexPath, index, nil, reflectorTestTradeFinder{})
 	if err != nil {
 		t.Fatalf("buildPositionReflector() error = %v", err)
 	}
@@ -263,12 +264,51 @@ func TestBuildPositionReflectorConfiguresEnabledSymbols(t *testing.T) {
 	if adapter.Reflector.LLM == nil {
 		t.Fatalf("reflector llm should be wired")
 	}
+	if adapter.TradeFinder == nil {
+		t.Fatalf("trade finder should be wired")
+	}
 	if _, ok := any(adapter.Reflector.Episodic).(*memory.EpisodicMemory); !ok {
 		t.Fatalf("episodic reflector type=%T", adapter.Reflector.Episodic)
 	}
 	if _, ok := any(adapter.Reflector.Semantic).(*memory.SemanticMemory); !ok {
 		t.Fatalf("semantic reflector type=%T", adapter.Reflector.Semantic)
 	}
+}
+
+func TestBuildReconcileServicesInjectsNowClock(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := writeReflectorTestConfig(t, dir, false, false)
+	sys := reflectorTestSystemConfig()
+	index := config.SymbolIndexConfig{
+		Symbols: []config.SymbolIndexEntry{
+			{Symbol: "BTCUSDT", Config: "symbols/BTCUSDT.toml", Strategy: "strategies/BTCUSDT.toml"},
+		},
+	}
+
+	_, reconciler, err := buildReconcileServices(reconcileServiceBuildDeps{
+		sys:             sys,
+		index:           index,
+		symbolIndexPath: indexPath,
+		executor:        &execution.FreqtradeAdapter{},
+	})
+	if err != nil {
+		t.Fatalf("buildReconcileServices() error = %v", err)
+	}
+	if reconciler == nil {
+		t.Fatal("reconciler=nil want non-nil")
+	}
+	if reconciler.Now == nil {
+		t.Fatal("reconciler.Now=nil want injected clock")
+	}
+	if got := reconciler.Now(); got <= 0 {
+		t.Fatalf("reconciler.Now()=%d want > 0", got)
+	}
+}
+
+type reflectorTestTradeFinder struct{}
+
+func (reflectorTestTradeFinder) FindTradeByID(context.Context, int) (execution.Trade, bool, error) {
+	return execution.Trade{}, false, nil
 }
 
 func reflectorTestSystemConfig() config.SystemConfig {

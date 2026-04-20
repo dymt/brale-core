@@ -181,7 +181,7 @@ func buildTightenRiskPromptInput(input decision.TightenRiskUpdateInput) (Tighten
 		Entry:               input.Entry,
 		MarkPrice:           input.MarkPrice,
 		ATR:                 input.ATR,
-		UnrealizedPnlPct:    input.UnrealizedPnlPct,
+		UnrealizedPnlRatio:  input.UnrealizedPnlRatio,
 		PositionAgeMin:      input.PositionAgeMin,
 		TP1Hit:              input.TP1Hit,
 		DistanceToLiqPct:    input.DistanceToLiqPct,

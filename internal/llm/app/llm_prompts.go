@@ -62,7 +62,7 @@ type TightenRiskPromptInput struct {
 	Entry               float64
 	MarkPrice           float64
 	ATR                 float64
-	UnrealizedPnlPct    float64
+	UnrealizedPnlRatio  float64
 	PositionAgeMin      int64
 	TP1Hit              bool
 	DistanceToLiqPct    float64
@@ -125,7 +125,7 @@ func (b LLMPromptBuilder) TightenRiskUpdatePrompt(input TightenRiskPromptInput) 
 		"entry":                   input.Entry,
 		"mark_price":              input.MarkPrice,
 		"atr":                     input.ATR,
-		"unrealized_pnl_pct":      input.UnrealizedPnlPct,
+		"unrealized_pnl_ratio":    input.UnrealizedPnlRatio,
 		"position_age_minutes":    input.PositionAgeMin,
 		"tp1_hit":                 input.TP1Hit,
 		"distance_to_liq_pct":     input.DistanceToLiqPct,

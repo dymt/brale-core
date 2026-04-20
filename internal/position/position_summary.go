@@ -26,6 +26,7 @@ type PositionSummary struct {
 	BarsInPosition       int     `json:"bars_in_position"`
 	PositionAgeMinutes   float64 `json:"position_age_minutes,omitempty"`
 	CurrentStopLoss      float64 `json:"current_stop_loss,omitempty"`
+	RiskDistance         float64 `json:"-"`
 }
 
 type PositionRiskSummary struct {
@@ -67,34 +68,36 @@ func BuildPositionSummary(pos store.PositionRecord, plan risk.RiskPlan, currentP
 	}
 	side := strings.ToLower(strings.TrimSpace(pos.Side))
 	riskDistance := math.Abs(pos.AvgEntry - plan.StopPrice)
-	if riskDistance <= 0 {
-		return PositionSummary{}, fmt.Errorf("risk distance is required")
-	}
 	var unrealizedR float64
-	switch side {
-	case "long":
-		unrealizedR = (currentPrice - pos.AvgEntry) / riskDistance
-	case "short":
-		unrealizedR = (pos.AvgEntry - currentPrice) / riskDistance
-	default:
+	if side != "long" && side != "short" {
 		return PositionSummary{}, fmt.Errorf("side is required")
 	}
-	relative := (plan.StopPrice - pos.AvgEntry) / riskDistance
-	if side == "short" {
-		relative = (pos.AvgEntry - plan.StopPrice) / riskDistance
-	}
-	var bucket string
-	switch {
-	case relative <= RBucketNeg1:
-		bucket = "-1R"
-	case relative <= RBucketNegHalf:
-		bucket = "-0.5R"
-	case relative < RBucketPosHalf:
+	bucket := "BE"
+	if riskDistance > 0 {
+		switch side {
+		case "long":
+			unrealizedR = (currentPrice - pos.AvgEntry) / riskDistance
+		case "short":
+			unrealizedR = (pos.AvgEntry - currentPrice) / riskDistance
+		}
+		relative := (plan.StopPrice - pos.AvgEntry) / riskDistance
+		if side == "short" {
+			relative = (pos.AvgEntry - plan.StopPrice) / riskDistance
+		}
+		switch {
+		case relative <= RBucketNeg1:
+			bucket = "-1R"
+		case relative <= RBucketNegHalf:
+			bucket = "-0.5R"
+		case relative < RBucketPosHalf:
+			bucket = "BE"
+		case relative < RBucketPos1:
+			bucket = "+0.5R"
+		default:
+			bucket = "+1R"
+		}
+	} else {
 		bucket = "BE"
-	case relative < RBucketPos1:
-		bucket = "+0.5R"
-	default:
-		bucket = "+1R"
 	}
 	peak := pos.PeakUnrealizedR
 	if unrealizedR > peak {
@@ -126,6 +129,7 @@ func BuildPositionSummary(pos store.PositionRecord, plan risk.RiskPlan, currentP
 		BarsInPosition:       bars,
 		PositionAgeMinutes:   math.Round(positionAgeMinutes*100) / 100,
 		CurrentStopLoss:      plan.StopPrice,
+		RiskDistance:         riskDistance,
 	}, nil
 }
 
@@ -136,8 +140,12 @@ func BuildPositionRiskSummary(summary PositionSummary, liquidationPrice float64)
 	if strings.TrimSpace(summary.PositionStatus) == "" {
 		return PositionRiskSummary{}, fmt.Errorf("position_status is required")
 	}
-	bucket := bucketUnrealizedR(summary.UnrealizedR)
-	peakBucket := bucketUnrealizedR(summary.PeakUnrealizedR)
+	bucket := ""
+	peakBucket := ""
+	if summary.RiskDistance > 0 {
+		bucket = bucketUnrealizedR(summary.UnrealizedR)
+		peakBucket = bucketUnrealizedR(summary.PeakUnrealizedR)
+	}
 	timeBucket := bucketBarsInPosition(summary.BarsInPosition)
 	status := strings.ToLower(strings.TrimSpace(summary.PositionStatus))
 

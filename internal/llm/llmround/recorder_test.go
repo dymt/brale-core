@@ -128,3 +128,79 @@ func TestRecorderConcurrentObserveCall(t *testing.T) {
 		t.Fatalf("prompt_version=%q", ms.saved.PromptVersion)
 	}
 }
+
+func TestRecorderBudgetWarnThresholdTriggersOnce(t *testing.T) {
+	rec := NewRecorder(nil, "round-warn", "BTCUSDT", "decide")
+	warnCalls := 0
+	exceedCalls := 0
+	rec.SetTokenBudget(1000, 80,
+		func(roundID string, totalTokens, warnThreshold, budget int) {
+			warnCalls++
+			if roundID != "round-warn" {
+				t.Fatalf("roundID=%q want round-warn", roundID)
+			}
+			if totalTokens != 850 {
+				t.Fatalf("totalTokens=%d want 850", totalTokens)
+			}
+			if warnThreshold != 800 {
+				t.Fatalf("warnThreshold=%d want 800", warnThreshold)
+			}
+			if budget != 1000 {
+				t.Fatalf("budget=%d want 1000", budget)
+			}
+		},
+		func(string, int, int) {
+			exceedCalls++
+		},
+	)
+
+	rec.RecordCall(300, 200, "")
+	rec.RecordCall(150, 200, "")
+	rec.RecordCall(5, 5, "")
+
+	if warnCalls != 1 {
+		t.Fatalf("warnCalls=%d want 1", warnCalls)
+	}
+	if exceedCalls != 0 {
+		t.Fatalf("exceedCalls=%d want 0", exceedCalls)
+	}
+	if rec.BudgetExceeded() {
+		t.Fatal("BudgetExceeded()=true want false")
+	}
+}
+
+func TestRecorderBudgetExceededWarnsOnceWithoutEarlyWarn(t *testing.T) {
+	rec := NewRecorder(nil, "round-exceed", "BTCUSDT", "decide")
+	warnCalls := 0
+	exceedCalls := 0
+	rec.SetTokenBudget(1000, 80,
+		func(string, int, int, int) {
+			warnCalls++
+		},
+		func(roundID string, totalTokens, budget int) {
+			exceedCalls++
+			if roundID != "round-exceed" {
+				t.Fatalf("roundID=%q want round-exceed", roundID)
+			}
+			if totalTokens != 1100 {
+				t.Fatalf("totalTokens=%d want 1100", totalTokens)
+			}
+			if budget != 1000 {
+				t.Fatalf("budget=%d want 1000", budget)
+			}
+		},
+	)
+
+	rec.RecordCall(600, 500, "")
+	rec.RecordCall(10, 10, "")
+
+	if warnCalls != 0 {
+		t.Fatalf("warnCalls=%d want 0", warnCalls)
+	}
+	if exceedCalls != 1 {
+		t.Fatalf("exceedCalls=%d want 1", exceedCalls)
+	}
+	if !rec.BudgetExceeded() {
+		t.Fatal("BudgetExceeded()=false want true")
+	}
+}

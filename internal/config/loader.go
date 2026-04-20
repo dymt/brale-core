@@ -75,7 +75,7 @@ func applyWebhookDefaults(cfg *WebhookConfig) {
 		cfg.WorkerCount = 4
 	}
 	if cfg.FallbackOrderPollSec == 0 {
-		cfg.FallbackOrderPollSec = 180
+		cfg.FallbackOrderPollSec = 120
 	}
 	if cfg.FallbackReconcileSec == 0 {
 		cfg.FallbackReconcileSec = 300

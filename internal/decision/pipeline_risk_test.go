@@ -54,8 +54,8 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 			if input.Symbol != "BTCUSDT" {
 				t.Fatalf("symbol=%q, want BTCUSDT", input.Symbol)
 			}
-			if input.UnrealizedPnlPct != 0.05 {
-				t.Fatalf("unrealized_pnl_pct=%v, want 0.05", input.UnrealizedPnlPct)
+			if input.UnrealizedPnlRatio != 0.05 {
+				t.Fatalf("unrealized_pnl_ratio=%v, want 0.05", input.UnrealizedPnlRatio)
 			}
 			if input.PositionAgeMin < 30 || input.PositionAgeMin > 31 {
 				t.Fatalf("position_age_min=%d, want [30,31]", input.PositionAgeMin)

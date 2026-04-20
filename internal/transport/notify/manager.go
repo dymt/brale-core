@@ -652,14 +652,20 @@ func (m Manager) SendPositionCloseSummary(ctx context.Context, notice PositionCl
 	}
 	pnlText := formatFloat(notice.PnLAmount)
 	pnlPctText := formatPercent(notice.PnLPct)
+	pnlLabel := "pnl"
+	pnlPctLabel := "pnl_pct"
+	if strings.EqualFold(strings.TrimSpace(notice.Reason), "external_missing") {
+		pnlLabel = "gross_pnl"
+		pnlPctLabel = "gross_pnl_pct"
+	}
 	lines := []string{
 		noticeLine("symbol", symbol),
 		noticeLine("direction", direction),
 		noticeLine("qty", qtyText),
 		noticeLine("entry", entryText),
 		noticeLine("exit", exitText),
-		noticeLine("pnl", pnlText),
-		noticeLine("pnl_pct", pnlPctText),
+		noticeLine(pnlLabel, pnlText),
+		noticeLine(pnlPctLabel, pnlPctText),
 		noticeLine("stop", stopText),
 		noticeLine("take_profits", tpText),
 		noticeLine("reason", reasonText),
@@ -1000,14 +1006,20 @@ func (m Manager) sendAggregatedClose(ctx context.Context, aggregated aggregatedC
 		tradeID = aggregated.TradeClose.TradeID
 		tradeDurationS = aggregated.TradeClose.TradeDurationS
 	}
+	pnlLabel := "pnl"
+	pnlPctLabel := "pnl_pct"
+	if aggregated.TradeClose == nil && aggregated.CloseSummary != nil && strings.EqualFold(strings.TrimSpace(aggregated.CloseSummary.Reason), "external_missing") {
+		pnlLabel = "gross_pnl"
+		pnlPctLabel = "gross_pnl_pct"
+	}
 	lines := []string{
 		noticeLine("symbol", symbol),
 		noticeLine("direction", direction),
 		noticeLine("qty", formatFloat(qty)),
 		noticeLine("entry", formatFloat(entryPrice)),
 		noticeLine("exit", formatFloat(exitPrice)),
-		noticeLine("pnl", formatFloat(pnlAmount)),
-		noticeLine("pnl_pct", formatPercent(pnlPct)),
+		noticeLine(pnlLabel, formatFloat(pnlAmount)),
+		noticeLine(pnlPctLabel, formatPercent(pnlPct)),
 		noticeLine("reason", reason),
 	}
 	if stopPrice > 0 {

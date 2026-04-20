@@ -68,6 +68,10 @@ func (e *gateDecisionEvaluator) evalLiquidationCascade() {
 	if e.hasAction() {
 		return
 	}
+	if !e.inputs.liquidationCascadeEnabled() {
+		e.appendGateTrace("liquidation_cascade", true, "")
+		return
+	}
 	if e.inputs.MechanicsTag == "liquidation_cascade" {
 		e.decision.Action = "VETO"
 		e.decision.Reason = gateReasonLiquidationCascade

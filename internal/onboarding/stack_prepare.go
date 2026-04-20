@@ -148,6 +148,9 @@ func RunPrepareStack(args []string, repoRoot string, out io.Writer) error {
 	if systemOut != "" {
 		fmt.Fprintf(out, "[OK] generated %s\n", opts.systemOut)
 	}
+	if freqtradeDryRunEnabled(mutatedConfig) {
+		fmt.Fprintln(out, "[WARN] freqtrade dry_run=true; this stack is in simulated trading mode until you explicitly disable dry_run in the generated config")
+	}
 	return nil
 }
 
@@ -303,6 +306,15 @@ func mutateFreqtradeConfig(baseRaw []byte, username string, password string, pro
 		return "", err
 	}
 	return string(out) + "\n", nil
+}
+
+func freqtradeDryRunEnabled(raw string) bool {
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return false
+	}
+	enabled, ok := cfg["dry_run"].(bool)
+	return ok && enabled
 }
 
 func renderProxyEnvForPrepare(proxyEnabled bool, proxyURL string, noProxy string) string {

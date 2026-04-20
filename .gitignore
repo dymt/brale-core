@@ -25,6 +25,7 @@ docs/project_introduction_technical.md
 !internal/config/hash_test.go
 !internal/decision/decisionutil/runner_test.go
 !internal/decision/pipeline_rounds_test.go
+!internal/decision/ruleflow/node_hard_guard_test.go
 !internal/llm/openai_test.go
 !internal/llm/schema_test.go
 !internal/llmctl/probe_test.go

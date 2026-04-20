@@ -117,7 +117,7 @@ Provider 阶段不是复读 Agent 摘要。每个 Provider 在评估时额外接
 
 当系统检测到持仓需要收紧时，LLM 风控服务会额外接收以下上下文：
 
-- =unrealized_pnl_pct= — 当前浮动盈亏比例
+- =unrealized_pnl_ratio= — 当前浮动盈亏比例
 - =position_age_minutes= — 持仓时长（分钟）
 - =tp1_hit= — 是否已触发第一止盈
 - =distance_to_liq_pct= — 当前价格距爆仓价的百分比距离
@@ -275,7 +275,7 @@ This means traces include both LLM prompt/output records and code-side input pay
 
 When the system detects a position needs tightening, the LLM risk service receives additional context:
 
-- =unrealized_pnl_pct= — current unrealized profit/loss percentage
+- =unrealized_pnl_ratio= — current unrealized profit/loss ratio
 - =position_age_minutes= — how long the position has been held (minutes)
 - =tp1_hit= — whether the first take-profit level has been hit
 - =distance_to_liq_pct= — percentage distance from current price to liquidation price

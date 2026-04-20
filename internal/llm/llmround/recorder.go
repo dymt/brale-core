@@ -34,9 +34,12 @@ type Recorder struct {
 	gateAction    string
 	errMessage    string
 
-	tokenBudget  int
-	budgetWarnFn func(roundID string, totalTokens, budget int)
-	budgetExceed bool
+	tokenBudget       int
+	tokenBudgetWarnAt int
+	budgetWarnFn      func(roundID string, totalTokens, warnThreshold, budget int)
+	budgetWarned      bool
+	budgetExceedFn    func(roundID string, totalTokens, budget int)
+	budgetExceed      bool
 }
 
 // NewRecorder starts tracking a new round.
@@ -51,16 +54,21 @@ func NewRecorder(s store.LLMRoundStore, roundID, symbol, roundType string) *Reco
 	}
 }
 
-// SetTokenBudget configures an optional per-round token budget.
-// If budget > 0, the recorder will call warnFn when total tokens exceed the budget.
-func (r *Recorder) SetTokenBudget(budget int, warnFn func(roundID string, totalTokens, budget int)) {
+// SetTokenBudget configures optional per-round token warnings.
+// warnFn fires once when total tokens reach the warn threshold.
+// exceedFn fires once when total tokens exceed the full budget.
+func (r *Recorder) SetTokenBudget(budget int, warnPct int, warnFn func(roundID string, totalTokens, warnThreshold, budget int), exceedFn func(roundID string, totalTokens, budget int)) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tokenBudget = budget
+	r.tokenBudgetWarnAt = resolveTokenBudgetWarnThreshold(budget, warnPct)
 	r.budgetWarnFn = warnFn
+	r.budgetWarned = false
+	r.budgetExceedFn = exceedFn
+	r.budgetExceed = false
 }
 
 // BudgetExceeded returns true if the round's token usage exceeded the budget.
@@ -78,12 +86,33 @@ func (r *Recorder) checkBudget() {
 		return
 	}
 	total := r.totalTokenIn + r.totalTokenOut
-	if total > r.tokenBudget && !r.budgetExceed {
-		r.budgetExceed = true
+	if total > r.tokenBudget {
+		if !r.budgetExceed {
+			r.budgetExceed = true
+			r.budgetWarned = true
+			if r.budgetExceedFn != nil {
+				r.budgetExceedFn(r.roundID, total, r.tokenBudget)
+			}
+		}
+		return
+	}
+	if r.tokenBudgetWarnAt > 0 && total >= r.tokenBudgetWarnAt && !r.budgetWarned {
+		r.budgetWarned = true
 		if r.budgetWarnFn != nil {
-			r.budgetWarnFn(r.roundID, total, r.tokenBudget)
+			r.budgetWarnFn(r.roundID, total, r.tokenBudgetWarnAt, r.tokenBudget)
 		}
 	}
+}
+
+func resolveTokenBudgetWarnThreshold(budget int, warnPct int) int {
+	if budget <= 0 || warnPct <= 0 {
+		return 0
+	}
+	threshold := (budget*warnPct + 99) / 100
+	if threshold <= 0 {
+		return 0
+	}
+	return threshold
 }
 
 // RecordCall accumulates stats from an individual LLM call.

@@ -126,6 +126,7 @@ func (n *PlanBuilderNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	if llmRiskMode {
 		planSource = "llm"
 	}
+	rMultiple := computeRMultiple(entry, stopDist, takeProfits)
 
 	plan := map[string]any{
 		"valid":                true,
@@ -136,7 +137,7 @@ func (n *PlanBuilderNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		"risk_pct":             effectiveRiskPct,
 		"position_size":        positionSize,
 		"leverage":             leverage,
-		"r_multiple":           1.0,
+		"r_multiple":           rMultiple,
 		"template":             "rulego_plan",
 		"plan_source":          planSource,
 		"take_profits":         takeProfits,
@@ -167,6 +168,17 @@ func (n *PlanBuilderNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 	root["plan"] = plan
 	respondRuleMsgJSON(ctx, msg, root)
+}
+
+func computeRMultiple(entry float64, stopDist float64, takeProfits []float64) float64 {
+	if entry <= 0 || stopDist <= 0 || len(takeProfits) == 0 {
+		return 0
+	}
+	firstTP := takeProfits[0]
+	if firstTP <= 0 {
+		return 0
+	}
+	return numutil.AbsFloat(firstTP-entry) / stopDist
 }
 
 func respondPlanInvalid(ctx types.RuleContext, msg types.RuleMsg, root map[string]any, reason string) {

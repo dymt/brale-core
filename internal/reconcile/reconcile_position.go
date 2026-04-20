@@ -46,6 +46,7 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 	}
 	var closedPos store.PositionRecord
 	var summary externalMissingSummary
+	var notice *PositionCloseSummaryNotice
 	if err := reconcileWithinStoreTx(ctx, s.Store, func(runCtx context.Context) error {
 		nextPos, err := s.finalizeExternalMissing(runCtx, pos, logger)
 		if err != nil {
@@ -57,7 +58,7 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 		if s.Notifier == nil {
 			return nil
 		}
-		notice := PositionCloseSummaryNotice{
+		notice = &PositionCloseSummaryNotice{
 			Symbol:             closedPos.Symbol,
 			Direction:          strings.TrimSpace(closedPos.Side),
 			Qty:                summary.Qty,
@@ -68,21 +69,22 @@ func (s *ReconcileService) handleExternalMissing(ctx context.Context, pos store.
 			Reason:             "external_missing",
 			RiskPct:            closedPos.RiskPct,
 			Leverage:           closedPos.Leverage,
-			PnLAmount:          summary.PnL,
-			PnLPct:             summary.PnLPct,
+			PnLAmount:          summary.GrossPnL,
+			PnLPct:             summary.GrossPnLPct,
 			PositionID:         closedPos.PositionID,
 			ExecutorPositionID: strings.TrimSpace(closedPos.ExecutorPositionID),
-		}
-		if err := s.Notifier.SendPositionCloseSummary(runCtx, notice); err != nil {
-			logging.FromContext(runCtx).Named("reconcile").Error("position close summary notify failed", zap.Error(err))
-			return err
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	if notice != nil {
+		if err := s.Notifier.SendPositionCloseSummary(ctx, *notice); err != nil {
+			logger.Error("position close summary notify failed", zap.Error(err))
+		}
+	}
 	if s.Reflector != nil {
-		go s.Reflector.ReflectOnClose(ctx, closedPos, summary.ExitPrice)
+		go s.Reflector.ReflectOnClose(ctx, closedPos)
 	}
 	return nil
 }
@@ -93,8 +95,8 @@ type externalMissingSummary struct {
 	EntryPrice  float64
 	ExitPrice   float64
 	Qty         float64
-	PnL         float64
-	PnLPct      float64
+	GrossPnL    float64
+	GrossPnLPct float64
 }
 
 func (s *ReconcileService) recheckExternalPosition(ctx context.Context, pos store.PositionRecord, logger *zap.Logger) bool {
@@ -134,6 +136,10 @@ func (s *ReconcileService) finalizeExternalMissing(ctx context.Context, pos stor
 		zap.String("new_status", position.PositionClosed),
 		zap.String("reason", "external_missing"),
 	)
+	pos.Status = position.PositionClosed
+	pos.CloseIntentID = ""
+	pos.CloseSubmittedAt = 0
+	pos.Version++
 	if s.Cache != nil {
 		pos = s.Cache.HydratePosition(pos)
 	}
@@ -143,15 +149,15 @@ func (s *ReconcileService) finalizeExternalMissing(ctx context.Context, pos stor
 func (s *ReconcileService) buildExternalMissingSummary(ctx context.Context, pos store.PositionRecord) externalMissingSummary {
 	stopPrice, tpPrices := resolveRiskPlanSummary(pos)
 	entryPrice, exitPrice, qty := s.resolveExitMetrics(ctx, pos)
-	pnl, pnlPct := computeExternalMissingPnL(pos, entryPrice, exitPrice, qty)
+	grossPnL, grossPnLPct := computeExternalMissingPnL(pos, entryPrice, exitPrice, qty)
 	return externalMissingSummary{
 		StopPrice:   stopPrice,
 		TakeProfits: tpPrices,
 		EntryPrice:  entryPrice,
 		ExitPrice:   exitPrice,
 		Qty:         qty,
-		PnL:         pnl,
-		PnLPct:      pnlPct,
+		GrossPnL:    grossPnL,
+		GrossPnLPct: grossPnLPct,
 	}
 }
 
@@ -212,8 +218,8 @@ func logExternalMissingSummary(ctx context.Context, pos store.PositionRecord, su
 		zap.Float64("qty", summary.Qty),
 		zap.Float64("entry", summary.EntryPrice),
 		zap.Float64("exit", summary.ExitPrice),
-		zap.Float64("pnl", summary.PnL),
-		zap.Float64("pnl_pct", summary.PnLPct),
+		zap.Float64("gross_pnl", summary.GrossPnL),
+		zap.Float64("gross_pnl_pct", summary.GrossPnLPct),
 		zap.Float64("stop", summary.StopPrice),
 		zap.Float64s("take_profits", summary.TakeProfits),
 		zap.String("reason", "external_missing"),

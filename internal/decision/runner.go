@@ -63,7 +63,7 @@ type TightenRiskUpdateInput struct {
 	Entry               float64
 	MarkPrice           float64
 	ATR                 float64
-	UnrealizedPnlPct    float64
+	UnrealizedPnlRatio  float64
 	PositionAgeMin      int64
 	TP1Hit              bool
 	DistanceToLiqPct    float64

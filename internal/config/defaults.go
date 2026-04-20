@@ -190,6 +190,8 @@ func ApplyStrategyDefaults(cfg *StrategyConfig, defaults StrategyConfig) {
 	if cfg.RiskManagement.Gate.EdgeThreshold == 0 {
 		cfg.RiskManagement.Gate.EdgeThreshold = defaults.RiskManagement.Gate.EdgeThreshold
 	}
+	applyGateHardStopDefaults(&cfg.RiskManagement.Gate.HardStop, defaults.RiskManagement.Gate.HardStop)
+	applyHardGuardToggleDefaults(&cfg.RiskManagement.HardGuard, defaults.RiskManagement.HardGuard)
 }
 
 func applyCooldownDefaults(cfg *CooldownConfig, defaults CooldownConfig) {
@@ -235,6 +237,16 @@ func DefaultStrategyConfig(symbol string) StrategyConfig {
 			Gate: GateConfig{
 				QualityThreshold: 0.35,
 				EdgeThreshold:    0.10,
+				HardStop: GateHardStopConfig{
+					StructureInvalidation: boolPtr(true),
+					LiquidationCascade:    boolPtr(true),
+				},
+			},
+			HardGuard: HardGuardToggleConfig{
+				Enabled:        boolPtr(true),
+				StopLoss:       boolPtr(true),
+				RSIExtreme:     boolPtr(true),
+				CircuitBreaker: boolPtr(true),
 			},
 			Sieve: RiskManagementSieveConfig{
 				MinSizeFactor:     0.1,
@@ -274,6 +286,44 @@ func applyDefaultLLMModels(sys SystemConfig, cfg *SymbolConfig) error {
 
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+func cloneBoolPtr(v *bool) *bool {
+	if v == nil {
+		return nil
+	}
+	cloned := *v
+	return &cloned
+}
+
+func applyGateHardStopDefaults(cfg *GateHardStopConfig, defaults GateHardStopConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.StructureInvalidation == nil {
+		cfg.StructureInvalidation = cloneBoolPtr(defaults.StructureInvalidation)
+	}
+	if cfg.LiquidationCascade == nil {
+		cfg.LiquidationCascade = cloneBoolPtr(defaults.LiquidationCascade)
+	}
+}
+
+func applyHardGuardToggleDefaults(cfg *HardGuardToggleConfig, defaults HardGuardToggleConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Enabled == nil {
+		cfg.Enabled = cloneBoolPtr(defaults.Enabled)
+	}
+	if cfg.StopLoss == nil {
+		cfg.StopLoss = cloneBoolPtr(defaults.StopLoss)
+	}
+	if cfg.RSIExtreme == nil {
+		cfg.RSIExtreme = cloneBoolPtr(defaults.RSIExtreme)
+	}
+	if cfg.CircuitBreaker == nil {
+		cfg.CircuitBreaker = cloneBoolPtr(defaults.CircuitBreaker)
+	}
 }
 
 func cloneMapAny(src map[string]any) map[string]any {

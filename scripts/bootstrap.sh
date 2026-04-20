@@ -18,7 +18,7 @@ _detected_url="$(_detect_repo_url)"
 _detected_ref="$(_detect_ref)"
 
 REPO_URL_DEFAULT="${_detected_url:-https://github.com/laukkw/brale-core.git}"
-REF_DEFAULT="${_detected_ref:-main}"
+REF_DEFAULT="${_detected_ref:-master}"
 TARGET_DIR_DEFAULT="${HOME}/brale-core"
 WAIT_STACK_TIMEOUT="${BRALE_WAIT_STACK_TIMEOUT:-120}"
 
@@ -39,7 +39,7 @@ Usage: bootstrap.sh [options]
 
 Options:
   --dir PATH          Target checkout directory (default: ~/brale-core)
-  --ref REF           Git ref to checkout (default: main)
+  --ref REF           Git ref to checkout (default: master)
   --repo-url URL      Repository URL
   --no-init           Skip the interactive init wizard and start with the existing .env
   --no-onboarding     Deprecated alias for --no-init

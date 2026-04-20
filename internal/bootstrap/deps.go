@@ -13,6 +13,7 @@ import (
 	"brale-core/internal/pgstore"
 	"brale-core/internal/position"
 	"brale-core/internal/reconcile"
+	"brale-core/internal/runtime"
 	"brale-core/internal/store"
 	"brale-core/internal/transport/notify"
 
@@ -68,11 +69,13 @@ type reconcileServiceBuildDeps struct {
 }
 
 type riskMonitorBuildDeps struct {
-	store          store.Store
-	priceSource    *binance.MarkPriceStream
-	positioner     *position.PositionService
-	accountFetcher func(context.Context, string) (execution.AccountState, error)
-	sys            config.SystemConfig
+	store           store.Store
+	priceSource     *binance.MarkPriceStream
+	positioner      *position.PositionService
+	accountFetcher  func(context.Context, string) (execution.AccountState, error)
+	sys             config.SystemConfig
+	index           config.SymbolIndexConfig
+	symbolIndexPath string
 }
 
 type coreDeps struct {
@@ -123,7 +126,7 @@ func buildCoreDeps(ctx context.Context, logger *zap.Logger, env appEnv) (coreDep
 	}
 
 	freqtradeAccount := newFreqtradeAccountFetcher(executor)
-	riskMonitor := buildRiskMonitor(riskMonitorBuildDeps{store: st, priceSource: priceSource, positioner: positioner, accountFetcher: freqtradeAccount, sys: env.sys})
+	riskMonitor := buildRiskMonitor(riskMonitorBuildDeps{store: st, priceSource: priceSource, positioner: positioner, accountFetcher: freqtradeAccount, sys: env.sys, index: env.index, symbolIndexPath: env.symbolIndexPath})
 
 	deps := coreDeps{
 		persistence: persistenceDeps{store: st, pool: pool, stateProvider: stateProvider},
@@ -246,6 +249,7 @@ func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.Recovery
 		Cache:             deps.positionCache,
 		PlanCache:         deps.planCache,
 		RiskPlans:         deps.riskPlanSvc,
+		Now:               func() int64 { return time.Now().UnixMilli() },
 		CloseRecoverAfter: config.ParseDurationOrDefault(deps.sys.Reconcile.CloseRecoverAfter, 10*time.Minute),
 		AllowSymbol:       deps.allowSymbol,
 	}
@@ -256,7 +260,7 @@ func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.Recovery
 		AuthType:  deps.sys.ExecAuth,
 	}
 	reconciler.PriceSource = deps.priceSource
-	reflector, err := buildPositionReflector(deps.sys, deps.symbolIndexPath, deps.index, deps.store)
+	reflector, err := buildPositionReflector(deps.sys, deps.symbolIndexPath, deps.index, deps.store, deps.executor.Client)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build position reflector: %w", err)
 	}
@@ -266,14 +270,35 @@ func buildReconcileServices(deps reconcileServiceBuildDeps) (*reconcile.Recovery
 
 func buildRiskMonitor(deps riskMonitorBuildDeps) *position.RiskMonitor {
 	return &position.RiskMonitor{
-		Store:          deps.store,
-		PriceSource:    deps.priceSource,
-		Positions:      deps.positioner,
-		PlanCache:      deps.positioner.PlanCache,
-		MaxDrawdownPct: deps.sys.RiskGuard.MaxDrawdownPct,
+		Store:                   deps.store,
+		PriceSource:             deps.priceSource,
+		Positions:               deps.positioner,
+		PlanCache:               deps.positioner.PlanCache,
+		MaxDrawdownPct:          deps.sys.RiskGuard.MaxDrawdownPct,
+		BreakevenFeePctBySymbol: buildBreakevenFeePctResolver(deps.sys, deps.symbolIndexPath, deps.index),
 		AccountFetcher: func(ctx context.Context, symbol string) (execution.AccountState, error) {
 			return deps.accountFetcher(ctx, symbol)
 		},
+	}
+}
+
+func buildBreakevenFeePctResolver(sys config.SystemConfig, symbolIndexPath string, index config.SymbolIndexConfig) func(string) float64 {
+	fees := make(map[string]float64, len(index.Symbols))
+	for _, item := range index.Symbols {
+		symbolKey := canonicalSymbolFromIndexEntry(item)
+		if symbolKey == "" {
+			continue
+		}
+		_, strategyCfg, _, err := runtime.LoadSymbolConfigs(sys, symbolIndexPath, item)
+		if err != nil {
+			continue
+		}
+		if strategyCfg.RiskManagement.BreakevenFeePct > 0 {
+			fees[symbolKey] = strategyCfg.RiskManagement.BreakevenFeePct
+		}
+	}
+	return func(symbol string) float64 {
+		return fees[canonicalSymbol(symbol)]
 	}
 }
 

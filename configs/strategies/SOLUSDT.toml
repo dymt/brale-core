@@ -175,8 +175,50 @@ quality_threshold = 0.35
 # 调参：0.05 激进 / 0.10 默认 / 0.20 保守 / 0.30 极保守
 edge_threshold = 0.10
 
+# Gate 业务型硬停开关
+[risk_management.gate.hard_stop]
+
+# 结构硬失效开关
+# true  = Provider 判断结构已破坏时，直接 VETO
+# false = 不再直接 VETO，继续进入 setup_quality / entry_edge 连续评分
+# 关闭后仍然会因为结构完整性下降而减少 quality，不等于无条件放行。
+structure_invalidation = true
+
+# 连锁清算硬停开关
+# true  = mechanics.signal_tag = liquidation_cascade 时直接 VETO
+# false = 不再直接 VETO，继续进入连续评分
+# 注意：关闭后 risk_penalty 依旧保留，常见结果是 WAIT 而不是直接 ALLOW。
+liquidation_cascade = true
+
 # ======================================================================
-# E. Sieve 仓位缩放（Position Sizing Filter）
+# E. 持仓 Hard Guard（In-Position Hard Exit Guards）
+# ======================================================================
+# 这一组只在持仓中生效，命中后直接 EXIT。
+# 用途是防止持仓在极端短时风险里继续暴露。
+[risk_management.hard_guard]
+
+# 总开关
+# false = 整组 Hard Guard 全部关闭
+# true  = 启用下面每一条具体保护
+enabled = true
+
+# 止损价保护
+# true  = 触及/穿越 stop_loss 时直接 EXIT
+# false = 不再因为 stop_loss 被 Hard Guard 直接退出
+stop_loss = true
+
+# RSI 极值保护
+# true  = 启用极端超买/超卖保护
+# false = 关闭该保护
+rsi_extreme = true
+
+# 5 分钟不利波动断路器
+# true  = 启用短时异常波动保护
+# false = 关闭该保护
+circuit_breaker = true
+
+# ======================================================================
+# F. Sieve 仓位缩放（Position Sizing Filter）
 # ======================================================================
 # Gate 决定"做"之后，Sieve 控制"做多大"。
 # 最终仓位 = risk_per_trade_pct × grade_factor × size_factor
