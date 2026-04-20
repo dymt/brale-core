@@ -67,6 +67,8 @@ func newFeishuSender(cfg FeishuConfig, httpClient *http.Client, openBaseURL stri
 	}, nil
 }
 
+func (*FeishuSender) Channel() string { return "feishu" }
+
 func (s *FeishuSender) Send(ctx context.Context, msg Message) error {
 	if msg.Image != nil && len(msg.Image.Data) > 0 {
 		return s.sendImage(ctx, msg)

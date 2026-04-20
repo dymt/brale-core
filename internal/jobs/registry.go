@@ -16,7 +16,7 @@ func RegisterWorkers(
 	riskMonitorExec func(ctx context.Context, symbol string) error,
 	renderFn func(ctx context.Context, eventType, symbol string, payload json.RawMessage) (json.RawMessage, error),
 	enqueueDeliverFn func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error,
-	deliverFn func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error,
+	deliverFn func(ctx context.Context, eventType, symbol, channel string, rendered json.RawMessage) error,
 ) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &ObserveWorker{Execute: observeExec})

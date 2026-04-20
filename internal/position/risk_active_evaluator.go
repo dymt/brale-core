@@ -119,11 +119,17 @@ func (m *RiskMonitor) refreshRiskPlanOnTPHit(ctx context.Context, pos store.Posi
 	plan = updatedPlan
 	refreshed, ok, err := m.Store.FindPositionByID(ctx, pos.PositionID)
 	if err != nil {
-		logger.Warn("risk plan refresh failed", zap.Error(err))
-		return store.PositionRecord{}, risk.RiskPlan{}, fmt.Errorf("reload position %s after tp hit: %w", pos.PositionID, err)
+		logger.Warn("risk plan reload failed after tp hit; continuing close flow with persisted plan",
+			zap.Error(err),
+			zap.String("position_id", pos.PositionID),
+		)
+		return pos, plan, nil
 	}
 	if !ok {
-		return store.PositionRecord{}, risk.RiskPlan{}, fmt.Errorf("position %s not found after refresh", pos.PositionID)
+		logger.Warn("position not found after tp hit risk plan update; continuing close flow with prior position",
+			zap.String("position_id", pos.PositionID),
+		)
+		return pos, plan, nil
 	}
 	pos = refreshed
 	if decoded, decErr := DecodeRiskPlan(pos.RiskJSON); decErr == nil {

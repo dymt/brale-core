@@ -52,6 +52,8 @@ func NewEmailSender(cfg EmailConfig) (Sender, error) {
 	}, nil
 }
 
+func (*EmailSender) Channel() string { return "email" }
+
 func (s *EmailSender) Send(ctx context.Context, msg Message) error {
 	m := mail.NewMsg()
 	if err := m.From(s.from); err != nil {

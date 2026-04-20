@@ -2,8 +2,12 @@ package notify
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 
 	"brale-core/internal/decision/decisionfmt"
 	"brale-core/internal/jobs"
@@ -36,6 +40,7 @@ type gateAsyncPayload struct {
 }
 
 type AsyncManager struct {
+	mu     sync.RWMutex
 	client *river.Client[pgx.Tx]
 	sync   Notifier
 	logger *zap.Logger
@@ -50,6 +55,8 @@ func NewAsyncManager(client *river.Client[pgx.Tx], sync Notifier, logger *zap.Lo
 
 func (m *AsyncManager) SetClient(client *river.Client[pgx.Tx]) {
 	if m != nil {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		m.client = client
 	}
 }
@@ -62,24 +69,27 @@ func (m *AsyncManager) enqueue(ctx context.Context, eventType, symbol string, pa
 	)
 	defer span.End()
 
-	if m.client == nil {
-		err := fmt.Errorf("river client is required for async notifications")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("marshal async notify payload: %w", err)
 	}
+	client := m.riverClient()
+	if client == nil {
+		if err := m.deliverSynchronously(ctx, eventType, symbol, json.RawMessage(data)); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return fmt.Errorf("send async notification synchronously before river is ready: %w", err)
+		}
+		return nil
+	}
 	args := jobs.NotifyRenderArgs{
 		EventType: eventType,
 		Symbol:    symbol,
 		Payload:   json.RawMessage(data),
 	}
-	if err := m.enqueueJob(ctx, args); err != nil {
+	if err := m.enqueueJob(ctx, client, args); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("enqueue async notification: %w", err)
@@ -88,34 +98,122 @@ func (m *AsyncManager) enqueue(ctx context.Context, eventType, symbol string, pa
 	return nil
 }
 
-func (m *AsyncManager) enqueueJob(ctx context.Context, args jobs.NotifyRenderArgs) error {
+func (m *AsyncManager) riverClient() *river.Client[pgx.Tx] {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.client
+}
+
+func (m *AsyncManager) enqueueJob(ctx context.Context, client *river.Client[pgx.Tx], args jobs.NotifyRenderArgs) error {
 	if tx := notifyport.TxFromContext(ctx); tx != nil {
-		_, err := m.client.InsertTx(ctx, tx, args, nil)
+		_, err := client.InsertTx(ctx, tx, args, nil)
 		return err
 	}
-	_, err := m.client.Insert(ctx, args, nil)
+	_, err := client.Insert(ctx, args, nil)
 	return err
 }
 
 func (m *AsyncManager) EnqueueRendered(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error {
-	if m == nil || m.client == nil {
+	client := m.riverClient()
+	if client == nil {
 		return fmt.Errorf("river client is required for notify delivery enqueue")
 	}
-	args := jobs.NotifyDeliverArgs{
-		EventType: eventType,
-		Symbol:    symbol,
-		Rendered:  rendered,
-	}
-	if tx := notifyport.TxFromContext(ctx); tx != nil {
-		_, err := m.client.InsertTx(ctx, tx, args, nil)
-		if err != nil {
-			return fmt.Errorf("enqueue deliver notification: %w", err)
+	argsList := buildNotifyDeliverArgs(eventType, symbol, rendered, m.deliveryChannels())
+	for _, args := range argsList {
+		if err := m.enqueueDeliverJob(ctx, client, args); err != nil {
+			return fmt.Errorf("enqueue deliver notification channel %q: %w", args.Channel, err)
 		}
+	}
+	return nil
+}
+
+func (m *AsyncManager) enqueueDeliverJob(ctx context.Context, client *river.Client[pgx.Tx], args jobs.NotifyDeliverArgs) error {
+	if tx := notifyport.TxFromContext(ctx); tx != nil {
+		_, err := client.InsertTx(ctx, tx, args, nil)
+		return err
+	}
+	_, err := client.Insert(ctx, args, nil)
+	return err
+}
+
+type deliveryChannelProvider interface {
+	DeliveryChannels() []string
+}
+
+type channelScopedNotifier interface {
+	NotifierForChannel(channel string) (Notifier, bool)
+}
+
+func (m *AsyncManager) deliveryChannels() []string {
+	if m == nil || m.sync == nil {
 		return nil
 	}
-	_, err := m.client.Insert(ctx, args, nil)
-	if err != nil {
-		return fmt.Errorf("enqueue deliver notification: %w", err)
+	provider, ok := m.sync.(deliveryChannelProvider)
+	if !ok {
+		return nil
+	}
+	return provider.DeliveryChannels()
+}
+
+func buildNotifyDeliverArgs(eventType, symbol string, rendered json.RawMessage, channels []string) []jobs.NotifyDeliverArgs {
+	if len(channels) == 0 {
+		return []jobs.NotifyDeliverArgs{{
+			EventType: eventType,
+			Symbol:    symbol,
+			Rendered:  append(json.RawMessage(nil), rendered...),
+			DedupeKey: notifyDeliverDedupeKey(eventType, symbol, rendered, ""),
+		}}
+	}
+	out := make([]jobs.NotifyDeliverArgs, 0, len(channels))
+	for _, channel := range channels {
+		channel = normalizeNotifyChannel(channel)
+		if channel == "" {
+			continue
+		}
+		out = append(out, jobs.NotifyDeliverArgs{
+			EventType: eventType,
+			Symbol:    symbol,
+			Rendered:  append(json.RawMessage(nil), rendered...),
+			Channel:   channel,
+			DedupeKey: notifyDeliverDedupeKey(eventType, symbol, rendered, channel),
+		})
+	}
+	if len(out) == 0 {
+		return buildNotifyDeliverArgs(eventType, symbol, rendered, nil)
+	}
+	return out
+}
+
+func notifyDeliverDedupeKey(eventType, symbol string, rendered json.RawMessage, channel string) string {
+	sum := sha256.Sum256(rendered)
+	parts := []string{
+		"notify",
+		normalizeNotifyChannel(eventType),
+		strings.ToUpper(strings.TrimSpace(symbol)),
+		hex.EncodeToString(sum[:8]),
+	}
+	if channel != "" {
+		parts = append(parts, normalizeNotifyChannel(channel))
+	}
+	return strings.Join(parts, ":")
+}
+
+func (m *AsyncManager) deliverSynchronously(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error {
+	channels := m.deliveryChannels()
+	if len(channels) == 0 {
+		return m.Deliver(ctx, eventType, symbol, "", rendered)
+	}
+	errDetails := make([]string, 0)
+	for _, channel := range channels {
+		if err := m.Deliver(ctx, eventType, symbol, channel, rendered); err != nil {
+			errDetails = append(errDetails, fmt.Sprintf("%s: %v", channel, err))
+		}
+	}
+	if len(errDetails) > 0 {
+		return fmt.Errorf("sync notify delivery failed: %s", strings.Join(errDetails, "; "))
 	}
 	return nil
 }
@@ -177,60 +275,69 @@ func (m *AsyncManager) Render(ctx context.Context, eventType, _ string, payload 
 	return payload, nil
 }
 
-func (m *AsyncManager) Deliver(ctx context.Context, eventType, _ string, rendered json.RawMessage) error {
+func (m *AsyncManager) Deliver(ctx context.Context, eventType, _ string, channel string, rendered json.RawMessage) error {
 	ctx, span := braleOtel.Tracer("brale-core/notify").Start(ctx, "brale.notify.deliver")
-	span.SetAttributes(attribute.String("notify.event_type", eventType))
+	span.SetAttributes(
+		attribute.String("notify.event_type", eventType),
+		attribute.String("notify.channel", strings.TrimSpace(channel)),
+	)
 	defer span.End()
 
-	if m.sync == nil {
+	notifier, err := m.notifierForChannel(channel)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		braleOtel.NotifyFailTotal.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("event_type", eventType)))
+		return err
+	}
+	if notifier == nil {
 		return nil
 	}
-	var err error
 	switch eventType {
 	case asyncEventGate:
 		var payload gateAsyncPayload
 		if err = json.Unmarshal(rendered, &payload); err == nil {
-			err = m.sync.SendGate(ctx, payload.Input, payload.Report)
+			err = notifier.SendGate(ctx, payload.Input, payload.Report)
 		}
 	case asyncEventPositionOpen:
 		var notice PositionOpenNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendPositionOpen(ctx, notice)
+			err = notifier.SendPositionOpen(ctx, notice)
 		}
 	case asyncEventPositionClose:
 		var notice PositionCloseNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendPositionClose(ctx, notice)
+			err = notifier.SendPositionClose(ctx, notice)
 		}
 	case asyncEventPositionCloseSummary:
 		var notice PositionCloseSummaryNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendPositionCloseSummary(ctx, notice)
+			err = notifier.SendPositionCloseSummary(ctx, notice)
 		}
 	case asyncEventRiskUpdate:
 		var notice RiskPlanUpdateNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendRiskPlanUpdate(ctx, notice)
+			err = notifier.SendRiskPlanUpdate(ctx, notice)
 		}
 	case asyncEventError:
 		var notice ErrorNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendError(ctx, notice)
+			err = notifier.SendError(ctx, notice)
 		}
 	case asyncEventTradeOpen:
 		var notice TradeOpenNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendTradeOpen(ctx, notice)
+			err = notifier.SendTradeOpen(ctx, notice)
 		}
 	case asyncEventTradePartialClose:
 		var notice TradePartialCloseNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendTradePartialClose(ctx, notice)
+			err = notifier.SendTradePartialClose(ctx, notice)
 		}
 	case asyncEventTradeCloseSummary:
 		var notice TradeCloseSummaryNotice
 		if err = json.Unmarshal(rendered, &notice); err == nil {
-			err = m.sync.SendTradeCloseSummary(ctx, notice)
+			err = notifier.SendTradeCloseSummary(ctx, notice)
 		}
 	default:
 		err = fmt.Errorf("unsupported notify event type: %s", eventType)
@@ -246,6 +353,25 @@ func (m *AsyncManager) Deliver(ctx context.Context, eventType, _ string, rendere
 	}
 	braleOtel.NotifyDeliverTotal.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("event_type", eventType)))
 	return nil
+}
+
+func (m *AsyncManager) notifierForChannel(channel string) (Notifier, error) {
+	if m == nil || m.sync == nil {
+		return nil, nil
+	}
+	channel = normalizeNotifyChannel(channel)
+	if channel == "" {
+		return m.sync, nil
+	}
+	scoped, ok := m.sync.(channelScopedNotifier)
+	if !ok {
+		return nil, fmt.Errorf("notify channel %q requested but sync notifier does not support channel routing", channel)
+	}
+	notifier, ok := scoped.NotifierForChannel(channel)
+	if !ok {
+		return nil, fmt.Errorf("notify channel %q is not configured", channel)
+	}
+	return notifier, nil
 }
 
 var _ Notifier = (*AsyncManager)(nil)

@@ -70,18 +70,22 @@ func (w *NotifyRenderWorker) Work(ctx context.Context, job *river.Job[NotifyRend
 
 // ─── NotifyDeliver Job ───────────────────────────────────────────
 
-// NotifyDeliverArgs delivers a rendered notification to channels (webhook, telegram, feishu).
+const notifyDeliverMaxAttempts = 5
+
+// NotifyDeliverArgs delivers a rendered notification to one outbound channel.
 type NotifyDeliverArgs struct {
 	EventType string          `json:"event_type"`
 	Symbol    string          `json:"symbol"`
 	Rendered  json.RawMessage `json:"rendered"`
+	Channel   string          `json:"channel,omitempty"`
+	DedupeKey string          `json:"dedupe_key,omitempty"`
 }
 
 func (NotifyDeliverArgs) Kind() string { return "notify_deliver" }
 
 func (NotifyDeliverArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
-		MaxAttempts: 1,
+		MaxAttempts: notifyDeliverMaxAttempts,
 		UniqueOpts: river.UniqueOpts{
 			ByArgs:   true,
 			ByPeriod: 2 * time.Minute,
@@ -89,10 +93,10 @@ func (NotifyDeliverArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
-// NotifyDeliverWorker sends the rendered notification to configured channels.
+// NotifyDeliverWorker sends the rendered notification to one configured channel.
 type NotifyDeliverWorker struct {
 	river.WorkerDefaults[NotifyDeliverArgs]
-	Deliver func(ctx context.Context, eventType, symbol string, rendered json.RawMessage) error
+	Deliver func(ctx context.Context, eventType, symbol, channel string, rendered json.RawMessage) error
 }
 
 func (w *NotifyDeliverWorker) Work(ctx context.Context, job *river.Job[NotifyDeliverArgs]) error {
@@ -102,21 +106,19 @@ func (w *NotifyDeliverWorker) Work(ctx context.Context, job *river.Job[NotifyDel
 	)
 	start := time.Now()
 
-	if job.Attempt > 1 {
-		logger.Warn("skipping notification deliver retry to avoid duplicate outbound message",
-			zap.Int("attempt", job.Attempt),
-		)
-		return nil
-	}
 	if w.Deliver == nil {
 		return fmt.Errorf("deliver function not configured")
 	}
-	if err := w.Deliver(ctx, job.Args.EventType, job.Args.Symbol, job.Args.Rendered); err != nil {
+	if err := w.Deliver(ctx, job.Args.EventType, job.Args.Symbol, job.Args.Channel, job.Args.Rendered); err != nil {
 		logger.Error("notify deliver failed", zap.Error(err), zap.Int("attempt", job.Attempt))
 		return err
 	}
 
-	logger.Info("notification delivered", zap.Duration("elapsed", time.Since(start)))
+	logger.Info("notification delivered",
+		zap.String("channel", job.Args.Channel),
+		zap.String("dedupe_key", job.Args.DedupeKey),
+		zap.Duration("elapsed", time.Since(start)),
+	)
 	return nil
 }
 

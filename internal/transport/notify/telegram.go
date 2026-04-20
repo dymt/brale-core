@@ -38,6 +38,8 @@ func NewTelegramSender(cfg TelegramConfig) (Sender, error) {
 	}, nil
 }
 
+func (*TelegramSender) Channel() string { return "telegram" }
+
 func (s *TelegramSender) Send(ctx context.Context, msg Message) error {
 	if msg.Image != nil && len(msg.Image.Data) > 0 {
 		return s.sendImage(ctx, msg)

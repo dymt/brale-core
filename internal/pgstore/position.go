@@ -76,7 +76,7 @@ func (s *PGStore) updatePosition(ctx context.Context, positionID string, expecte
 		strings.Join(setClauses, ", "), argIdx, argIdx+1)
 	args = append(args, positionID, expectedVersion)
 
-	tag, err := s.pool.Exec(ctx, sql, args...)
+	tag, err := s.db(ctx).Exec(ctx, sql, args...)
 	if err != nil {
 		return false, err
 	}

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -10,6 +11,8 @@ import (
 
 	"brale-core/internal/cardimage"
 	"brale-core/internal/decision/decisionfmt"
+
+	"go.uber.org/zap"
 )
 
 type countSender struct {
@@ -108,6 +111,51 @@ type alwaysFailSender struct {
 func (s *alwaysFailSender) Send(ctx context.Context, msg Message) error {
 	s.calls++
 	return errors.New("channel down")
+}
+
+type namedCountSender struct {
+	channel string
+	calls   int
+}
+
+func (s *namedCountSender) Channel() string { return s.channel }
+
+func (s *namedCountSender) Send(context.Context, Message) error {
+	s.calls++
+	return nil
+}
+
+type asyncFallbackNotifier struct {
+	errors int
+}
+
+func (n *asyncFallbackNotifier) SendGate(context.Context, decisionfmt.DecisionInput, decisionfmt.DecisionReport) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendStartup(context.Context, StartupInfo) error   { return nil }
+func (n *asyncFallbackNotifier) SendShutdown(context.Context, ShutdownInfo) error { return nil }
+func (n *asyncFallbackNotifier) SendError(context.Context, ErrorNotice) error {
+	n.errors++
+	return nil
+}
+func (n *asyncFallbackNotifier) SendPositionOpen(context.Context, PositionOpenNotice) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendPositionClose(context.Context, PositionCloseNotice) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendPositionCloseSummary(context.Context, PositionCloseSummaryNotice) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendRiskPlanUpdate(context.Context, RiskPlanUpdateNotice) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendTradeOpen(context.Context, TradeOpenNotice) error { return nil }
+func (n *asyncFallbackNotifier) SendTradePartialClose(context.Context, TradePartialCloseNotice) error {
+	return nil
+}
+func (n *asyncFallbackNotifier) SendTradeCloseSummary(context.Context, TradeCloseSummaryNotice) error {
+	return nil
 }
 
 type countingRenderer struct {
@@ -364,6 +412,76 @@ func TestSendWithKey_PartialFailureCommitsDedupeAfterSuccess(t *testing.T) {
 	}
 	if failSender.calls != 1 {
 		t.Fatalf("expected failed sender not to be retried after dedupe commit, got %d calls", failSender.calls)
+	}
+}
+
+func TestBuildNotifyDeliverArgsSplitsByChannel(t *testing.T) {
+	t.Parallel()
+
+	rendered := json.RawMessage(`{"message":"ok"}`)
+	args := buildNotifyDeliverArgs("error", "ethusdt", rendered, []string{"telegram", "feishu"})
+	if len(args) != 2 {
+		t.Fatalf("args len=%d want 2", len(args))
+	}
+	for _, arg := range args {
+		if arg.Channel == "" {
+			t.Fatalf("channel is empty: %#v", arg)
+		}
+		if !strings.HasSuffix(arg.DedupeKey, ":"+arg.Channel) {
+			t.Fatalf("dedupe key %q does not include channel %q", arg.DedupeKey, arg.Channel)
+		}
+	}
+	if args[0].DedupeKey == args[1].DedupeKey {
+		t.Fatalf("dedupe keys should differ per channel: %q", args[0].DedupeKey)
+	}
+}
+
+func TestAsyncManagerFallsBackToSyncBeforeRiverClient(t *testing.T) {
+	t.Parallel()
+
+	syncNotifier := &asyncFallbackNotifier{}
+	manager := NewAsyncManager(nil, syncNotifier, zap.NewNop())
+
+	err := manager.SendError(context.Background(), ErrorNotice{
+		Severity:  "error",
+		Component: "reconcile",
+		Symbol:    "ETHUSDT",
+		Message:   "startup reconcile alert",
+	})
+	if err != nil {
+		t.Fatalf("SendError() error=%v", err)
+	}
+	if syncNotifier.errors != 1 {
+		t.Fatalf("sync errors=%d want 1", syncNotifier.errors)
+	}
+}
+
+func TestAsyncDeliverRoutesToSingleChannel(t *testing.T) {
+	t.Parallel()
+
+	telegram := &namedCountSender{channel: "telegram"}
+	feishu := &namedCountSender{channel: "feishu"}
+	syncManager := Manager{senders: []Sender{telegram, feishu}, dedupe: newDedupeGuard(defaultNotifyDedupeTTL)}
+	manager := NewAsyncManager(nil, syncManager, zap.NewNop())
+	rendered, err := json.Marshal(ErrorNotice{
+		Severity:  "error",
+		Component: "decision",
+		Symbol:    "ETHUSDT",
+		Message:   "channel scoped",
+	})
+	if err != nil {
+		t.Fatalf("marshal notice: %v", err)
+	}
+
+	err = manager.Deliver(context.Background(), asyncEventError, "ETHUSDT", "telegram", rendered)
+	if err != nil {
+		t.Fatalf("Deliver() error=%v", err)
+	}
+	if telegram.calls != 1 {
+		t.Fatalf("telegram calls=%d want 1", telegram.calls)
+	}
+	if feishu.calls != 0 {
+		t.Fatalf("feishu calls=%d want 0", feishu.calls)
 	}
 }
 

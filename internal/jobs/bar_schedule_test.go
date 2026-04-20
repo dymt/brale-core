@@ -90,12 +90,12 @@ func TestBuildPeriodicJobsUsesIndependentAlignedSchedules(t *testing.T) {
 	}
 }
 
-func TestNotifyDeliverArgsInsertOptsDisablesAutomaticRetry(t *testing.T) {
+func TestNotifyDeliverArgsInsertOptsRetriesChannelDelivery(t *testing.T) {
 	t.Parallel()
 
 	opts := (NotifyDeliverArgs{}).InsertOpts()
-	if opts.MaxAttempts != 1 {
-		t.Fatalf("MaxAttempts=%d want 1", opts.MaxAttempts)
+	if opts.MaxAttempts != notifyDeliverMaxAttempts {
+		t.Fatalf("MaxAttempts=%d want %d", opts.MaxAttempts, notifyDeliverMaxAttempts)
 	}
 	if !opts.UniqueOpts.ByArgs {
 		t.Fatalf("UniqueOpts.ByArgs=false want true")
@@ -117,13 +117,15 @@ func TestNotifyRenderArgsInsertOptsDedupesShortWindow(t *testing.T) {
 	}
 }
 
-func TestNotifyDeliverWorkerSkipsRetryAttempts(t *testing.T) {
+func TestNotifyDeliverWorkerRetriesChannelAttempts(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
+	gotChannel := ""
 	worker := &NotifyDeliverWorker{
-		Deliver: func(context.Context, string, string, json.RawMessage) error {
+		Deliver: func(_ context.Context, _, _, channel string, _ json.RawMessage) error {
 			calls++
+			gotChannel = channel
 			return nil
 		},
 	}
@@ -134,12 +136,16 @@ func TestNotifyDeliverWorkerSkipsRetryAttempts(t *testing.T) {
 			EventType: "gate",
 			Symbol:    "ETHUSDT",
 			Rendered:  json.RawMessage(`{"ok":true}`),
+			Channel:   "telegram",
 		},
 	})
 	if err != nil {
 		t.Fatalf("Work() error=%v", err)
 	}
-	if calls != 0 {
-		t.Fatalf("Deliver calls=%d want 0", calls)
+	if calls != 1 {
+		t.Fatalf("Deliver calls=%d want 1", calls)
+	}
+	if gotChannel != "telegram" {
+		t.Fatalf("channel=%q want telegram", gotChannel)
 	}
 }

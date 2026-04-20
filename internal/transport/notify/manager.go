@@ -24,6 +24,7 @@ type Manager struct {
 	senders   []Sender
 	dedupe    *dedupeGuard
 	closeAgg  *closeNoticeAggregator
+	channel   string
 }
 
 type DecisionImageRenderer interface {
@@ -205,6 +206,88 @@ func NewTestManager(senders ...Sender) Manager {
 	}
 	mgr.closeAgg = newCloseNoticeAggregator(25*time.Millisecond, mgr.sendAggregatedClose)
 	return mgr
+}
+
+type channelNamedSender interface {
+	Channel() string
+}
+
+// DeliveryChannels returns stable channel IDs for the configured outbound senders.
+func (m Manager) DeliveryChannels() []string {
+	channels := make([]string, 0, len(m.senders))
+	seen := make(map[string]struct{}, len(m.senders))
+	for idx, sender := range m.senders {
+		channel := senderChannelID(sender, idx)
+		if channel == "" {
+			continue
+		}
+		if _, ok := seen[channel]; ok {
+			continue
+		}
+		seen[channel] = struct{}{}
+		channels = append(channels, channel)
+	}
+	return channels
+}
+
+// NotifierForChannel scopes delivery to one outbound channel and scopes dedupe to that channel.
+func (m Manager) NotifierForChannel(channel string) (Notifier, bool) {
+	channel = normalizeNotifyChannel(channel)
+	if channel == "" {
+		return nil, false
+	}
+	for idx, sender := range m.senders {
+		if senderChannelID(sender, idx) != channel {
+			continue
+		}
+		scoped := m
+		scoped.senders = []Sender{sender}
+		scoped.channel = channel
+		// Async deliver jobs are already persisted per channel. The in-memory close
+		// aggregator would otherwise acknowledge the job before an outbound send.
+		scoped.closeAgg = nil
+		return scoped, true
+	}
+	return nil, false
+}
+
+func senderChannelID(sender Sender, idx int) string {
+	if named, ok := sender.(channelNamedSender); ok {
+		if channel := normalizeNotifyChannel(named.Channel()); channel != "" {
+			return channel
+		}
+	}
+	return normalizeNotifyChannel(fmt.Sprintf("%T-%d", sender, idx))
+}
+
+func normalizeNotifyChannel(channel string) string {
+	channel = strings.TrimSpace(strings.ToLower(channel))
+	if channel == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastSep := false
+	for _, r := range channel {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastSep = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastSep = false
+		case r == '_' || r == '-':
+			if !lastSep {
+				b.WriteByte('_')
+				lastSep = true
+			}
+		default:
+			if !lastSep {
+				b.WriteByte('_')
+				lastSep = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 func (m Manager) SendGate(ctx context.Context, input decisionfmt.DecisionInput, report decisionfmt.DecisionReport) error {
@@ -1179,6 +1262,7 @@ func (m Manager) send(ctx context.Context, msg Message) error {
 func (m Manager) sendWithKey(ctx context.Context, msg Message, dedupeKey string) error {
 	now := time.Now()
 	logger := logging.FromContext(ctx).Named("notify")
+	dedupeKey = m.scopedDedupeKey(dedupeKey)
 	acquired := false
 	if m.dedupe != nil {
 		if !m.dedupe.tryAcquire(dedupeKey, now) {
@@ -1237,4 +1321,13 @@ func (m Manager) sendWithKey(ctx context.Context, msg Message, dedupeKey string)
 		zap.String("title", strings.TrimSpace(msg.Title)),
 	)
 	return nil
+}
+
+func (m Manager) scopedDedupeKey(key string) string {
+	key = strings.TrimSpace(key)
+	channel := strings.TrimSpace(m.channel)
+	if key == "" || channel == "" {
+		return key
+	}
+	return fmt.Sprintf("notify:%s:%s", key, channel)
 }

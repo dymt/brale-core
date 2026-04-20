@@ -42,13 +42,17 @@ func (s *RiskPlanService) ApplyUpdate(ctx context.Context, positionID string, pa
 	if err != nil {
 		return store.RiskPlanHistoryRecord{}, err
 	}
-	if _, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
+	updated, err := s.Store.UpdatePositionPatch(ctx, store.PositionPatch{
 		PositionID:      pos.PositionID,
 		ExpectedVersion: pos.Version,
 		NextVersion:     pos.Version + 1,
 		RiskJSON:        store.PtrBytes(raw),
-	}); err != nil {
+	})
+	if err != nil {
 		return store.RiskPlanHistoryRecord{}, err
+	}
+	if !updated {
+		return store.RiskPlanHistoryRecord{}, fmt.Errorf("update risk plan for %s: position version changed", positionID)
 	}
 	return s.saveHistory(ctx, positionID, raw, source)
 }
