@@ -179,6 +179,15 @@ func tp1Hit(plan risk.RiskPlan) bool {
 	return plan.TPLevels[0].Hit
 }
 
+func applyPostTP1StopFloor(plan risk.RiskPlan, side string, entry float64, feePct float64, markPrice float64) (risk.RiskPlan, bool) {
+	stop := computeBreakevenStop(side, entry, feePct)
+	if stop <= 0 || !isStopImproved(side, plan.StopPrice, stop, markPrice) {
+		return plan, false
+	}
+	plan.StopPrice = stop
+	return plan, true
+}
+
 func resolveTightenPlanSource(bind strategy.StrategyBinding) string {
 	if strings.EqualFold(strings.TrimSpace(bind.RiskManagement.RiskStrategy.Mode), execution.PlanSourceLLM) {
 		return execution.PlanSourceLLM
@@ -192,6 +201,39 @@ func riskPlanTakeProfits(plan risk.RiskPlan) []float64 {
 		if level.Price > 0 {
 			out = append(out, level.Price)
 		}
+	}
+	return out
+}
+
+func riskPlanRemainingTakeProfits(plan risk.RiskPlan) []float64 {
+	out := make([]float64, 0, len(plan.TPLevels))
+	for _, level := range plan.TPLevels {
+		if level.Hit || level.Price <= 0 {
+			continue
+		}
+		out = append(out, level.Price)
+	}
+	return out
+}
+
+func riskPlanHitTakeProfits(plan risk.RiskPlan) []float64 {
+	out := make([]float64, 0, len(plan.TPLevels))
+	for _, level := range plan.TPLevels {
+		if !level.Hit || level.Price <= 0 {
+			continue
+		}
+		out = append(out, level.Price)
+	}
+	return out
+}
+
+func remainingTPLevelIndexes(plan risk.RiskPlan) []int {
+	out := make([]int, 0, len(plan.TPLevels))
+	for idx, level := range plan.TPLevels {
+		if level.Hit || level.Price <= 0 {
+			continue
+		}
+		out = append(out, idx)
 	}
 	return out
 }
@@ -239,6 +281,13 @@ func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markP
 	if len(patch.TakeProfits) == 0 {
 		return plan, false, fmt.Errorf("tighten llm patch take_profits is required")
 	}
+	remainingIndexes := remainingTPLevelIndexes(plan)
+	if len(remainingIndexes) == 0 {
+		return plan, false, fmt.Errorf("tighten llm patch remaining take_profits are required")
+	}
+	if len(patch.TakeProfits) != len(remainingIndexes) {
+		return plan, false, fmt.Errorf("tighten llm patch take_profits must match remaining take_profits")
+	}
 	stop := *patch.StopLoss
 	if stop <= 0 {
 		return plan, false, fmt.Errorf("tighten llm patch stop_loss must be > 0")
@@ -272,13 +321,10 @@ func applyTightenRiskPatch(plan risk.RiskPlan, side string, entry float64, markP
 	}
 	plan.StopPrice = stop
 	tpTightened := false
-	for idx := range plan.TPLevels {
-		if idx >= len(patch.TakeProfits) {
-			break
-		}
+	for idx, planIdx := range remainingIndexes {
 		next := patch.TakeProfits[idx]
-		if plan.TPLevels[idx].Price != next {
-			plan.TPLevels[idx].Price = next
+		if plan.TPLevels[planIdx].Price != next {
+			plan.TPLevels[planIdx].Price = next
 			tpTightened = true
 		}
 	}

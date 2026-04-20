@@ -148,7 +148,7 @@ func TightenTPLevels(plan RiskPlan, side string, entry float64, atr float64, tp1
 	updated := false
 	for i := range plan.TPLevels {
 		level := plan.TPLevels[i]
-		if level.Price <= 0 {
+		if level.Hit || level.Price <= 0 {
 			continue
 		}
 		multiplier := resolveTightenTPATRMultiplier(i, tp1ATR, tp2ATR)

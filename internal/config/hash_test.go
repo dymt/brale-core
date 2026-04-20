@@ -116,3 +116,28 @@ func TestHashSystemConfigChangesWhenReconcileConfigChanges(t *testing.T) {
 		t.Fatalf("hashes should differ when reconcile.close_recover_after changes")
 	}
 }
+
+func TestHashSystemConfigDistinguishesUnsetAndExplicitRoundRecorderZero(t *testing.T) {
+	base := SystemConfig{
+		Database:        DatabaseConfig{DSN: "postgres://localhost/db"},
+		ExecutionSystem: "freqtrade",
+		ExecEndpoint:    "http://127.0.0.1:8080/api/v1",
+	}
+
+	withExplicitZero := base
+	zero := 0
+	withExplicitZero.LLM.RoundRecorderTimeoutSec = &zero
+	withExplicitZero.LLM.RoundRecorderRetries = &zero
+
+	hashUnset, err := HashSystemConfig(base)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(base): %v", err)
+	}
+	hashExplicitZero, err := HashSystemConfig(withExplicitZero)
+	if err != nil {
+		t.Fatalf("HashSystemConfig(withExplicitZero): %v", err)
+	}
+	if hashUnset == hashExplicitZero {
+		t.Fatalf("hashes should differ when round recorder zero is explicitly configured")
+	}
+}

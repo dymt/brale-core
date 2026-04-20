@@ -50,7 +50,9 @@ type Pipeline struct {
 	SemanticMemory          memory.SemanticStore
 	LLMTokenBudget          int
 	RoundRecorderTimeout    time.Duration
+	RoundRecorderTimeoutSet bool
 	RoundRecorderRetries    int
+	RoundRecorderRetriesSet bool
 }
 
 type PipelineCoreDeps struct {

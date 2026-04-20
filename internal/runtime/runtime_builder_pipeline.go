@@ -66,6 +66,8 @@ func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeB
 			return nil, err
 		}
 	}
+	roundRecorderTimeout, roundRecorderTimeoutSet := resolveRoundRecorderTimeout(sys)
+	roundRecorderRetries, roundRecorderRetriesSet := resolveRoundRecorderRetries(sys)
 	hooks := decision.StoreHooks{
 		Store:         deps.Store,
 		SystemHash:    sys.Hash,
@@ -103,7 +105,23 @@ func buildPipelineFromRuntimeConfig(sys config.SystemConfig, deps SymbolRuntimeB
 		EpisodicMemory:          episodicMemory,
 		SemanticMemory:          semanticMemory,
 		LLMTokenBudget:          sys.LLM.TokenBudgetPerRound,
-		RoundRecorderTimeout:    time.Duration(sys.LLM.RoundRecorderTimeoutSec) * time.Second,
-		RoundRecorderRetries:    sys.LLM.RoundRecorderRetries,
+		RoundRecorderTimeout:    roundRecorderTimeout,
+		RoundRecorderTimeoutSet: roundRecorderTimeoutSet,
+		RoundRecorderRetries:    roundRecorderRetries,
+		RoundRecorderRetriesSet: roundRecorderRetriesSet,
 	}, nil
+}
+
+func resolveRoundRecorderTimeout(sys config.SystemConfig) (time.Duration, bool) {
+	if sys.LLM.RoundRecorderTimeoutSec == nil {
+		return 0, false
+	}
+	return time.Duration(*sys.LLM.RoundRecorderTimeoutSec) * time.Second, true
+}
+
+func resolveRoundRecorderRetries(sys config.SystemConfig) (int, bool) {
+	if sys.LLM.RoundRecorderRetries == nil {
+		return 0, false
+	}
+	return *sys.LLM.RoundRecorderRetries, true
 }

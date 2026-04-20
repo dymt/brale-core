@@ -26,10 +26,10 @@ func ValidateSystemConfig(cfg SystemConfig) error {
 			return validationErrorf("llm_min_interval must be > 0")
 		}
 	}
-	if cfg.LLM.RoundRecorderTimeoutSec < 0 {
+	if cfg.LLM.RoundRecorderTimeoutSec != nil && *cfg.LLM.RoundRecorderTimeoutSec < 0 {
 		return validationErrorf("llm.round_recorder_timeout_sec must be >= 0")
 	}
-	if cfg.LLM.RoundRecorderRetries < 0 {
+	if cfg.LLM.RoundRecorderRetries != nil && *cfg.LLM.RoundRecorderRetries < 0 {
 		return validationErrorf("llm.round_recorder_retries must be >= 0")
 	}
 	if err := validateLLMModelConfigs(cfg.LLMModels); err != nil {

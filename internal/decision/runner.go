@@ -69,6 +69,9 @@ type TightenRiskUpdateInput struct {
 	DistanceToLiqPct    float64
 	CurrentStopLoss     float64
 	CurrentTakeProfits  []float64
+	HitTakeProfits      []float64
+	RemainingQty        float64
+	RemainingNotional   float64
 	AgentIndicator      IndicatorSummary
 	AgentStructure      StructureSummary
 	AgentMechanics      MechanicsSummary

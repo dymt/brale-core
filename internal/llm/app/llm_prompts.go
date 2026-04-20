@@ -57,21 +57,27 @@ type FlatRiskPromptInput struct {
 }
 
 type TightenRiskPromptInput struct {
-	Symbol             string
-	Direction          string
-	Entry              float64
-	MarkPrice          float64
-	ATR                float64
-	UnrealizedPnlPct   float64
-	PositionAgeMin     int64
-	TP1Hit             bool
-	DistanceToLiqPct   float64
-	CurrentStopLoss    float64
-	CurrentTakeProfits []float64
-	StructureAnchors   map[string]any
-	AgentIndicator     agent.IndicatorSummary
-	AgentStructure     agent.StructureSummary
-	AgentMechanics     agent.MechanicsSummary
+	Symbol              string
+	Direction           string
+	Entry               float64
+	MarkPrice           float64
+	ATR                 float64
+	UnrealizedPnlPct    float64
+	PositionAgeMin      int64
+	TP1Hit              bool
+	DistanceToLiqPct    float64
+	CurrentStopLoss     float64
+	CurrentTakeProfits  []float64
+	HitTakeProfits      []float64
+	RemainingQty        float64
+	RemainingNotional   float64
+	StructureAnchors    map[string]any
+	AgentIndicator      agent.IndicatorSummary
+	AgentStructure      agent.StructureSummary
+	AgentMechanics      agent.MechanicsSummary
+	InPositionIndicator provider.InPositionIndicatorOut
+	InPositionStructure provider.InPositionStructureOut
+	InPositionMechanics provider.InPositionMechanicsOut
 }
 
 func (b LLMPromptBuilder) FlatRiskInitPrompt(input FlatRiskPromptInput) (string, string, error) {
@@ -114,22 +120,28 @@ func (b LLMPromptBuilder) TightenRiskUpdatePrompt(input TightenRiskPromptInput) 
 		return "", "", err
 	}
 	contextRaw, _ := json.Marshal(map[string]any{
-		"symbol":               strings.ToUpper(strings.TrimSpace(input.Symbol)),
-		"direction":            strings.ToLower(strings.TrimSpace(input.Direction)),
-		"entry":                input.Entry,
-		"mark_price":           input.MarkPrice,
-		"atr":                  input.ATR,
-		"unrealized_pnl_pct":   input.UnrealizedPnlPct,
-		"position_age_minutes": input.PositionAgeMin,
-		"tp1_hit":              input.TP1Hit,
-		"distance_to_liq_pct":  input.DistanceToLiqPct,
-		"current_stop_loss":    input.CurrentStopLoss,
-		"current_take_profits": append([]float64(nil), input.CurrentTakeProfits...),
+		"symbol":                  strings.ToUpper(strings.TrimSpace(input.Symbol)),
+		"direction":               strings.ToLower(strings.TrimSpace(input.Direction)),
+		"entry":                   input.Entry,
+		"mark_price":              input.MarkPrice,
+		"atr":                     input.ATR,
+		"unrealized_pnl_pct":      input.UnrealizedPnlPct,
+		"position_age_minutes":    input.PositionAgeMin,
+		"tp1_hit":                 input.TP1Hit,
+		"distance_to_liq_pct":     input.DistanceToLiqPct,
+		"current_stop_loss":       input.CurrentStopLoss,
+		"current_take_profits":    append([]float64(nil), input.CurrentTakeProfits...),
+		"hit_take_profits":        append([]float64(nil), input.HitTakeProfits...),
+		"remaining_qty":           input.RemainingQty,
+		"remaining_notional_usdt": input.RemainingNotional,
 	})
 	anchorsRaw, _ := json.Marshal(input.StructureAnchors)
 	indicatorRaw, _ := json.Marshal(input.AgentIndicator)
 	structureRaw, _ := json.Marshal(input.AgentStructure)
 	mechanicsRaw, _ := json.Marshal(input.AgentMechanics)
+	inPosIndicatorRaw, _ := json.Marshal(input.InPositionIndicator)
+	inPosStructureRaw, _ := json.Marshal(input.InPositionStructure)
+	inPosMechanicsRaw, _ := json.Marshal(input.InPositionMechanics)
 	user := formatPayloads(
 		b.UserFormat,
 		payloadBlock{label: "仓位风控上下文(必填):", payload: string(contextRaw)},
@@ -137,7 +149,10 @@ func (b LLMPromptBuilder) TightenRiskUpdatePrompt(input TightenRiskPromptInput) 
 		payloadBlock{label: "Indicator Agent 摘要(必填):", payload: string(indicatorRaw)},
 		payloadBlock{label: "Structure Agent 摘要(必填):", payload: string(structureRaw)},
 		payloadBlock{label: "Mechanics Agent 摘要(必填):", payload: string(mechanicsRaw)},
-		payloadBlock{label: "输出要求:", payload: `{"stop_loss":0.0,"take_profits":[0.0]}。必须输出完整新止损与止盈列表，不允许省略任一字段。`},
+		payloadBlock{label: "持仓态 Indicator Provider 摘要(必填):", payload: string(inPosIndicatorRaw)},
+		payloadBlock{label: "持仓态 Structure Provider 摘要(必填):", payload: string(inPosStructureRaw)},
+		payloadBlock{label: "持仓态 Mechanics Provider 摘要(必填):", payload: string(inPosMechanicsRaw)},
+		payloadBlock{label: "输出要求:", payload: `{"action":"adjust|hold","stop_loss":0.0,"take_profits":[0.0],"reason":"..."}`},
 	)
 	return system, user, nil
 }

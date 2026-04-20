@@ -30,7 +30,10 @@ func (s *PositionService) buildCloseSummary(pos store.PositionRecord, triggerPri
 			}
 		}
 	}
-	qty := pos.Qty
+	qty := request.PositionQty
+	if qty <= 0 {
+		qty = pos.Qty
+	}
 	if qty <= 0 {
 		qty = request.EffectiveCloseQty
 	}

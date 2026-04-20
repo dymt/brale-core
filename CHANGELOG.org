@@ -2,9 +2,9 @@
 #+AUTHOR: Brale Core Team
 #+OPTIONS: toc:2
 
-本文件记录 brale-core 各版本发布的变更内容，按时间倒序排列。
+本文件记录 brale-core 各版本发布的变更内容
 
-* Unreleased (dev branch, 2026-04-16 – 2026-04-19)
+* Unreleased (dev branch, 2026-04-10 – 2026-04-19)
 
 本轮迭代覆盖 48 次提交（4724e27..HEAD），聚焦于 *LLM 运行时韧性*、*CLI 工作流重构*、*MCP 传输升级*、*通知系统简化* 和 *Docker 栈参数化*。
 
@@ -21,9 +21,7 @@
 | 文档 | 新增 .docs/details/ 系统详细文档（21 篇）；部署与排障指南扩展 |
 | 测试 | TA 边界用例、OG 卡片渲染测试、递归 Schema 测试、Prompt 容错测试 |
 
-** 具体调整（按时间顺序）
-
-*** 2026-04-16
+** 具体调整
 
 **** 新功能（feat）
 - =(cli)= 新增 =bralectl init= 交互式向导与 =prepare-stack= 命令，替代废弃的 Web Onboarding 面板 (6def7c6)
@@ -58,8 +56,6 @@
 - 扩展字段翻译参考覆盖范围 (2329020)
 - 新增 EMA Distance、TD Sequential、Slope Amplitude 翻译 (c3c5815)
 
-*** 2026-04-17
-
 **** 新功能（feat）
 - LLM 熔断器（Circuit Breaker）：按模型隔离，失败 5 次后自动断开，1 分钟后半开探测 (a71856f)
 - 对账关闭恢复配置（Reconcile Close Recovery）(3fe894e)
@@ -77,8 +73,6 @@
 
 **** 文档
 - 扩展部署与运行时排障指南 (d890163)
-
-*** 2026-04-18
 
 **** 新功能（feat）
 - MCP 传输切换为 Streamable HTTP，保留 stdio 模式 (3fa6d80)

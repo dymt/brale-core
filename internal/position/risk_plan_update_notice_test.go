@@ -2,9 +2,11 @@ package position
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 
+	"brale-core/internal/store"
 	"brale-core/internal/transport/notify"
 )
 
@@ -63,5 +65,43 @@ func formatNoticeLine(labelKey string, value string) string {
 func assertContains(t *testing.T, text string, want string) {
 	if !strings.Contains(text, want) {
 		t.Fatalf("expected %q in %q", want, text)
+	}
+}
+
+type trackedCloseNotifier struct {
+	notice PositionCloseNotice
+}
+
+func (n *trackedCloseNotifier) SendError(context.Context, ErrorNotice) error {
+	return nil
+}
+
+func (n *trackedCloseNotifier) SendPositionClose(_ context.Context, notice PositionCloseNotice) error {
+	n.notice = notice
+	return nil
+}
+
+func TestTrackedLogAndNotifyClosePrefersRequestPositionQty(t *testing.T) {
+	t.Parallel()
+
+	notifier := &trackedCloseNotifier{}
+	svc := &PositionService{Notifier: notifier}
+	pos := store.PositionRecord{
+		Symbol:     "ETHUSDT",
+		Side:       "long",
+		Qty:        40,
+		AvgEntry:   3200,
+		PositionID: "pos-2",
+	}
+	request := CloseRequest{
+		RequestedCloseQty: 20,
+		EffectiveCloseQty: 20,
+		PositionQty:       55,
+	}
+
+	svc.logAndNotifyClose(context.Background(), pos, "tp_1_hit", 3300, request, "REDUCE")
+
+	if math.Abs(notifier.notice.Qty-55) > 1e-12 {
+		t.Fatalf("qty=%v want 55", notifier.notice.Qty)
 	}
 }

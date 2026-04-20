@@ -7,6 +7,7 @@ import (
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/fund"
+	"brale-core/internal/decision/provider"
 	"brale-core/internal/execution"
 )
 
@@ -195,11 +196,30 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 		TP1Hit:             true,
 		DistanceToLiqPct:   0.18,
 		CurrentStopLoss:    95,
-		CurrentTakeProfits: []float64{108, 112},
+		CurrentTakeProfits: []float64{112},
+		HitTakeProfits:     []float64{108},
+		RemainingQty:       1.75,
+		RemainingNotional:  183.75,
 		AgentIndicator:     agentIndicatorForRiskTests(),
 		AgentStructure:     agentStructureForRiskTests(),
 		AgentMechanics:     agentMechanicsForRiskTests(),
 		StructureAnchors:   structureAnchorsForRiskTests(),
+		InPositionIndicator: provider.InPositionIndicatorOut{
+			MomentumSustaining: true,
+			MonitorTag:         "keep",
+			Reason:             "momentum stable",
+		},
+		InPositionStructure: provider.InPositionStructureOut{
+			Integrity:   true,
+			ThreatLevel: provider.ThreatLevelLow,
+			MonitorTag:  "tighten",
+			Reason:      "retest near anchor",
+		},
+		InPositionMechanics: provider.InPositionMechanicsOut{
+			CrowdingReversal: false,
+			MonitorTag:       "keep",
+			Reason:           "liquidation benign",
+		},
 	}
 	got, err := buildTightenRiskPromptInput(input)
 	if err != nil {
@@ -211,8 +231,17 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 	if got.Direction != "long" {
 		t.Fatalf("direction=%q, want long", got.Direction)
 	}
-	if len(got.CurrentTakeProfits) != 2 {
+	if len(got.CurrentTakeProfits) != 1 || got.CurrentTakeProfits[0] != 112 {
 		t.Fatalf("current_take_profits=%v", got.CurrentTakeProfits)
+	}
+	if len(got.HitTakeProfits) != 1 || got.HitTakeProfits[0] != 108 {
+		t.Fatalf("hit_take_profits=%v", got.HitTakeProfits)
+	}
+	if got.RemainingQty != 1.75 {
+		t.Fatalf("remaining_qty=%v", got.RemainingQty)
+	}
+	if got.RemainingNotional != 183.75 {
+		t.Fatalf("remaining_notional=%v", got.RemainingNotional)
 	}
 	if got.UnrealizedPnlPct != 0.05 {
 		t.Fatalf("unrealized_pnl_pct=%v", got.UnrealizedPnlPct)
@@ -234,6 +263,9 @@ func TestBuildTightenRiskPromptInput(t *testing.T) {
 	}
 	if got.AgentMechanics.Crowding != agent.CrowdingBalanced {
 		t.Fatalf("agent_mechanics.crowding=%q", got.AgentMechanics.Crowding)
+	}
+	if got.InPositionStructure.MonitorTag != "tighten" {
+		t.Fatalf("in_position_structure.monitor_tag=%q", got.InPositionStructure.MonitorTag)
 	}
 	if _, ok := got.StructureAnchors["nearest_above_entry"]; !ok {
 		t.Fatalf("structure_anchors=%v", got.StructureAnchors)
@@ -308,12 +340,31 @@ func tightenInputForRiskTests() decision.TightenRiskUpdateInput {
 		TP1Hit:             true,
 		DistanceToLiqPct:   0.18,
 		CurrentStopLoss:    99,
-		CurrentTakeProfits: []float64{108, 112},
+		CurrentTakeProfits: []float64{112},
+		HitTakeProfits:     []float64{108},
+		RemainingQty:       1.75,
+		RemainingNotional:  183.75,
 		Gate:               fundGateForRiskTests(),
 		AgentIndicator:     agentIndicatorForRiskTests(),
 		AgentStructure:     agentStructureForRiskTests(),
 		AgentMechanics:     agentMechanicsForRiskTests(),
 		StructureAnchors:   structureAnchorsForRiskTests(),
+		InPositionIndicator: provider.InPositionIndicatorOut{
+			MomentumSustaining: true,
+			MonitorTag:         "keep",
+			Reason:             "momentum stable",
+		},
+		InPositionStructure: provider.InPositionStructureOut{
+			Integrity:   true,
+			ThreatLevel: provider.ThreatLevelLow,
+			MonitorTag:  "tighten",
+			Reason:      "retest near anchor",
+		},
+		InPositionMechanics: provider.InPositionMechanicsOut{
+			CrowdingReversal: false,
+			MonitorTag:       "keep",
+			Reason:           "liquidation benign",
+		},
 	}
 }
 

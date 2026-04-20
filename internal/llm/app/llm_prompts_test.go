@@ -7,6 +7,7 @@ import (
 	"brale-core/internal/decision"
 	"brale-core/internal/decision/agent"
 	"brale-core/internal/decision/features"
+	"brale-core/internal/decision/provider"
 )
 
 func TestFlatRiskInitPromptIncludesAgentSummaryBlocks(t *testing.T) {
@@ -74,7 +75,10 @@ func TestTightenRiskUpdatePromptIncludesAgentSummaryBlocks(t *testing.T) {
 		MarkPrice:          105,
 		ATR:                2,
 		CurrentStopLoss:    95,
-		CurrentTakeProfits: []float64{108, 112},
+		CurrentTakeProfits: []float64{112},
+		HitTakeProfits:     []float64{108},
+		RemainingQty:       1.75,
+		RemainingNotional:  183.75,
 		UnrealizedPnlPct:   0.05,
 		PositionAgeMin:     45,
 		TP1Hit:             true,
@@ -97,6 +101,22 @@ func TestTightenRiskUpdatePromptIncludesAgentSummaryBlocks(t *testing.T) {
 		StructureAnchors: map[string]any{
 			"nearest_above_entry": map[string]any{"price": 108.5},
 		},
+		InPositionIndicator: provider.InPositionIndicatorOut{
+			MomentumSustaining: true,
+			MonitorTag:         "keep",
+			Reason:             "momentum stable",
+		},
+		InPositionStructure: provider.InPositionStructureOut{
+			Integrity:   true,
+			ThreatLevel: provider.ThreatLevelLow,
+			MonitorTag:  "tighten",
+			Reason:      "retest near anchor",
+		},
+		InPositionMechanics: provider.InPositionMechanicsOut{
+			CrowdingReversal: false,
+			MonitorTag:       "keep",
+			Reason:           "liquidation benign",
+		},
 	})
 	if err != nil {
 		t.Fatalf("TightenRiskUpdatePrompt: %v", err)
@@ -116,8 +136,20 @@ func TestTightenRiskUpdatePromptIncludesAgentSummaryBlocks(t *testing.T) {
 	if !strings.Contains(user, "- tp1_hit: true") {
 		t.Fatalf("user prompt missing tp1 hit metric: %s", user)
 	}
+	if !strings.Contains(user, "- hit_take_profits:") {
+		t.Fatalf("user prompt missing hit take profits metric: %s", user)
+	}
+	if !strings.Contains(user, "- remaining_qty: 1.75") {
+		t.Fatalf("user prompt missing remaining qty metric: %s", user)
+	}
+	if !strings.Contains(user, "- remaining_notional_usdt: 183.75") {
+		t.Fatalf("user prompt missing remaining notional metric: %s", user)
+	}
 	if !strings.Contains(user, "- distance_to_liq_pct: 0.18") {
 		t.Fatalf("user prompt missing liq distance metric: %s", user)
+	}
+	if !strings.Contains(user, "持仓态 Indicator Provider 摘要(必填):") || !strings.Contains(user, "持仓态 Structure Provider 摘要(必填):") || !strings.Contains(user, "持仓态 Mechanics Provider 摘要(必填):") {
+		t.Fatalf("user prompt missing in-position provider blocks: %s", user)
 	}
 	if strings.Contains(user, "Gate 摘要(必填):") || strings.Contains(user, "In-position 评估(必填):") {
 		t.Fatalf("user prompt should not contain legacy tighten blocks: %s", user)

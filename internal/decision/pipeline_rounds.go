@@ -124,14 +124,14 @@ func finishRoundRecorderWith(ctx context.Context, outcome string, timeout time.D
 }
 
 func (p *Pipeline) roundRecorderTimeout() time.Duration {
-	if p != nil && p.RoundRecorderTimeout > 0 {
+	if p != nil && p.RoundRecorderTimeoutSet {
 		return p.RoundRecorderTimeout
 	}
 	return defaultRoundRecorderTimeout
 }
 
 func (p *Pipeline) roundRecorderRetries() int {
-	if p != nil && p.RoundRecorderRetries > 0 {
+	if p != nil && p.RoundRecorderRetriesSet {
 		return p.RoundRecorderRetries
 	}
 	return defaultRoundRecorderRetries

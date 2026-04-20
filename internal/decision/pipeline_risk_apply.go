@@ -41,41 +41,25 @@ func (p *Pipeline) applyTightenUpdate(ctx context.Context, pos store.PositionRec
 	oldStop := plan.StopPrice
 	plan, watermarksUpdated := updateWatermarks(plan, pos.Side, pos.AvgEntry, updateCtx.MarkPrice)
 	if tp1Hit(plan) {
-		result, err := p.applyBreakevenUpdate(ctx, pos, plan, oldStop, updateCtx, watermarksUpdated)
-		return result, err
+		plan, _ = applyPostTP1StopFloor(plan, pos.Side, pos.AvgEntry, updateCtx.Binding.RiskManagement.BreakevenFeePct, updateCtx.MarkPrice)
 	}
 	return p.applyStructureTighten(ctx, pos, plan, oldStop, updateCtx, watermarksUpdated)
-}
-
-func (p *Pipeline) applyBreakevenUpdate(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, oldStop float64, updateCtx tightenContext, watermarksUpdated bool) (tightenUpdateResult, error) {
-	plan.StopPrice = computeBreakevenStop(pos.Side, pos.AvgEntry, updateCtx.Binding.RiskManagement.BreakevenFeePct)
-	result := newTightenUpdateResult(execution.PlanSourceGo, plan.StopPrice, riskPlanTakeProfits(plan))
-	if plan.StopPrice <= 0 {
-		return result, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-breakeven", watermarksUpdated)
-	}
-	err := p.withStoreTx(ctx, func(runCtx context.Context) error {
-		if _, err := p.riskPlans().ApplyUpdate(runCtx, pos.PositionID, plan, "monitor-breakeven"); err != nil {
-			return err
-		}
-		if plan.StopPrice == oldStop {
-			return nil
-		}
-		return p.logRiskPlanUpdate(runCtx, pos, plan, oldStop, "monitor-breakeven", updateCtx.MarkPrice, updateCtx.ATR, updateCtx.ATRChangePct, updateCtx.GateSatisfied, updateCtx.ScoreTotal, tightenV2ScoreThreshold, updateCtx.ScoreBreakdown, updateCtx.ScoreParseOK, "monitor-breakeven", false)
-	})
-	result.Executed = err == nil && plan.StopPrice != oldStop
-	return result, err
 }
 
 func (p *Pipeline) applyStructureTighten(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, oldStop float64, updateCtx tightenContext, watermarksUpdated bool) (tightenUpdateResult, error) {
 	tightenMultiplier := updateCtx.Binding.RiskManagement.TightenATR.StructureThreatened
 	baseResult := newTightenUpdateResult(resolveTightenPlanSource(updateCtx.Binding), plan.StopPrice, riskPlanTakeProfits(plan))
 	if tightenMultiplier <= 0 {
-		return baseResult, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-tighten", watermarksUpdated)
+		err := p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, false)
+		baseResult.Executed = err == nil && plan.StopPrice != oldStop
+		return baseResult, err
 	}
 	anchor := resolveTightenAnchor(plan, pos.Side, updateCtx.MarkPrice)
 	newStop := computeTightenStop(pos.Side, anchor, updateCtx.ATR, tightenMultiplier, updateCtx.Binding.RiskManagement.SlippageBufferPct)
 	if newStop <= 0 {
-		return baseResult, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-tighten", watermarksUpdated)
+		err := p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, false)
+		baseResult.Executed = err == nil && plan.StopPrice != oldStop
+		return baseResult, err
 	}
 	if !isStopImproved(pos.Side, plan.StopPrice, newStop, updateCtx.MarkPrice) {
 		crossed := isStopCrossed(pos.Side, newStop, updateCtx.MarkPrice)
@@ -86,12 +70,18 @@ func (p *Pipeline) applyStructureTighten(ctx context.Context, pos store.Position
 			} else {
 				if updateCtx.CriticalExit {
 					baseResult.ExitConfirmHit = true
-					return baseResult, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-tighten", watermarksUpdated)
+					err := p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, false)
+					baseResult.Executed = err == nil && plan.StopPrice != oldStop
+					return baseResult, err
 				}
-				return baseResult, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-tighten", watermarksUpdated)
+				err := p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, false)
+				baseResult.Executed = err == nil && plan.StopPrice != oldStop
+				return baseResult, err
 			}
 		} else {
-			return baseResult, p.applyWatermarkUpdate(ctx, pos, plan, "monitor-tighten", watermarksUpdated)
+			err := p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, false)
+			baseResult.Executed = err == nil && plan.StopPrice != oldStop
+			return baseResult, err
 		}
 	}
 	planSource := resolveTightenPlanSource(updateCtx.Binding)
@@ -102,15 +92,7 @@ func (p *Pipeline) applyStructureTighten(ctx context.Context, pos store.Position
 	plan = tightenPlan
 	result := newTightenUpdateResult(planSource, plan.StopPrice, riskPlanTakeProfits(plan))
 	result.LLMRiskTrace = cloneLLMRiskTrace(llmTrace)
-	err = p.withStoreTx(ctx, func(runCtx context.Context) error {
-		if _, err := p.riskPlans().ApplyUpdate(runCtx, pos.PositionID, plan, "monitor-tighten"); err != nil {
-			return err
-		}
-		if plan.StopPrice == oldStop {
-			return nil
-		}
-		return p.logRiskPlanUpdate(runCtx, pos, plan, oldStop, "monitor-tighten", updateCtx.MarkPrice, updateCtx.ATR, updateCtx.ATRChangePct, updateCtx.GateSatisfied, updateCtx.ScoreTotal, tightenV2ScoreThreshold, updateCtx.ScoreBreakdown, updateCtx.ScoreParseOK, "monitor-tighten", tpTightened)
-	})
+	err = p.persistTightenPlan(ctx, pos, plan, oldStop, "monitor-tighten", updateCtx, watermarksUpdated, tpTightened)
 	result.Executed = err == nil && plan.StopPrice != oldStop
 	result.TPTightened = tpTightened
 	return result, err
@@ -121,6 +103,10 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 	tightenPlan := plan
 	tightenPlan.StopPrice = newStop
 	if planSource == execution.PlanSourceLLM {
+		remainingTakeProfits := riskPlanRemainingTakeProfits(plan)
+		if len(remainingTakeProfits) == 0 {
+			return tightenPlan, false, nil, nil
+		}
 		if p.TightenRiskLLM == nil {
 			return plan, false, nil, fmt.Errorf("tighten risk llm callback is required")
 		}
@@ -138,7 +124,10 @@ func (p *Pipeline) buildTightenPlan(ctx context.Context, pos store.PositionRecor
 			TP1Hit:              tp1Hit(plan),
 			DistanceToLiqPct:    computeDistanceToLiqPct(updateCtx.Gate, updateCtx.MarkPrice),
 			CurrentStopLoss:     tightenPlan.StopPrice,
-			CurrentTakeProfits:  riskPlanTakeProfits(plan),
+			CurrentTakeProfits:  remainingTakeProfits,
+			HitTakeProfits:      riskPlanHitTakeProfits(plan),
+			RemainingQty:        pos.Qty,
+			RemainingNotional:   pos.Qty * updateCtx.MarkPrice,
 			AgentIndicator:      updateCtx.AgentIndicator,
 			AgentStructure:      updateCtx.AgentStructure,
 			AgentMechanics:      updateCtx.AgentMechanics,
@@ -210,12 +199,19 @@ func extractLiquidationPrice(gate fund.GateDecision) float64 {
 	return parseutil.Float(planMap["liquidation_price"])
 }
 
-func (p *Pipeline) applyWatermarkUpdate(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, source string, updated bool) error {
-	if !updated {
+func (p *Pipeline) persistTightenPlan(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, oldStop float64, source string, updateCtx tightenContext, watermarksUpdated bool, tpTightened bool) error {
+	if !watermarksUpdated && plan.StopPrice == oldStop {
 		return nil
 	}
-	_, err := p.riskPlans().ApplyUpdate(ctx, pos.PositionID, plan, source)
-	return err
+	return p.withStoreTx(ctx, func(runCtx context.Context) error {
+		if _, err := p.riskPlans().ApplyUpdate(runCtx, pos.PositionID, plan, source); err != nil {
+			return err
+		}
+		if plan.StopPrice == oldStop {
+			return nil
+		}
+		return p.logRiskPlanUpdate(runCtx, pos, plan, oldStop, source, updateCtx.MarkPrice, updateCtx.ATR, updateCtx.ATRChangePct, updateCtx.GateSatisfied, updateCtx.ScoreTotal, tightenV2ScoreThreshold, updateCtx.ScoreBreakdown, updateCtx.ScoreParseOK, source, tpTightened)
+	})
 }
 
 func (p *Pipeline) logRiskPlanUpdate(ctx context.Context, pos store.PositionRecord, plan risk.RiskPlan, oldStop float64, source string, markPrice float64, atr float64, volatility float64, gateSatisfied bool, scoreTotal float64, scoreThreshold float64, scoreBreakdown []RiskPlanUpdateScoreItem, parseOK bool, tightenReason string, tpTightened bool) error {

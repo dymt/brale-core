@@ -69,10 +69,22 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 			if input.CurrentStopLoss != 99 {
 				t.Fatalf("current_stop_loss=%v, want tightened baseline 99", input.CurrentStopLoss)
 			}
+			if len(input.CurrentTakeProfits) != 1 || input.CurrentTakeProfits[0] != 120 {
+				t.Fatalf("current_take_profits=%v, want [120]", input.CurrentTakeProfits)
+			}
+			if len(input.HitTakeProfits) != 1 || input.HitTakeProfits[0] != 110 {
+				t.Fatalf("hit_take_profits=%v, want [110]", input.HitTakeProfits)
+			}
+			if input.RemainingQty != 1.75 {
+				t.Fatalf("remaining_qty=%v, want 1.75", input.RemainingQty)
+			}
+			if input.RemainingNotional != 183.75 {
+				t.Fatalf("remaining_notional=%v, want 183.75", input.RemainingNotional)
+			}
 			return &TightenRiskUpdatePatch{
 				Action:      "adjust",
 				StopLoss:    &stop,
-				TakeProfits: []float64{106.5, 109.5},
+				TakeProfits: []float64{109.5},
 				Reason:      ptrString("trail under structure"),
 				Trace: &execution.LLMRiskTrace{
 					Stage:        "risk_tighten",
@@ -92,7 +104,7 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 			{LevelID: "tp-2", Price: 120, QtyPct: 0.5},
 		},
 	}
-	pos := store.PositionRecord{Symbol: "BTCUSDT", Side: "long", AvgEntry: 100, CreatedAt: time.Now().Add(-30 * time.Minute)}
+	pos := store.PositionRecord{Symbol: "BTCUSDT", Side: "long", AvgEntry: 100, Qty: 1.75, CreatedAt: time.Now().Add(-30 * time.Minute)}
 	updateCtx := tightenContext{
 		Binding:   strategy.StrategyBinding{RiskManagement: config.RiskManagementConfig{RiskStrategy: config.RiskStrategyConfig{Mode: "llm"}, TightenATR: config.TightenATRConfig{TP1ATR: 0.5, TP2ATR: 1.0}}},
 		MarkPrice: 105,
@@ -109,7 +121,7 @@ func TestBuildTightenPlanUsesLLMWhenRiskModeIsLLM(t *testing.T) {
 	if got.StopPrice != stop {
 		t.Fatalf("stop_loss=%v, want %v", got.StopPrice, stop)
 	}
-	if len(got.TPLevels) < 2 || got.TPLevels[0].Price != 106.5 || got.TPLevels[1].Price != 109.5 {
+	if len(got.TPLevels) < 2 || got.TPLevels[0].Price != 110 || got.TPLevels[1].Price != 109.5 {
 		t.Fatalf("tp levels=%+v", got.TPLevels)
 	}
 	if !tpTightened {
@@ -180,6 +192,79 @@ func TestApplyTightenRiskPatchHoldKeepsPlan(t *testing.T) {
 	}
 }
 
+func TestApplyTightenRiskPatchOnlyUpdatesRemainingTakeProfits(t *testing.T) {
+	stop := 100.2
+	plan := risk.RiskPlan{
+		StopPrice: 99,
+		TPLevels: []risk.TPLevel{
+			{LevelID: "tp-1", Price: 108, QtyPct: 0.5, Hit: true},
+			{LevelID: "tp-2", Price: 112, QtyPct: 0.5},
+		},
+	}
+
+	got, tpTightened, err := applyTightenRiskPatch(plan, "long", 100, 105, &TightenRiskUpdatePatch{
+		Action:      "adjust",
+		StopLoss:    &stop,
+		TakeProfits: []float64{109.5},
+		Reason:      ptrString("trail under structure"),
+	})
+	if err != nil {
+		t.Fatalf("apply tighten risk patch: %v", err)
+	}
+	if !tpTightened {
+		t.Fatalf("tp_tightened=%v, want true", tpTightened)
+	}
+	if got.TPLevels[0].Price != 108 || !got.TPLevels[0].Hit {
+		t.Fatalf("hit tp level changed unexpectedly: %+v", got.TPLevels[0])
+	}
+	if got.TPLevels[1].Price != 109.5 {
+		t.Fatalf("remaining tp level=%+v", got.TPLevels[1])
+	}
+}
+
+func TestApplyTightenRiskPatchRejectsMismatchedRemainingTakeProfits(t *testing.T) {
+	stop := 100.2
+	plan := risk.RiskPlan{
+		StopPrice: 99,
+		TPLevels: []risk.TPLevel{
+			{LevelID: "tp-1", Price: 108, QtyPct: 0.5, Hit: true},
+			{LevelID: "tp-2", Price: 112, QtyPct: 0.5},
+		},
+	}
+
+	_, _, err := applyTightenRiskPatch(plan, "long", 100, 105, &TightenRiskUpdatePatch{
+		Action:      "adjust",
+		StopLoss:    &stop,
+		TakeProfits: []float64{109.5, 111.5},
+		Reason:      ptrString("trail under structure"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "must match remaining take_profits") {
+		t.Fatalf("err=%v, want mismatch error", err)
+	}
+}
+
+func TestApplyPostTP1StopFloorUsesBreakevenAsMinimum(t *testing.T) {
+	plan := risk.RiskPlan{StopPrice: 95}
+	got, updated := applyPostTP1StopFloor(plan, "long", 100, 0.001, 105)
+	if !updated {
+		t.Fatalf("updated=%v, want true", updated)
+	}
+	if got.StopPrice != 100.1 {
+		t.Fatalf("stop_price=%v, want 100.1", got.StopPrice)
+	}
+}
+
+func TestApplyPostTP1StopFloorDoesNotLoosenExistingStop(t *testing.T) {
+	plan := risk.RiskPlan{StopPrice: 101}
+	got, updated := applyPostTP1StopFloor(plan, "long", 100, 0.001, 105)
+	if updated {
+		t.Fatalf("updated=%v, want false", updated)
+	}
+	if got.StopPrice != 101 {
+		t.Fatalf("stop_price=%v, want 101", got.StopPrice)
+	}
+}
+
 func TestRiskPlanUpdateLogFieldsIncludeTightenPatchStops(t *testing.T) {
 	core, logs := observer.New(zap.ErrorLevel)
 	logger := zap.New(core)
@@ -242,6 +327,37 @@ func TestBuildTightenPlanKeepsGoPathForNativeMode(t *testing.T) {
 	}
 	if tpTightened != expectedTightened {
 		t.Fatalf("tp_tightened=%v, want %v", tpTightened, expectedTightened)
+	}
+	if trace != nil {
+		t.Fatalf("trace=%#v, want nil for native path", trace)
+	}
+}
+
+func TestBuildTightenPlanNativeModeSkipsHitTakeProfits(t *testing.T) {
+	p := &Pipeline{}
+	plan := risk.RiskPlan{
+		StopPrice: 95,
+		TPLevels: []risk.TPLevel{
+			{LevelID: "tp-1", Price: 110, QtyPct: 0.5, Hit: true},
+			{LevelID: "tp-2", Price: 120, QtyPct: 0.5},
+		},
+	}
+	pos := store.PositionRecord{Symbol: "BTCUSDT", Side: "long", AvgEntry: 100}
+	updateCtx := tightenContext{
+		Binding:   strategy.StrategyBinding{RiskManagement: config.RiskManagementConfig{RiskStrategy: config.RiskStrategyConfig{Mode: "native"}, TightenATR: config.TightenATRConfig{TP1ATR: 0.5, TP2ATR: 1.0}}},
+		MarkPrice: 105,
+		ATR:       2,
+	}
+
+	got, tpTightened, trace, err := p.buildTightenPlan(context.Background(), pos, plan, updateCtx, 99)
+	if err != nil {
+		t.Fatalf("build tighten plan: %v", err)
+	}
+	if got.TPLevels[0].Price != 110 || !got.TPLevels[0].Hit {
+		t.Fatalf("hit tp level changed unexpectedly: %+v", got.TPLevels[0])
+	}
+	if got.TPLevels[1].Price == 120 && tpTightened {
+		t.Fatalf("tp_tightened=%v with unchanged remaining tp", tpTightened)
 	}
 	if trace != nil {
 		t.Fatalf("trace=%#v, want nil for native path", trace)

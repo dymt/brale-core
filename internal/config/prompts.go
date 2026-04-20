@@ -209,7 +209,7 @@ const defaultRiskFlatInitPrompt = "" +
 	"- reason 必须是中文、简短（建议 1-2 句），并明确引用输入字段名\n"
 
 const defaultRiskTightenUpdatePrompt = "" +
-	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、结构锚点摘要与三个 Agent 摘要，判断是否需要调整止损/止盈，若需要则输出新值。\n" +
+	"你是交易系统中的持仓风控收紧规划器。你的任务是：基于用户提供的仓位风控上下文、结构锚点摘要、三个 Agent 摘要与持仓态 Provider 摘要，判断是否需要调整止损/止盈，若需要则输出新值。\n" +
 	"\n" +
 	"硬性输出规则：\n" +
 	"- 只输出一个 JSON 对象；禁止输出 markdown、代码块、注释、解释文字、数组根对象、多个对象。\n" +
@@ -227,9 +227,13 @@ const defaultRiskTightenUpdatePrompt = "" +
 	"约束（必须满足）：\n" +
 	"- 必须同时参考仓位风控上下文、结构锚点摘要与三个 Agent 摘要；若某字段为 0、空数组或空对象，表示当前阶段未提供，不得编造。\n" +
 	"- 结构锚点摘要中的 nearest_below_entry / nearest_above_entry 是相对 entry 的方向中性锚点：direction=long 时通常分别更接近止损/止盈参考；direction=short 时通常分别更接近止盈/止损参考。\n" +
-	"- 仓位风控上下文中 unrealized_pnl_pct 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离。\n" +
+	"- 仓位风控上下文中 unrealized_pnl_pct 表示当前浮动盈亏比例（正=浮盈, 负=浮亏），position_age_minutes 表示持仓时长（分钟），tp1_hit 表示是否已触发第一止盈，distance_to_liq_pct 表示当前价格距爆仓价的百分比距离，current_take_profits 只包含尚未触发的剩余止盈，hit_take_profits 只表示已经触发过的历史止盈。\n" +
 	"- 刚入场微利（unrealized_pnl_pct 接近 0 且 position_age_minutes 较短）时 tighten 应保守；浮盈较大时可更积极保护利润。\n" +
-	"- tp1_hit=true 时止盈列表长度应减少（已触发的不再包含）。\n" +
+	"- 若仓位已进入后段，remaining_qty 或 remaining_notional_usdt 已明显缩小，且当前止损离现价仍较远，应重新评估是否还需要保留过远的剩余止盈。\n" +
+	"- 只能调整 current_take_profits 中这些尚未触发的剩余止盈；不得修改 hit_take_profits 中已经触发过的止盈，也不得新增或删除剩余止盈档位。\n" +
+	"- tp1_hit=true 时，保本位只能作为最低保护底线；若结构锚点和持仓态摘要显示继续持有的依据在减弱，应优先把 stop_loss 收到更贴近结构失效位的位置，而不是长期停在保本位附近。\n" +
+	"- 持仓态 Provider 摘要用于判断原持仓逻辑是否仍然成立。若 monitor_tag、threat_level、divergence_detected、crowding_reversal 等信号显示风险在上升，应优先保护利润。\n" +
+	"- 如果继续持有剩余仓位的收益已经不高，或者当前剩余止盈明显过远，可以把剩余止盈压近，但 returned take_profits 必须与 current_take_profits 一一对应。\n" +
 	"- 若当前止损/止盈合理且无明确调整依据，应返回 action=\"hold\"，stop_loss/take_profits 保持原值。\n" +
 	"- action=\"adjust\" 时：direction=long：stop_loss 必须 > current_stop_loss 且 < mark_price；take_profits 必须严格递增。\n" +
 	"- action=\"adjust\" 时：direction=short：stop_loss 必须 < current_stop_loss 且 > mark_price；take_profits 必须严格递减。\n"

@@ -1,7 +1,13 @@
 .cache/
 .gomodcache/
 .vscode/
-/.docs/
+/.docs/*
+!/.docs/details/
+!/.docs/details/**
+!/.docs/testing/
+!/.docs/testing/**
+!/.docs/user-guide.org
+!/.docs/pipeline-sequence-diagram.md
 
 running_log/
 log.txt
@@ -18,6 +24,7 @@ docs/project_introduction_technical.md
 *_test.go
 !internal/config/hash_test.go
 !internal/decision/decisionutil/runner_test.go
+!internal/decision/pipeline_rounds_test.go
 !internal/llm/openai_test.go
 !internal/llm/schema_test.go
 !internal/llmctl/probe_test.go
